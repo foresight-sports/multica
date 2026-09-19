@@ -4,3 +4,10 @@ docker/entrypoint.sh text eol=lf
 
 # Default behavior
 * text=auto
+
+# The shell test guard reads this list without CRLF conversion.
+scripts/agent-cli-command-names.txt text eol=lf
+
+# Embedded skill frontmatter parsers require LF when building on Windows.
+server/internal/service/builtin_skills/** text eol=lf
+server/internal/service/builtin_skills_legacy/** text eol=lf

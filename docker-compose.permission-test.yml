@@ -1,0 +1,29 @@
+name: multica-permission-tests
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: policy_test
+      POSTGRES_PASSWORD: isolated_test_only
+      POSTGRES_DB: policy_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U policy_test -d policy_test"]
+      interval: 2s
+      retries: 20
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.permission-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/src
+      - permission_go_mod:/go/pkg/mod
+      - permission_go_cache:/go/cache
+    environment:
+      DATABASE_URL: postgres://policy_test:isolated_test_only@postgres:5432/policy_test?sslmode=disable
+    command: ["make", "test", "ENV_FILE=env.permission-test", "VERSION=permissions-test", "COMMIT=local", "DATE=test"]
+volumes:
+  permission_go_mod:
+  permission_go_cache:

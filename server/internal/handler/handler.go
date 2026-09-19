@@ -66,9 +66,12 @@ type dbExecutor interface {
 }
 
 type Config struct {
-	AllowSignup         bool
-	AllowedEmails       []string
-	AllowedEmailDomains []string
+	// RuntimeRegistrationRestricted restricts runtime enrollment to explicitly listed users.
+	RuntimeRegistrationRestricted    bool
+	RuntimeRegistrationAllowedEmails []string
+	AllowSignup                      bool
+	AllowedEmails                    []string
+	AllowedEmailDomains              []string
 	// DisableWorkspaceCreation, when true, makes POST /api/workspaces return
 	// 403 for every caller. There is no role/owner exception because the repo
 	// has no platform-admin concept; operators bootstrap the workspace with

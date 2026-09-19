@@ -1,0 +1,6 @@
+FROM golang:1.26-alpine
+RUN apk add --no-cache bash make gcc musl-dev git su-exec && adduser -D -u 1000 policytest
+RUN git config --system --add safe.directory /src
+ENV GOCACHE=/go/cache
+WORKDIR /src
+ENTRYPOINT ["sh", "-c", "chown -R policytest:policytest /go/pkg/mod /go/cache; export HOME=/home/policytest; exec su-exec policytest \"$@\"", "--"]
