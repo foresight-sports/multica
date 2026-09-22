@@ -8,6 +8,8 @@ import { cn } from "@multica/ui/lib/utils";
 import { copyText } from "@multica/ui/lib/clipboard";
 import { useT } from "../../i18n";
 
+import { HostedClientDownload, HOSTED_INSTALL_COMMAND, HOSTED_SETUP_COMMAND, useHostedClient } from "../../runtimes/components/hosted-client-install";
+
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
 const SETUP_CMD = "multica setup";
@@ -62,15 +64,9 @@ function Step({ n, label, cmd }: { n: number; label: string; cmd: string }) {
   );
 }
 
-/**
- * CLI install instructions — two copy-and-run commands. Hardcoded because
- * there's nothing environmental to infer: step 1 is the public install
- * script, step 2 is the cloud `multica setup` which the CLI itself knows
- * the endpoints for. Local development tests a self-host variant by
- * typing the extended command directly in the terminal; no need to
- * thread env vars through React.
- */
+/** Install the client appropriate for this deployment. */
 export function CliInstallInstructions() {
+  const hostedClient = useHostedClient();
   const { t } = useT("onboarding");
   return (
     <Card className="w-full">
@@ -78,8 +74,9 @@ export function CliInstallInstructions() {
         <p className="text-caption leading-[1.55] text-muted-foreground">
           {t(($) => $.cli_install.intro)}
         </p>
-        <Step n={1} label={t(($) => $.cli_install.step1_label)} cmd={INSTALL_CMD} />
-        <Step n={2} label={t(($) => $.cli_install.step2_label)} cmd={SETUP_CMD} />
+        {hostedClient && <HostedClientDownload />}
+        <Step n={1} label={t(($) => $.cli_install.step1_label)} cmd={hostedClient ? HOSTED_INSTALL_COMMAND : INSTALL_CMD} />
+        <Step n={2} label={t(($) => $.cli_install.step2_label)} cmd={hostedClient ? HOSTED_SETUP_COMMAND : SETUP_CMD} />
       </CardContent>
     </Card>
   );

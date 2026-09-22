@@ -28,6 +28,8 @@ import { cn } from "@multica/ui/lib/utils";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
+import { HostedClientDownload, HOSTED_INSTALL_COMMAND, useHostedClient } from "./hosted-client-install";
+
 type Step = "instructions" | "success";
 
 const INSTALL_CMD =
@@ -235,6 +237,7 @@ function InstructionsStep({ onClose }: { onClose: () => void }) {
   const daemonServerUrl = useConfigStore((s) => s.daemonServerUrl);
   const daemonAppUrl = useConfigStore((s) => s.daemonAppUrl);
   const { setupCmd, tokenCmd } = daemonCommands(daemonServerUrl, daemonAppUrl);
+  const hostedClient = useHostedClient();
   return (
     <>
       <DialogHeader className="px-6 pt-6 pb-2">
@@ -248,10 +251,11 @@ function InstructionsStep({ onClose }: { onClose: () => void }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-4">
+          {hostedClient && <HostedClientDownload />}
           <CommandStep
             n={1}
             label={t(($) => $.connect.step1_label)}
-            cmd={INSTALL_CMD}
+            cmd={hostedClient ? HOSTED_INSTALL_COMMAND : INSTALL_CMD}
             copyAria={t(($) => $.connect.copy_aria)}
           />
 

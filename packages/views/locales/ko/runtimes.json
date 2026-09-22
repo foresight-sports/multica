@@ -1,4 +1,5 @@
 {
+  "hosted_client": {"download":"Windows 설치 프로그램 다운로드 (x64)","instructions":"추가할 컴퓨터에서 ZIP을 다운로드하고 압축을 푼 폴더에서 PowerShell을 여세요. 1단계를 실행하고 관리자가 제공한 공용 Cloudflare Client ID와 Secret을 입력하세요. 2단계는 새 터미널에서 실행하세요. Windows x64만 지원합니다."},
   "page": {
     "title": "런타임",
     "tagline": "에이전트의 CLI 세션을 실행하는 기기와 클라우드 워커입니다.",

@@ -55,3 +55,23 @@ Windows x64 binary ran successfully with --version; both PowerShell scripts
 passed parsing. The initial focused run had a process-tree cancellation timing
 failure; the full suite subsequently passed that daemon package. Live Cloudflare
 validation is pending operator configuration.
+
+## Hosted Add computer download
+
+For this deployment, Add computer and onboarding link to
+`https://multica.edgeofglory.dev/download/multica-cloudflare-windows-amd64.zip`.
+Download through the browser so its Cloudflare Access login applies. The ZIP
+contains the custom executable and both setup scripts, without service credentials.
+After extracting it, run the installer in PowerShell, then open a fresh terminal
+and run the self-host setup command shown in Multica.
+
+To publish an updated package, run `scripts/stage-cloudflare-client.ps1` and rebuild
+`Dockerfile.web`. The staging script rejects unexpected ZIP files/entries. The ZIP
+is a generated, gitignored artifact; it must be staged before building the web image.
+The `/download` prefix was already reserved for global routes. Existing Cloudflare
+Access policy protects the download; no public download exception is needed.
+
+Hosted download deployed in frontend permissions-v4. Type checking and linting
+passed (existing warnings only), along with all 7,322 frontend tests. The ZIP
+served through the tunnel proxy matched the release SHA-256. The public URL
+requires Cloudflare Access authentication. Backend remains permissions-v3.

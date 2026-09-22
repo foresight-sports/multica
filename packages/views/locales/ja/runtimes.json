@@ -1,4 +1,5 @@
 {
+  "hosted_client": {"download":"Windows インストーラーをダウンロード (x64)","instructions":"追加するコンピューターで ZIP をダウンロードして展開し、そのフォルダーで PowerShell を開きます。手順 1 を実行し、管理者から受け取った共通の Cloudflare Client ID と Secret を入力してください。手順 2 は新しいターミナルで実行します。Windows x64 のみ対応しています。"},
   "page": {
     "title": "ランタイム",
     "tagline": "エージェントの CLI セッションを実行するマシンとクラウドワーカーです。",
