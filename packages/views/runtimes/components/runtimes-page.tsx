@@ -90,6 +90,9 @@ export function RuntimesPage({
 }: RuntimesPageProps = {}) {
   const isAuthLoading = useAuthStore((state) => state.isLoading);
   const currentUserId = useAuthStore((state) => state.user?.id);
+  const canRegisterRuntimes = useAuthStore(
+    (state) => state.user?.permissions?.register_runtimes === true,
+  );
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const [showConnectDialog, setShowConnectDialog] = useState(false);
@@ -168,14 +171,14 @@ export function RuntimesPage({
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeaderBar
         totalCount={machines.length}
-        onConnectRemote={() => setShowConnectDialog(true)}
-        cloudRuntimeEnabled={cloudRuntimeEnabled}
+        onConnectRemote={canRegisterRuntimes ? () => setShowConnectDialog(true) : undefined}
+        cloudRuntimeEnabled={cloudRuntimeEnabled && canRegisterRuntimes}
         onOpenCloudRuntime={() => setShowCloudRuntimeDialog(true)}
       />
 
       {showEmpty ? (
         <div className="flex flex-1 items-center justify-center p-6">
-          <EmptyState onConnectRemote={() => setShowConnectDialog(true)} />
+          <EmptyState onConnectRemote={canRegisterRuntimes ? () => setShowConnectDialog(true) : undefined} />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -208,10 +211,10 @@ export function RuntimesPage({
         </div>
       )}
 
-      {showConnectDialog && (
+      {canRegisterRuntimes && showConnectDialog && (
         <ConnectRemoteDialog onClose={() => setShowConnectDialog(false)} />
       )}
-      {cloudRuntimeEnabled && showCloudRuntimeDialog && (
+      {canRegisterRuntimes && cloudRuntimeEnabled && showCloudRuntimeDialog && (
         <CloudRuntimeDialog onClose={() => setShowCloudRuntimeDialog(false)} />
       )}
     </div>
@@ -380,7 +383,7 @@ function PageHeaderBar({
   onOpenCloudRuntime,
 }: {
   totalCount: number;
-  onConnectRemote: () => void;
+  onConnectRemote?: () => void;
   cloudRuntimeEnabled: boolean;
   onOpenCloudRuntime: () => void;
 }) {
@@ -404,11 +407,13 @@ function PageHeaderBar({
               onClick={onOpenCloudRuntime}
             />
           )}
+          {onConnectRemote && (
           <CollectionPageHeaderAction
             icon={Plus}
             label={t(($) => $.page.connect_remote)}
             onClick={onConnectRemote}
           />
+          )}
         </>
       }
     />
@@ -553,18 +558,20 @@ function ProviderIconStack({ providers }: { providers: string[] }) {
   );
 }
 
-function EmptyState({ onConnectRemote }: { onConnectRemote: () => void }) {
+function EmptyState({ onConnectRemote }: { onConnectRemote?: () => void }) {
   const { t } = useT("runtimes");
   return (
     <CollectionPageState
       icon={Server}
       title={t(($) => $.page.empty.title)}
-      description={t(($) => $.page.empty.hint)}
+      description={onConnectRemote ? t(($) => $.page.empty.hint) : undefined}
       actions={
+        onConnectRemote && (
         <Button type="button" size="sm" onClick={onConnectRemote}>
           <Plus aria-hidden="true" className="size-3" />
           {t(($) => $.page.connect_remote)}
         </Button>
+        )
       }
     />
   );

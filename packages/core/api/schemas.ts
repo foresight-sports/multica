@@ -2406,6 +2406,9 @@ export const EMPTY_WEBHOOK_DELIVERY: WebhookDelivery = {
 // ---------------------------------------------------------------------------
 
 export const UserSchema = z.object({
+  permissions: z.object({
+    register_runtimes: z.boolean().catch(false),
+  }).catch({ register_runtimes: false }),
   id: z.string(),
   name: z.string().default(""),
   email: z.string().default(""),

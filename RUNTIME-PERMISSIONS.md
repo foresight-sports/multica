@@ -35,14 +35,17 @@ The deployment `.env` pins the backend independently from the frontend:
 
 ```
 MULTICA_BACKEND_IMAGE=multica-backend-foresight
-MULTICA_BACKEND_IMAGE_TAG=permissions-v1
+MULTICA_BACKEND_IMAGE_TAG=permissions-v2
+MULTICA_WEB_IMAGE=multica-web-foresight
+MULTICA_WEB_IMAGE_TAG=permissions-v2
 ```
 
 Build and deploy from this checkout:
 
 ```
-docker build -t multica-backend-foresight:permissions-v1 --build-arg VERSION=0.4.44-foresight.1 .
-docker compose -f docker-compose.selfhost.yml -f docker-compose.tunnel.yml --profile tunnel up -d --no-deps backend
+docker build -t multica-backend-foresight:permissions-v2 --build-arg VERSION=0.4.44-foresight.2 .
+docker build -f Dockerfile.web -t multica-web-foresight:permissions-v2 --build-arg NEXT_PUBLIC_APP_VERSION=0.4.44-foresight.2 .
+docker compose -f docker-compose.selfhost.yml -f docker-compose.tunnel.yml --profile tunnel up -d --no-deps backend frontend
 ```
 
 After changing allowed emails in `.env`, rerun the Compose command to apply it.
@@ -60,7 +63,7 @@ Stop its containers afterward with `docker compose -f docker-compose.permission-
 
 Rollback: set `MULTICA_BACKEND_IMAGE=ghcr.io/multica-ai/multica-backend` and
 `MULTICA_BACKEND_IMAGE_TAG=latest`, then recreate the backend. This removes the
-custom restriction; preserve the custom image if the policy must remain enforced.
+custom restriction; preserve the custom image if the policy must remain enforced. To also roll back the UI, restore MULTICA_WEB_IMAGE=ghcr.io/multica-ai/multica-web and MULTICA_WEB_IMAGE_TAG=latest, then recreate the frontend.
 
 ## Validation (2026-09-19)
 
@@ -71,3 +74,27 @@ custom restriction; preserve the custom image if the policy must remain enforced
 - Deployment confirmed the custom image and both policy environment values.
 - Backend health and origin login returned HTTP 200; Cloudflare had four ready connections.
 - The allowlisted account was not yet registered; it must sign in and join a workspace.
+
+## UI permission visibility (2026-09-22)
+
+User responses now include `permissions.register_runtimes`, computed by the
+backend from the same allowlist as registration. The shared Runtimes page hides
+both Add computer entry points and the setup dialog unless this value is true.
+Missing/malformed permissions deny visibility. Reload an existing browser tab
+after deployment so it loads the current frontend and refreshes the user data.
+The email allowlist is not exposed to browsers. Membership remains enforced by
+the registration endpoint.
+
+The deployment now pins both custom frontend and backend images. Rebuild both
+when upgrading. To reproduce frontend checks with Docker, build the deps target
+of Dockerfile.web as `multica-web-permission-deps`, then build
+Dockerfile.permission-web-test as `multica-web-permission-tests`. Web tests also
+need the checkout's apps/desktop/src and scripts mounted read-only at their
+corresponding /app paths (the production image intentionally omits them).
+Validation for the UI update: type checking and linting passed for the web/shared
+packages. All 7,311 frontend tests passed (web: 266; core: 1,886; views: 5,159).
+The backend handler suite passed. The full backend run had one unrelated
+context-cancellation timing failure in pkg/agent; that exact test passed five
+consecutive reruns. The new user-permission and registration tests also passed
+with race detection. Both deployed images use permissions-v2; backend health
+and origin login returned HTTP 200 and the tunnel had four ready connections.

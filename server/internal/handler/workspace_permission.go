@@ -40,11 +40,24 @@ func (h *Handler) requireWorkspacePermission(w http.ResponseWriter, r *http.Requ
 	}
 	// Use the persisted account email, never a request header or body field.
 	// Empty lists deny everyone; roles never bypass an explicit user policy.
-	for _, email := range allowedEmails {
-		if strings.TrimSpace(email) != "" && strings.EqualFold(strings.TrimSpace(email), user.Email) {
-			return member, true
-		}
+	if emailAllowedForPermission(user.Email, allowedEmails) {
+		return member, true
 	}
 	writeError(w, http.StatusForbidden, "you are not allowed to register runtimes; contact your administrator")
 	return db.Member{}, false
+}
+
+// runtimeRegistrationAllowed reports the account-level policy. Registration
+// also checks membership in the requested workspace before writing anything.
+func (h *Handler) runtimeRegistrationAllowed(email string) bool {
+	return !h.cfg.RuntimeRegistrationRestricted || emailAllowedForPermission(email, h.cfg.RuntimeRegistrationAllowedEmails)
+}
+
+func emailAllowedForPermission(email string, allowedEmails []string) bool {
+	for _, allowed := range allowedEmails {
+		if strings.TrimSpace(allowed) != "" && strings.EqualFold(strings.TrimSpace(allowed), email) {
+			return true
+		}
+	}
+	return false
 }

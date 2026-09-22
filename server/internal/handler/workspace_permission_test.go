@@ -66,3 +66,28 @@ func TestDaemonRegister_UserPolicy(t *testing.T) {
 		testutil.Call(t, h.DaemonRegister, newRequest(http.MethodPost, "/api/daemon/register", body)).Want(http.StatusForbidden)
 	})
 }
+
+func TestGetMeRuntimePermission(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		restricted bool
+		emails     []string
+		allowed    bool
+	}{
+		{"unrestricted", false, nil, true},
+		{"allowed", true, []string{" HANDLER-TEST@MULTICA.AI "}, true},
+		{"denied owner", true, []string{"test@foresightsports.com"}, false},
+		{"empty list", true, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := *testHandler
+			h.cfg.RuntimeRegistrationRestricted = tc.restricted
+			h.cfg.RuntimeRegistrationAllowedEmails = tc.emails
+			var response UserResponse
+			testutil.Call(t, h.GetMe, newRequest(http.MethodGet, "/api/me", nil)).Want(http.StatusOK).JSON(&response)
+			if response.Permissions.RegisterRuntimes != tc.allowed {
+				t.Fatalf("register_runtimes = %v, want %v", response.Permissions.RegisterRuntimes, tc.allowed)
+			}
+		})
+	}
+}

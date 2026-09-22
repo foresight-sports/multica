@@ -1,0 +1,4 @@
+FROM multica-web-permission-deps
+COPY packages/ packages/
+COPY apps/web/ apps/web/
+RUN pnpm install --frozen-lockfile --offline

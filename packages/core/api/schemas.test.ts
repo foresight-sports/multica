@@ -2268,3 +2268,17 @@ describe("TaskMessageListSchema", () => {
     expect(parsed[0]?.type).toBe("text");
   });
 });
+
+describe("UserSchema runtime permissions", () => {
+  it.each([undefined, null, {}, { register_runtimes: "true" }, { register_runtimes: false }])(
+    "denies missing or malformed capability %j",
+    (permissions) => {
+      const user = UserSchema.parse({ id: "user-1", permissions });
+      expect(user.permissions.register_runtimes).toBe(false);
+    },
+  );
+  it("preserves an explicit server grant", () => {
+    const user = UserSchema.parse({ id: "user-1", permissions: { register_runtimes: true } });
+    expect(user.permissions.register_runtimes).toBe(true);
+  });
+});

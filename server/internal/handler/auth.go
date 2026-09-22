@@ -60,12 +60,17 @@ var supportedLanguages = map[string]struct{}{
 	"ja":      {},
 }
 
+type UserPermissions struct {
+	RegisterRuntimes bool `json:"register_runtimes"`
+}
+
 type UserResponse struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Email     string  `json:"email"`
-	AvatarURL *string `json:"avatar_url"`
-	Language  *string `json:"language"`
+	Permissions UserPermissions `json:"permissions"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Email       string          `json:"email"`
+	AvatarURL   *string         `json:"avatar_url"`
+	Language    *string         `json:"language"`
 	// Pinned IANA tz; nil = no preference (use browser-detected tz).
 	Timezone                *string         `json:"timezone"`
 	OnboardedAt             *string         `json:"onboarded_at"`
@@ -91,6 +96,7 @@ func (h *Handler) userToResponse(u db.User) UserResponse {
 		q = []byte("{}")
 	}
 	return UserResponse{
+		Permissions:             UserPermissions{RegisterRuntimes: h.runtimeRegistrationAllowed(u.Email)},
 		ID:                      uuidToString(u.ID),
 		Name:                    u.Name,
 		Email:                   u.Email,
