@@ -1,5 +1,5 @@
 {
-  "hosted_client": {"download":"Download Windows installer (x64)","instructions":"Download on the computer you want to add, extract the ZIP, and open PowerShell in the extracted folder. Run step 1 and enter the shared Cloudflare Client ID and Secret supplied by your administrator. Then open a new terminal for step 2. Windows x64 only."},
+  "hosted_client": {"download":"Download Windows installer (x64)","instructions":"Paste step 1 into PowerShell on the Windows x64 computer you want to add. Enter the shared Cloudflare Client ID and Secret when prompted. The installer downloads and installs the client automatically. Then run step 2. You can also download the ZIP manually."},
   "page": {
     "title": "Runtimes",
     "tagline": "Machines and cloud workers running CLI sessions for your agents.",

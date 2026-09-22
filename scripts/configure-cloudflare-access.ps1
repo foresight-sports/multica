@@ -1,10 +1,14 @@
+param(
+    [string]$ClientId,
+    [System.Security.SecureString]$ClientSecret
+)
 $ErrorActionPreference = 'Stop'
 $directory = Join-Path $env:USERPROFILE '.multica'
 $path = Join-Path $directory 'cloudflare-access.json'
 New-Item -ItemType Directory -Force -Path $directory | Out-Null
-$clientId = Read-Host 'Cloudflare service token Client ID'
-$secureSecret = Read-Host 'Cloudflare service token Client Secret' -AsSecureString
-$secret = [System.Net.NetworkCredential]::new('', $secureSecret).Password
+if ([string]::IsNullOrWhiteSpace($ClientId)) { $ClientId = Read-Host 'Cloudflare service token Client ID' }
+if ($null -eq $ClientSecret) { $ClientSecret = Read-Host 'Cloudflare service token Client Secret' -AsSecureString }
+$secret = [System.Net.NetworkCredential]::new('', $ClientSecret).Password
 if ([string]::IsNullOrWhiteSpace($clientId) -or [string]::IsNullOrWhiteSpace($secret)) {
     throw 'Both Cloudflare credentials are required.'
 }

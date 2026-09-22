@@ -60,9 +60,13 @@ validation is pending operator configuration.
 
 For this deployment, Add computer and onboarding link to
 `https://multica.edgeofglory.dev/download/multica-cloudflare-windows-amd64.zip`.
-Download through the browser so its Cloudflare Access login applies. The ZIP
+Add computer now provides a PowerShell command that prompts for the shared token,
+fetches /download/install.ps1 with Service Auth headers, downloads and extracts the
+ZIP, verifies the executable checksum, and runs the installer. The token is entered
+once and passed to setup in memory. Redirects and unexpected HTML are rejected.
+The Cloudflare Service Auth policy must also cover /download/*. The ZIP
 contains the custom executable and both setup scripts, without service credentials.
-After extracting it, run the installer in PowerShell, then open a fresh terminal
+For manual ZIP downloads, extract and run the installer, then open a fresh terminal
 and run the self-host setup command shown in Multica.
 
 To publish an updated package, run `scripts/stage-cloudflare-client.ps1` and rebuild
@@ -75,3 +79,14 @@ Hosted download deployed in frontend permissions-v4. Type checking and linting
 passed (existing warnings only), along with all 7,322 frontend tests. The ZIP
 served through the tunnel proxy matched the release SHA-256. The public URL
 requires Cloudflare Access authentication. Backend remains permissions-v3.
+
+The copyable command changes execution policy for the current PowerShell process
+only. Credentials are prompted without embedding their values in command history.
+Run scripts/test-cloudflare-bootstrap.ps1 to verify the command using fake
+credentials and mocked network responses, without changing the installed client.
+
+Copy-and-paste installation deployed in frontend permissions-v5-final. Windows
+PowerShell bootstrap tests passed for authenticated downloads, credential handoff,
+HTML rejection, and corrupted executable rejection. Typecheck, lint and existing
+Add computer dialog tests passed. Hosted script and ZIP checksums were verified.
+Live service-token authentication still requires operator Cloudflare configuration.

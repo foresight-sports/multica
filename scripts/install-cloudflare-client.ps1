@@ -1,3 +1,7 @@
+param(
+    [string]$ClientId,
+    [System.Security.SecureString]$ClientSecret
+)
 $ErrorActionPreference = 'Stop'
 $source = Join-Path $PSScriptRoot 'multica.exe'
 if (!(Test-Path -LiteralPath $source)) { throw 'Extract the complete client ZIP before running this installer.' }
@@ -21,8 +25,8 @@ foreach ($setting in @(
 }
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (($userPath -split ';') -notcontains $bin) {
-    [Environment]::SetEnvironmentVariable('Path', ($userPath.TrimEnd(';') + ';' + $bin), 'User')
+    [Environment]::SetEnvironmentVariable('Path', (([string]$userPath).TrimEnd(';') + ';' + $bin), 'User')
 }
 $env:Path = $bin + ';' + $env:Path
-& (Join-Path $PSScriptRoot 'configure-cloudflare-access.ps1')
+& (Join-Path $PSScriptRoot 'configure-cloudflare-access.ps1') -ClientId $ClientId -ClientSecret $ClientSecret
 Write-Host 'Client installed. Open a new terminal, run multica login, then use Add computer in Multica.'
