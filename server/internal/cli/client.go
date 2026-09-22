@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/multica-ai/multica/server/internal/accessclient"
 )
 
 // ClientVersion is the CLI version sent on every request as X-Client-Version.
@@ -195,7 +197,7 @@ func NewAPIClient(baseURL, workspaceID, token string) *APIClient {
 		BaseURL:     strings.TrimRight(baseURL, "/"),
 		WorkspaceID: workspaceID,
 		Token:       token,
-		HTTPClient:  &http.Client{Timeout: httpTimeout()},
+		HTTPClient:  &http.Client{Timeout: httpTimeout(), Transport: accessclient.Transport(nil)},
 	}
 }
 

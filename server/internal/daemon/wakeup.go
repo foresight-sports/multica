@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/accessclient"
+
 	"github.com/gorilla/websocket"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -103,6 +105,9 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	}
 
 	headers := http.Header{}
+	if err := accessclient.Apply(wsURL, headers); err != nil {
+		return 0, err
+	}
 	if token := d.client.Token(); token != "" {
 		headers.Set("Authorization", "Bearer "+token)
 	}

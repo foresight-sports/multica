@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/accessclient"
+
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/remotemcp"
@@ -122,8 +124,8 @@ type Client struct {
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL:      baseURL,
-		client:       &http.Client{Timeout: 30 * time.Second, Transport: cloneDefaultTransport()},
-		bundleClient: &http.Client{},
+		client:       &http.Client{Timeout: 30 * time.Second, Transport: accessclient.Transport(cloneDefaultTransport())},
+		bundleClient: &http.Client{Transport: accessclient.Transport(nil)},
 		platform:     "daemon",
 		os:           normalizeGOOS(runtime.GOOS),
 	}
