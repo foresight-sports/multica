@@ -91,5 +91,9 @@ capability, and UI editor together; unknown actions are denied.
 - The final draft-preservation adjustment passed its focused API/UI tests and
   type/lint checks afterward.
 - Both permissions-v3 production images built successfully.
-- The running deployment remains on permissions-v2 pending the operator's
-  chosen manager email list. No new management access has been granted.
+- Deployed both permissions-v3 images with kpeterson@foresightsports.com as the
+  environment-configured permission manager. Runtime registration remains limited
+  to test@foresightsports.com until a manager saves a policy in Settings.
+- Backend health and the proxied login page returned HTTP 200. The policy table
+  and valid unique index exist; the Cloudflare connector reports four ready connections.
+- Environment and database backups were saved before deployment.
