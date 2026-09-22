@@ -1,4 +1,22 @@
 {
+  "permission_access": {
+  "saving": "正在保存…",
+  "runtime_title": "注册运行时",
+  "title": "权限管理",
+  "users": "允许的用户",
+  "empty": "列表为空时，任何人都无法注册运行时。",
+  "save": "保存权限",
+  "saved": "权限已保存",
+  "loading": "正在加载权限…",
+  "managers": "权限管理员由服务器管理员单独配置。",
+  "load_error": "无法加载权限。",
+  "denied": "只有已配置的权限管理员才能访问此页面。",
+  "hint": "每行输入一个邮箱地址，也可用逗号分隔。保存后立即生效。",
+  "unrestricted": "目前注册不受限制。保存此列表后，仅列表中的用户可以注册。",
+  "reload": "重新加载",
+  "description": "管理此 Multica 实例中所有工作区的受限操作权限。",
+  "runtime_description": "选择谁可以添加计算机并注册 AI 运行时。用户还必须是工作区成员。"
+},
   "issue_statuses": {
     "title": "任务状态",
     "description": "用四个生命周期分类组织任务状态。",

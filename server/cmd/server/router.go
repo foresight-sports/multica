@@ -418,6 +418,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	origins := allowedOrigins()
 
 	signupConfig := handler.Config{
+		PermissionManagerEmails:          splitAndTrim(os.Getenv("MULTICA_PERMISSION_MANAGER_EMAILS")),
 		AllowSignup:                      os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:                    splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:              splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
@@ -1546,6 +1547,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// no workspace in the path to gate on.
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
+		r.With(handler.RequireHumanActor).Get("/api/permission-policies/runtime-register", h.GetRuntimePermissionPolicy)
+		r.With(handler.RequireHumanActor).Put("/api/permission-policies/runtime-register", h.UpdateRuntimePermissionPolicy)
 		r.Patch("/api/me", h.UpdateMe)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)

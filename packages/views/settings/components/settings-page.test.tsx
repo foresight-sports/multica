@@ -223,3 +223,9 @@ describe("SettingsPage information architecture", () => {
     expect(push).toHaveBeenCalledWith("/acme/settings?tab=preferences&keep=1");
   });
 });
+
+vi.mock("./permission-access-tab", stub("PermissionAccessTab"));
+vi.mock("@multica/core/auth", async () => {
+  const { create } = await import("zustand");
+  return { useAuthStore: create(() => ({ user: { permissions: { manage_permission_access: false } } })) };
+});

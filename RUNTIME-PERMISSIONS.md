@@ -1,100 +1,95 @@
-# Operator policy: runtime registration
+# Permission access
 
-Set these values in `.env` and recreate the backend:
+## Who manages access
+
+Set a comma-separated list of manager account emails in the deployment `.env`:
+
+```
+MULTICA_PERMISSION_MANAGER_EMAILS=manager@example.com,another@example.com
+```
+
+Recreate the backend after changing this operator-only list. An empty list gives
+nobody management access. Workspace roles do not bypass it. The UI cannot change
+this list or grant permission-management access. Listed accounts must sign in
+normally; adding an address does not create an account or bypass signup rules.
+
+Managers see **Settings → Permission access** (`?tab=permissions`) in web and
+shared desktop settings. The page manages runtime registration across the entire
+installation, not just the currently selected workspace.
+
+## Runtime registration
+
+The page accepts one email per line (commas also work). Save explicitly to apply
+changes immediately. Emails are validated, normalized, and deduplicated. Empty
+lists deny everyone. Users also need membership in the target workspace.
+Owners/admins have no exception. A manager can edit this list without having
+permission to register runtimes themselves.
+
+Before the first UI save, these existing environment values supply the policy:
 
 ```
 MULTICA_RUNTIME_REGISTRATION_RESTRICTED=true
 MULTICA_RUNTIME_REGISTRATION_ALLOWED_EMAILS=test@foresightsports.com
 ```
 
-The email list is comma-separated and compared case-insensitively against the
-persisted account email. The authenticated user must also be a member of the
-requested workspace. Owners and admins have no exemption. An empty list with
-the restriction enabled denies everyone. With the restriction disabled,
-upstream registration behavior is preserved.
+After the first save, the database row is authoritative and survives restarts.
+Changing the bootstrap values no longer overrides saved rules. Each save records
+the editor, time, and revision. Conflicting edits return 409 and require reloading;
+failed saves retain the draft. A database failure denies registration.
 
-This guards POST /api/daemon/register, including repeat registration and custom
-profile registration. Enroll daemons using an allowed user's PAT/login. Machine
-(mdt_) credentials alone cannot register while restricted. Existing runtime
-heartbeats and task execution are unchanged; this policy does not revoke existing
-runtimes. Managed Cloud provisioning is a separate service and is not configured
-on this installation. Custom profile editing retains upstream role permissions.
+The registration endpoint checks every attempt, including custom profiles and
+re-registration. Use an allowed user's login/PAT; machine-only daemon tokens
+cannot enroll while restricted. Existing runtime heartbeats and execution are
+unchanged. This does not revoke existing runtimes or change custom-profile editing
+permissions. Managed Cloud provisioning is a separate, unconfigured service.
 
-The shared `requireWorkspacePermission` helper in
-`server/internal/handler/workspace_permission.go` is the extension point for
-future action-specific user lists. Unknown permission names deny access. Keep
-membership and persisted identity checks for every additional action.
+User responses expose only computed booleans, not email lists. The Runtimes page
+hides Add computer without a grant. Reload existing tabs to refresh account
+permissions after another manager changes access.
 
-This deployment uses a custom backend image. Upstream images do not contain this
-policy. Rebase and rebuild the custom image when upgrading; do not replace it
-with `latest`. No database migration is required for this change.
+## Build and deployment
 
-## Deployment and updates
-
-The deployment `.env` pins the backend independently from the frontend:
+Both custom images must be preserved during upgrades:
 
 ```
 MULTICA_BACKEND_IMAGE=multica-backend-foresight
-MULTICA_BACKEND_IMAGE_TAG=permissions-v2
+MULTICA_BACKEND_IMAGE_TAG=permissions-v3
 MULTICA_WEB_IMAGE=multica-web-foresight
-MULTICA_WEB_IMAGE_TAG=permissions-v2
+MULTICA_WEB_IMAGE_TAG=permissions-v3
 ```
 
-Build and deploy from this checkout:
-
 ```
-docker build -t multica-backend-foresight:permissions-v2 --build-arg VERSION=0.4.44-foresight.2 .
-docker build -f Dockerfile.web -t multica-web-foresight:permissions-v2 --build-arg NEXT_PUBLIC_APP_VERSION=0.4.44-foresight.2 .
+docker build -t multica-backend-foresight:permissions-v3 --build-arg VERSION=0.4.44-foresight.3 .
+docker build -f Dockerfile.web -t multica-web-foresight:permissions-v3 --build-arg NEXT_PUBLIC_APP_VERSION=0.4.44-foresight.3 .
 docker compose -f docker-compose.selfhost.yml -f docker-compose.tunnel.yml --profile tunnel up -d --no-deps backend frontend
 ```
 
-After changing allowed emails in `.env`, rerun the Compose command to apply it.
-Changes are operator-managed; no new settings UI is included.
+The backend applies migrations 491/492 (policy table and concurrent unique index).
+No existing application data is rewritten. Rebase the custom code and rebuild
+both images for future upgrades. Upstream images do not enforce these rules.
+Rolling back to permissions-v2 reverts to the environment-based runtime policy;
+it leaves the stored policy intact but does not enforce edits made through this page.
 
-For isolated verification on this Windows host (Go/make are supplied by Docker):
+## Verification
 
-```
-docker compose -f docker-compose.permission-test.yml run --rm tests
-```
+Backend checks use an isolated database through
+`docker compose -f docker-compose.permission-test.yml run --rm tests` (`make test`
+with race detection). Run sqlc generation with `ENV_FILE=env.permission-test`, not
+the production `.env`. Frontend checks use Dockerfile.permission-web-test after
+building Dockerfile.web's deps target as multica-web-permission-deps; mount
+apps/desktop/src and scripts read-only at the matching /app paths for web fixtures.
 
-The test Compose project has its own PostgreSQL instance and uses
-`env.permission-test` with `make test`. It never connects to the production DB.
-Stop its containers afterward with `docker compose -f docker-compose.permission-test.yml down`.
+The shared workspace permission gate and action-keyed policy table can be extended
+for future restrictions. Add a named policy, server enforcement, computed user
+capability, and UI editor together; unknown actions are denied.
 
-Rollback: set `MULTICA_BACKEND_IMAGE=ghcr.io/multica-ai/multica-backend` and
-`MULTICA_BACKEND_IMAGE_TAG=latest`, then recreate the backend. This removes the
-custom restriction; preserve the custom image if the policy must remain enforced. To also roll back the UI, restore MULTICA_WEB_IMAGE=ghcr.io/multica-ai/multica-web and MULTICA_WEB_IMAGE_TAG=latest, then recreate the frontend.
+## Verification status (2026-09-22)
 
-## Validation (2026-09-19)
-
-- Full `make test` passed with race detection in the isolated, non-root Docker environment.
-- Registration regression cases cover allowed and denied members/admins/owners,
-  an empty allowlist, cross-workspace membership, and forged user headers on
-  daemon-token requests. Existing daemon registration tests also passed.
-- Deployment confirmed the custom image and both policy environment values.
-- Backend health and origin login returned HTTP 200; Cloudflare had four ready connections.
-- The allowlisted account was not yet registered; it must sign in and join a workspace.
-
-## UI permission visibility (2026-09-22)
-
-User responses now include `permissions.register_runtimes`, computed by the
-backend from the same allowlist as registration. The shared Runtimes page hides
-both Add computer entry points and the setup dialog unless this value is true.
-Missing/malformed permissions deny visibility. Reload an existing browser tab
-after deployment so it loads the current frontend and refreshes the user data.
-The email allowlist is not exposed to browsers. Membership remains enforced by
-the registration endpoint.
-
-The deployment now pins both custom frontend and backend images. Rebuild both
-when upgrading. To reproduce frontend checks with Docker, build the deps target
-of Dockerfile.web as `multica-web-permission-deps`, then build
-Dockerfile.permission-web-test as `multica-web-permission-tests`. Web tests also
-need the checkout's apps/desktop/src and scripts mounted read-only at their
-corresponding /app paths (the production image intentionally omits them).
-Validation for the UI update: type checking and linting passed for the web/shared
-packages. All 7,311 frontend tests passed (web: 266; core: 1,886; views: 5,159).
-The backend handler suite passed. The full backend run had one unrelated
-context-cancellation timing failure in pkg/agent; that exact test passed five
-consecutive reruns. The new user-permission and registration tests also passed
-with race detection. Both deployed images use permissions-v2; backend health
-and origin login returned HTTP 200 and the tunnel had four ready connections.
+- Full backend `make test` passed with race detection.
+- Frontend type checking and linting passed (existing warnings only).
+- All 7,322 frontend tests passed: 266 web, 1,894 core, 5,162 shared views.
+- The final draft-preservation adjustment passed its focused API/UI tests and
+  type/lint checks afterward.
+- Both permissions-v3 production images built successfully.
+- The running deployment remains on permissions-v2 pending the operator's
+  chosen manager email list. No new management access has been granted.

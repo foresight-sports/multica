@@ -50,7 +50,7 @@ export interface Member {
 
 export interface User {
   /** Server-computed account permissions; workspace membership is still required. */
-  permissions?: { register_runtimes: boolean };
+  permissions?: { register_runtimes: boolean; manage_permission_access?: boolean };
   id: string;
   name: string;
   email: string;

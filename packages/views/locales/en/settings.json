@@ -1,4 +1,22 @@
 {
+  "permission_access": {
+  "saving": "Saving…",
+  "runtime_title": "Register runtimes",
+  "title": "Permission access",
+  "users": "Allowed users",
+  "empty": "An empty list blocks everyone from registering runtimes.",
+  "save": "Save access",
+  "saved": "Permission access saved",
+  "loading": "Loading permission access…",
+  "managers": "Permission managers are configured separately by the server operator.",
+  "load_error": "Could not load permission access.",
+  "denied": "Only configured permission managers can access this page.",
+  "hint": "Enter one email address per line. Commas also work. Changes take effect when you save.",
+  "unrestricted": "Registration is currently unrestricted. Saving this list limits registration to the listed users.",
+  "reload": "Reload latest",
+  "description": "Manage who can perform restricted actions across all workspaces in this Multica installation.",
+  "runtime_description": "Choose who can add computers and register their AI runtimes. Users must also belong to the workspace."
+},
   "issue_statuses": {
     "title": "Issue Statuses",
     "description": "Organize issue statuses into four lifecycle categories.",

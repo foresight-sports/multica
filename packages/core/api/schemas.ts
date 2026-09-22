@@ -2408,7 +2408,8 @@ export const EMPTY_WEBHOOK_DELIVERY: WebhookDelivery = {
 export const UserSchema = z.object({
   permissions: z.object({
     register_runtimes: z.boolean().catch(false),
-  }).catch({ register_runtimes: false }),
+    manage_permission_access: z.boolean().catch(false),
+  }).catch({ register_runtimes: false, manage_permission_access: false }),
   id: z.string(),
   name: z.string().default(""),
   email: z.string().default(""),
@@ -3403,3 +3404,11 @@ export const EMPTY_JOIN_SHARE_LINK_RESPONSE: {
   workspace_id: "",
   workspace_slug: "",
 };
+
+export const RuntimePermissionPolicySchema = z.object({
+  action: z.literal("runtime.register"),
+  allowed_emails: z.array(z.string().email()),
+  restricted: z.boolean(),
+  revision: z.number().int().nonnegative(),
+});
+export type RuntimePermissionPolicy = z.infer<typeof RuntimePermissionPolicySchema>;

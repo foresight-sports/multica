@@ -326,6 +326,8 @@ import {
   TaskMessageListSchema,
   TimelineEntriesSchema,
   UserSchema,
+  RuntimePermissionPolicySchema,
+  type RuntimePermissionPolicy,
   WebhookDeliveryResponseSchema,
   BillingBalanceSchema,
   BillingTransactionsPageSchema,
@@ -817,6 +819,26 @@ export class ApiClient {
 
   async issueCliToken(): Promise<{ token: string }> {
     return this.fetch("/api/cli-token", { method: "POST" });
+  }
+
+  async getRuntimePermissionPolicy(): Promise<RuntimePermissionPolicy> {
+    const raw = await this.fetch<unknown>("/api/permission-policies/runtime-register");
+    const policy = parseWithFallback<RuntimePermissionPolicy | null>(raw, RuntimePermissionPolicySchema, null, {
+      endpoint: "GET /api/permission-policies/runtime-register",
+    });
+    if (!policy) throw new Error("Could not read permission access. Please reload.");
+    return policy;
+  }
+
+  async updateRuntimePermissionPolicy(data: Pick<RuntimePermissionPolicy, "allowed_emails" | "revision">): Promise<RuntimePermissionPolicy> {
+    const raw = await this.fetch<unknown>("/api/permission-policies/runtime-register", {
+      method: "PUT", body: JSON.stringify(data),
+    });
+    const policy = parseWithFallback<RuntimePermissionPolicy | null>(raw, RuntimePermissionPolicySchema, null, {
+      endpoint: "PUT /api/permission-policies/runtime-register",
+    });
+    if (!policy) throw new Error("Could not confirm the saved permission access. Please reload.");
+    return policy;
   }
 
   async getMe(): Promise<User> {

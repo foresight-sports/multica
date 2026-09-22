@@ -66,6 +66,7 @@ type dbExecutor interface {
 }
 
 type Config struct {
+	PermissionManagerEmails []string
 	// RuntimeRegistrationRestricted restricts runtime enrollment to explicitly listed users.
 	RuntimeRegistrationRestricted    bool
 	RuntimeRegistrationAllowedEmails []string

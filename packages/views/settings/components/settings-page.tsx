@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { useAuthStore } from "@multica/core/auth";
+import { PermissionAccessTab } from "./permission-access-tab";
 import {
   ChevronRight,
   User,
@@ -63,6 +65,7 @@ type SettingsEntry = ExtraSettingsTab & { wide?: boolean };
 
 export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
   const { t } = useT("settings");
+  const canManagePermissions = useAuthStore((state) => state.user?.permissions?.manage_permission_access === true);
   const workspaceName =
     useCurrentWorkspace()?.name ?? t(($) => $.page.workspace_fallback);
   const navigation = useNavigation();
@@ -133,6 +136,7 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
           Users,
           <MembersTab />,
         ),
+        ...(canManagePermissions ? [entry("permissions", t(($) => $.permission_access.title), Key, <PermissionAccessTab />)] : []),
         ...(billingEnabled
           ? [
               entry(

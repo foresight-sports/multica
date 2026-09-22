@@ -2736,3 +2736,20 @@ describe("ApiClient session expiry", () => {
     expect(storage.getItem("multica_token")).toBeNull();
   });
 });
+
+describe("ApiClient permission access", () => {
+  it("rejects malformed policy responses rather than showing an editable default", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ allowed_emails: "wrong" }), { status: 200 })));
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.getRuntimePermissionPolicy()).rejects.toThrow("Could not read permission access");
+  });
+  it("sends only the user list and current revision", async () => {
+    const policy = { action: "runtime.register", allowed_emails: ["test@foresightsports.com"], restricted: true, revision: 3 };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(policy), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    const result = await client.updateRuntimePermissionPolicy({ allowed_emails: policy.allowed_emails, revision: 2 });
+    expect(result.revision).toBe(3);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ allowed_emails: policy.allowed_emails, revision: 2 });
+  });
+});

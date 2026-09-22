@@ -59,6 +59,7 @@ import {
   SourceContextPreviewSchema,
   TimelineEntriesSchema,
   UserSchema,
+  RuntimePermissionPolicySchema,
   PluginInstallationSchema,
   PluginInstallationListResponseSchema,
   PluginMCPToolListSchema,
@@ -1006,6 +1007,7 @@ describe("UserSchema timezone drift", () => {
     const parsed = parseWithFallback(
       { ...base, timezone: 42 },
       UserSchema,
+
       EMPTY_USER,
       { endpoint: "GET /api/me" },
     );
@@ -2280,5 +2282,17 @@ describe("UserSchema runtime permissions", () => {
   it("preserves an explicit server grant", () => {
     const user = UserSchema.parse({ id: "user-1", permissions: { register_runtimes: true } });
     expect(user.permissions.register_runtimes).toBe(true);
+  });
+});
+
+describe("RuntimePermissionPolicySchema", () => {
+  const valid = { action: "runtime.register", allowed_emails: [], restricted: true, revision: 0 };
+  it("accepts an explicitly empty deny-all policy", () => { expect(RuntimePermissionPolicySchema.parse(valid)).toEqual(valid); });
+  it.each([
+    { ...valid, allowed_emails: ["bad"] }, { ...valid, revision: -1 },
+    { ...valid, action: "unknown" }, { ...valid, allowed_emails: null },
+  ])("rejects malformed policy data", (value) => { expect(RuntimePermissionPolicySchema.safeParse(value).success).toBe(false); });
+  it("does not grant management on malformed account permissions", () => {
+    expect(UserSchema.parse({ id: "user", permissions: { manage_permission_access: "true" } }).permissions.manage_permission_access).toBe(false);
   });
 });

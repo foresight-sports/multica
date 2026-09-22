@@ -1070,6 +1070,14 @@ type NotificationPreference struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type PermissionPolicy struct {
+	Action        string             `json:"action"`
+	AllowedEmails []string           `json:"allowed_emails"`
+	Revision      int64              `json:"revision"`
+	UpdatedBy     pgtype.UUID        `json:"updated_by"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type PersonalAccessToken struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -15,13 +16,17 @@ type workspacePermission string
 const permissionRegisterRuntime workspacePermission = "runtime.register"
 
 func (h *Handler) requireWorkspacePermission(w http.ResponseWriter, r *http.Request, workspaceID string, permission workspacePermission) (db.Member, bool) {
-	var allowedEmails []string
-	switch permission {
-	case permissionRegisterRuntime:
-		allowedEmails = h.cfg.RuntimeRegistrationAllowedEmails
-	default:
+	if permission != permissionRegisterRuntime {
 		writeError(w, http.StatusForbidden, "unknown workspace permission")
 		return db.Member{}, false
+	}
+	policy, err := h.runtimePermissionPolicy(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not check runtime registration access")
+		return db.Member{}, false
+	}
+	if !policy.Restricted {
+		return db.Member{}, true
 	}
 	// Machine credentials do not prove a user's identity. In particular, do
 	// not trust X-User-ID supplied by the client on the daemon-token path.
@@ -40,7 +45,7 @@ func (h *Handler) requireWorkspacePermission(w http.ResponseWriter, r *http.Requ
 	}
 	// Use the persisted account email, never a request header or body field.
 	// Empty lists deny everyone; roles never bypass an explicit user policy.
-	if emailAllowedForPermission(user.Email, allowedEmails) {
+	if emailAllowedForPermission(user.Email, policy.AllowedEmails) {
 		return member, true
 	}
 	writeError(w, http.StatusForbidden, "you are not allowed to register runtimes; contact your administrator")
@@ -49,8 +54,9 @@ func (h *Handler) requireWorkspacePermission(w http.ResponseWriter, r *http.Requ
 
 // runtimeRegistrationAllowed reports the account-level policy. Registration
 // also checks membership in the requested workspace before writing anything.
-func (h *Handler) runtimeRegistrationAllowed(email string) bool {
-	return !h.cfg.RuntimeRegistrationRestricted || emailAllowedForPermission(email, h.cfg.RuntimeRegistrationAllowedEmails)
+func (h *Handler) runtimeRegistrationAllowed(ctx context.Context, email string) bool {
+	policy, err := h.runtimePermissionPolicy(ctx)
+	return err == nil && (!policy.Restricted || emailAllowedForPermission(email, policy.AllowedEmails))
 }
 
 func emailAllowedForPermission(email string, allowedEmails []string) bool {

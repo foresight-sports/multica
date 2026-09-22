@@ -61,7 +61,8 @@ var supportedLanguages = map[string]struct{}{
 }
 
 type UserPermissions struct {
-	RegisterRuntimes bool `json:"register_runtimes"`
+	ManagePermissionAccess bool `json:"manage_permission_access"`
+	RegisterRuntimes       bool `json:"register_runtimes"`
 }
 
 type UserResponse struct {
@@ -87,7 +88,7 @@ type UserResponse struct {
 // doesn't move the needle on prompt cost.
 const MaxProfileDescriptionLen = 2000
 
-func (h *Handler) userToResponse(u db.User) UserResponse {
+func (h *Handler) userToResponse(ctx context.Context, u db.User) UserResponse {
 	// JSONB column is []byte with DEFAULT '{}', so it's never nil at the DB
 	// level. Defensive coalesce just in case a future ALTER makes the column
 	// nullable and some row comes back with no default applied.
@@ -96,7 +97,7 @@ func (h *Handler) userToResponse(u db.User) UserResponse {
 		q = []byte("{}")
 	}
 	return UserResponse{
-		Permissions:             UserPermissions{RegisterRuntimes: h.runtimeRegistrationAllowed(u.Email)},
+		Permissions:             UserPermissions{RegisterRuntimes: h.runtimeRegistrationAllowed(ctx, u.Email), ManagePermissionAccess: emailAllowedForPermission(u.Email, h.cfg.PermissionManagerEmails)},
 		ID:                      uuidToString(u.ID),
 		Name:                    u.Name,
 		Email:                   u.Email,
@@ -461,7 +462,7 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	slog.Info("user logged in", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
 	writeJSON(w, http.StatusOK, LoginResponse{
 		Token: tokenString,
-		User:  h.userToResponse(user),
+		User:  h.userToResponse(r.Context(), user),
 	})
 }
 
@@ -483,7 +484,7 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.userToResponse(user))
+	writeJSON(w, http.StatusOK, h.userToResponse(r.Context(), user))
 }
 
 type UpdateMeRequest struct {
@@ -722,7 +723,7 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	slog.Info("user logged in via google", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
 	writeJSON(w, http.StatusOK, LoginResponse{
 		Token: tokenString,
-		User:  h.userToResponse(user),
+		User:  h.userToResponse(r.Context(), user),
 	})
 }
 
@@ -838,5 +839,5 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.userToResponse(updatedUser))
+	writeJSON(w, http.StatusOK, h.userToResponse(r.Context(), updatedUser))
 }

@@ -19,3 +19,4 @@ export {
   useSkillPermissions,
 } from "./use-resource-permissions";
 export { useCurrentMember } from "./use-current-member";
+export { permissionPolicyKey, runtimePermissionPolicyOptions, useUpdateRuntimePermissionPolicy } from "./runtime-policy";

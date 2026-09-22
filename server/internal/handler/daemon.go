@@ -430,10 +430,8 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	req.WorkspaceID = uuidToString(wsUUID)
 
-	if h.cfg.RuntimeRegistrationRestricted {
-		if _, ok := h.requireWorkspacePermission(w, r, req.WorkspaceID, permissionRegisterRuntime); !ok {
-			return
-		}
+	if _, ok := h.requireWorkspacePermission(w, r, req.WorkspaceID, permissionRegisterRuntime); !ok {
+		return
 	}
 
 	// Verify workspace access and resolve owner.
