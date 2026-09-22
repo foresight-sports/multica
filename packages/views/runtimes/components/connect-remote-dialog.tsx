@@ -28,7 +28,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
-import { HostedClientDownload, HOSTED_INSTALL_COMMAND, useHostedClient } from "./hosted-client-install";
+import { HostedClientInstall, useHostedClient } from "./hosted-client-install";
 
 type Step = "instructions" | "success";
 
@@ -251,13 +251,8 @@ function InstructionsStep({ onClose }: { onClose: () => void }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-4">
-          {hostedClient && <HostedClientDownload />}
-          <CommandStep
-            n={1}
-            label={t(($) => $.connect.step1_label)}
-            cmd={hostedClient ? HOSTED_INSTALL_COMMAND : INSTALL_CMD}
-            copyAria={t(($) => $.connect.copy_aria)}
-          />
+
+          {hostedClient ? <HostedClientInstall /> : (<CommandStep n={1} label={t(($) => $.connect.step1_label)} cmd={INSTALL_CMD} copyAria={t(($) => $.connect.copy_aria)} />)}
 
           <div>
             <CommandStep

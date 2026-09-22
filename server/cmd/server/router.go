@@ -419,6 +419,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	signupConfig := handler.Config{
 		PermissionManagerEmails:          splitAndTrim(os.Getenv("MULTICA_PERMISSION_MANAGER_EMAILS")),
+		CloudflareClientID:               os.Getenv("MULTICA_CLOUDFLARE_CLIENT_ID"),
+		CloudflareClientSecret:           os.Getenv("MULTICA_CLOUDFLARE_CLIENT_SECRET"),
 		AllowSignup:                      os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:                    splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:              splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
@@ -1548,6 +1550,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.With(handler.RequireHumanActor).Get("/api/permission-policies/runtime-register", h.GetRuntimePermissionPolicy)
+		r.With(handler.RequireHumanActor).Get("/api/runtime-installation", h.GetRuntimeInstallation)
 		r.With(handler.RequireHumanActor).Put("/api/permission-policies/runtime-register", h.UpdateRuntimePermissionPolicy)
 		r.Patch("/api/me", h.UpdateMe)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)

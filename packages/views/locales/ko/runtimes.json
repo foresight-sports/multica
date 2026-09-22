@@ -1,5 +1,5 @@
 {
-  "hosted_client": {"download":"Windows 설치 프로그램 다운로드 (x64)","instructions":"추가할 Windows x64 컴퓨터의 PowerShell에 1단계를 붙여 넣으세요. 메시지가 표시되면 공용 Cloudflare Client ID와 Secret을 입력하세요. 클라이언트가 자동으로 다운로드되고 설치됩니다. 그런 다음 2단계를 실행하세요. ZIP을 직접 다운로드할 수도 있습니다."},
+  "hosted_client": {"denied":"컴퓨터를 등록할 권한이 없습니다.","copied":"복사됨","instructions":"추가할 Windows x64 컴퓨터의 PowerShell에 1단계를 붙여 넣으세요. 공용 Cloudflare 인증 정보가 포함되어 있으며 클라이언트가 자동으로 설치됩니다. 그런 다음 2단계를 실행하세요.","unavailable":"설치 프로그램을 사용할 수 없습니다. 관리자에게 Cloudflare 토큰 설정을 요청하거나 권한을 확인하고 다시 시도하세요.","retry":"다시 시도","loading":"설치 명령 준비 중..."},
   "page": {
     "title": "런타임",
     "tagline": "에이전트의 CLI 세션을 실행하는 기기와 클라우드 워커입니다.",

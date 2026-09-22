@@ -26,3 +26,14 @@ export function useUpdateRuntimePermissionPolicy(userId: string) {
     },
   });
 }
+
+export function runtimeInstallationOptions(userId: string, enabled: boolean) {
+  return queryOptions({
+    queryKey: ["runtime-installation", userId],
+    queryFn: () => api.getRuntimeInstallation(),
+    enabled: enabled && !!userId,
+    gcTime: 0,
+    staleTime: 0,
+    retry: false,
+  });
+}

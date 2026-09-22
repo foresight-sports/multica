@@ -327,6 +327,7 @@ import {
   TimelineEntriesSchema,
   UserSchema,
   RuntimePermissionPolicySchema,
+  RuntimeInstallationSchema,
   type RuntimePermissionPolicy,
   WebhookDeliveryResponseSchema,
   BillingBalanceSchema,
@@ -821,6 +822,14 @@ export class ApiClient {
     return this.fetch("/api/cli-token", { method: "POST" });
   }
 
+  async getRuntimeInstallation(): Promise<{ command: string }> {
+    const raw = await this.fetch<unknown>("/api/runtime-installation", { cache: "no-store" });
+    const result = parseWithFallback<{ command: string } | null>(raw, RuntimeInstallationSchema, null, {
+      endpoint: "GET /api/runtime-installation", sensitive: true,
+    });
+    if (!result) throw new Error("Could not load runtime installer");
+    return result;
+  }
   async getRuntimePermissionPolicy(): Promise<RuntimePermissionPolicy> {
     const raw = await this.fetch<unknown>("/api/permission-policies/runtime-register");
     const policy = parseWithFallback<RuntimePermissionPolicy | null>(raw, RuntimePermissionPolicySchema, null, {

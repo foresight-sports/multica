@@ -15,8 +15,7 @@ if ($ClientId -ne 'test-id' -or [Net.NetworkCredential]::new('', $ClientSecret).
 $script:fixtureArchive = Join-Path $fixture 'fixture.zip'
 Compress-Archive -Path ($payload + '\*') -DestinationPath $script:fixtureArchive
 $bootstrap = [IO.File]::ReadAllText((Join-Path $repo 'apps/web/public/download/install.ps1'))
-$ts = [IO.File]::ReadAllText((Join-Path $repo 'packages/views/runtimes/components/hosted-client-install.tsx'))
-$command = ([regex]::Match($ts, 'String.raw`(.*?)`;')).Groups[1].Value.Replace('${HOSTED_ORIGIN}', 'https://multica.edgeofglory.dev')
+$command = [IO.File]::ReadAllText((Join-Path $repo 'server/internal/handler/runtime_install_command.ps1')).Replace('{{CLIENT_ID}}', "'test-id'").Replace('{{CLIENT_SECRET}}', "'test-secret'")
 if (!$command) { throw 'Copyable command not found' }
 function Read-Host {
     param($Prompt, [switch]$AsSecureString)

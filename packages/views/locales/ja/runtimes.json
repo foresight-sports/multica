@@ -1,5 +1,5 @@
 {
-  "hosted_client": {"download":"Windows インストーラーをダウンロード (x64)","instructions":"追加する Windows x64 コンピューターの PowerShell に手順 1 を貼り付けます。共通の Cloudflare Client ID と Secret を入力すると、クライアントが自動的にダウンロードされ、インストールされます。その後、手順 2 を実行してください。ZIP を手動でダウンロードすることもできます。"},
+  "hosted_client": {"denied":"コンピューターを登録する権限がありません。","copied":"コピーしました","instructions":"追加する Windows x64 コンピューターの PowerShell に手順 1 を貼り付けてください。共通の Cloudflare 認証情報が含まれ、クライアントが自動的にインストールされます。その後、手順 2 を実行してください。","unavailable":"インストーラーを利用できません。管理者に Cloudflare トークンの設定を依頼するか、権限を確認して再試行してください。","retry":"再試行","loading":"インストールコマンドを準備中..."},
   "page": {
     "title": "ランタイム",
     "tagline": "エージェントの CLI セッションを実行するマシンとクラウドワーカーです。",

@@ -3412,3 +3412,4 @@ export const RuntimePermissionPolicySchema = z.object({
   revision: z.number().int().nonnegative(),
 });
 export type RuntimePermissionPolicy = z.infer<typeof RuntimePermissionPolicySchema>;
+export const RuntimeInstallationSchema = z.object({ command: z.string().min(1) });

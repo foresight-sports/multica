@@ -1,5 +1,5 @@
 {
-  "hosted_client": {"download":"下载 Windows 安装程序 (x64)","instructions":"在要添加的 Windows x64 电脑上打开 PowerShell，粘贴第 1 步命令。按提示输入共享 Cloudflare Client ID 和 Secret，安装程序会自动下载并安装客户端。然后执行第 2 步。也可以手动下载 ZIP。"},
+  "hosted_client": {"denied":"你没有注册电脑的权限。","copied":"已复制","instructions":"在要添加的 Windows x64 电脑的 PowerShell 中粘贴第 1 步命令。命令已包含共享 Cloudflare 凭据，会自动安装客户端。然后执行第 2 步。","unavailable":"安装程序不可用。请让管理员配置 Cloudflare 令牌，或检查权限后重试。","retry":"重试","loading":"正在准备安装命令..."},
   "page": {
     "title": "运行时",
     "tagline": "为智能体跑 CLI 会话的机器和云端 worker。",

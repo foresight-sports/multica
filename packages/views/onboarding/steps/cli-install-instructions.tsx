@@ -8,7 +8,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { copyText } from "@multica/ui/lib/clipboard";
 import { useT } from "../../i18n";
 
-import { HostedClientDownload, HOSTED_INSTALL_COMMAND, HOSTED_SETUP_COMMAND, useHostedClient } from "../../runtimes/components/hosted-client-install";
+import { HostedClientInstall, HOSTED_SETUP_COMMAND, useHostedClient } from "../../runtimes/components/hosted-client-install";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
@@ -74,8 +74,8 @@ export function CliInstallInstructions() {
         <p className="text-caption leading-[1.55] text-muted-foreground">
           {t(($) => $.cli_install.intro)}
         </p>
-        {hostedClient && <HostedClientDownload />}
-        <Step n={1} label={t(($) => $.cli_install.step1_label)} cmd={hostedClient ? HOSTED_INSTALL_COMMAND : INSTALL_CMD} />
+
+        {hostedClient ? <HostedClientInstall /> : <Step n={1} label={t(($) => $.cli_install.step1_label)} cmd={INSTALL_CMD} />}
         <Step n={2} label={t(($) => $.cli_install.step2_label)} cmd={hostedClient ? HOSTED_SETUP_COMMAND : SETUP_CMD} />
       </CardContent>
     </Card>

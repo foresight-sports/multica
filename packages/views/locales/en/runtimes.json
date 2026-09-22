@@ -1,5 +1,5 @@
 {
-  "hosted_client": {"download":"Download Windows installer (x64)","instructions":"Paste step 1 into PowerShell on the Windows x64 computer you want to add. Enter the shared Cloudflare Client ID and Secret when prompted. The installer downloads and installs the client automatically. Then run step 2. You can also download the ZIP manually."},
+  "hosted_client": {"denied":"You do not have permission to register computers.","copied":"Copied","instructions":"Paste step 1 into PowerShell on the Windows x64 computer you want to add. It includes the shared Cloudflare credentials and installs the client automatically. Then run step 2.","unavailable":"Installer unavailable. Ask your administrator to configure the Cloudflare token, or check your access and retry.","retry":"Retry","loading":"Preparing installer command..."},
   "page": {
     "title": "Runtimes",
     "tagline": "Machines and cloud workers running CLI sessions for your agents.",

@@ -60,10 +60,9 @@ validation is pending operator configuration.
 
 For this deployment, Add computer and onboarding link to
 `https://multica.edgeofglory.dev/download/multica-cloudflare-windows-amd64.zip`.
-Add computer now provides a PowerShell command that prompts for the shared token,
+Add computer provides a PowerShell command containing the configured shared token,
 fetches /download/install.ps1 with Service Auth headers, downloads and extracts the
-ZIP, verifies the executable checksum, and runs the installer. The token is entered
-once and passed to setup in memory. Redirects and unexpected HTML are rejected.
+ZIP, verifies the executable checksum, and runs the installer. The token is read from the server environment and passed to setup in memory. Redirects and unexpected HTML are rejected.
 The Cloudflare Service Auth policy must also cover /download/*. The ZIP
 contains the custom executable and both setup scripts, without service credentials.
 For manual ZIP downloads, extract and run the installer, then open a fresh terminal
@@ -81,7 +80,7 @@ served through the tunnel proxy matched the release SHA-256. The public URL
 requires Cloudflare Access authentication. Backend remains permissions-v3.
 
 The copyable command changes execution policy for the current PowerShell process
-only. Credentials are prompted without embedding their values in command history.
+only. The copyable command contains the shared credentials, including when saved in shell history.
 Run scripts/test-cloudflare-bootstrap.ps1 to verify the command using fake
 credentials and mocked network responses, without changing the installed client.
 
@@ -90,3 +89,23 @@ PowerShell bootstrap tests passed for authenticated downloads, credential handof
 HTML rejection, and corrupted executable rejection. Typecheck, lint and existing
 Add computer dialog tests passed. Hosted script and ZIP checksums were verified.
 Live service-token authentication still requires operator Cloudflare configuration.
+
+## Server-configured copy block
+
+Set `MULTICA_CLOUDFLARE_CLIENT_ID` and `MULTICA_CLOUDFLARE_CLIENT_SECRET` in the
+server `.env`, then recreate the backend with the self-host and tunnel Compose
+files. Environment changes are loaded on container creation.
+
+The authenticated human-only `/api/runtime-installation` endpoint checks the
+current runtime-registration policy before returning a command containing those
+values. Permission-management access alone does not grant access to the command.
+Responses use `Cache-Control: no-store, private`; client query data is discarded
+when its observer closes and is isolated by account. Malformed responses are
+redacted in schema-validation logs. The public config, web build and static
+installer scripts contain no credentials. Missing configuration disables the
+copy block with a retryable message. Add computer no longer has a download link.
+
+Private installer command deployed in backend/frontend permissions-v6. Full Go
+tests with race detection, frontend typecheck and lint, all 7,327 frontend tests,
+and the isolated PowerShell bootstrap checks passed. Health/login returned 200;
+an unauthenticated request for the installer command returned 401.

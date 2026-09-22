@@ -67,6 +67,8 @@ type dbExecutor interface {
 
 type Config struct {
 	PermissionManagerEmails []string
+	CloudflareClientID      string
+	CloudflareClientSecret  string
 	// RuntimeRegistrationRestricted restricts runtime enrollment to explicitly listed users.
 	RuntimeRegistrationRestricted    bool
 	RuntimeRegistrationAllowedEmails []string

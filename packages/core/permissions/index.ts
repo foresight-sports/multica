@@ -20,3 +20,4 @@ export {
 } from "./use-resource-permissions";
 export { useCurrentMember } from "./use-current-member";
 export { permissionPolicyKey, runtimePermissionPolicyOptions, useUpdateRuntimePermissionPolicy } from "./runtime-policy";
+export { runtimeInstallationOptions } from "./runtime-policy";
