@@ -17,6 +17,32 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
+func TestBuilderClaimDeliversProtocolInTurn(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	agentID, sessionID, runtimeID, daemonID := setupDirectChatSession(t, ctx, "builder protocol")
+	if _, err := testPool.Exec(ctx, `UPDATE agent_runtime SET metadata=metadata || '{"workspace_repository_version":2}'::jsonb WHERE id=$1`, runtimeID); err != nil {
+		t.Fatal(err)
+	}
+	readyExecutionMachine(t, runtimeID, testWorkspaceID)
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET kind='system', system_key='agent_builder:protocol-test', instructions='obsolete contract' WHERE id=$1`, agentID); err != nil {
+		t.Fatal(err)
+	}
+	input := "MULTICA_AGENT_BUILDER_INPUT\n{\"user_request\":\"Senior Flutter/Dart Engineer\"}"
+	sendDirectChat(t, ctx, agentID, sessionID, input)
+	claimed := claimTaskForRuntimeGuardWithCapabilities(t, runtimeID, daemonID, "workspace-repository-v1")
+	if !strings.HasPrefix(claimed.ChatMessage, agentBuilderInstructions) || !strings.HasSuffix(claimed.ChatMessage, input) {
+		t.Fatal("builder turn lost current protocol or user input")
+	}
+	msgs, err := testHandler.Queries.ListChatMessages(ctx, parseUUID(sessionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertChatTranscriptContents(t, msgs, []string{input})
+}
+
 func TestCreateAgentBuilderSessionCreatesIsolatedHiddenBuilder(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

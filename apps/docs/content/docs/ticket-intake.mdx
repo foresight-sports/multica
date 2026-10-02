@@ -1,0 +1,36 @@
+---
+title: Ticket intake
+description: Make squad coordination the default for new tickets.
+---
+
+In **Settings → General → Ticket intake**, choose a default squad. A new, unassigned top-level ticket submitted by a workspace member is assigned to that squad automatically. Its leader evaluates whether to delegate the original ticket or split the work into assigned sub-issues. Existing tickets and explicit assignments are unchanged. Ordinary agent-created tickets and child issues skip intake to prevent recursive routing. Human-requested AI ticket creation uses intake: the configured squad authors the ticket, then its coordinator evaluates and delegates the work. The server verifies the originating quick-create task and preserves the actual agent author.
+
+The new-issue form replaces the assignee picker with an intake notice whenever intake applies. Remembered or prefilled assignees cannot bypass this flow. Subtasks and projects with intake disabled retain manual assignment. The AI creation form also locks Created by to intake when enabled, and the quick-create API independently enforces that choice. Explicit assignments through the ordinary issue API remain supported.
+
+Only workspace owners and administrators can change intake settings. The selected squad must be active, and its leader must have a runtime and grant invocation access to everyone in the workspace. Intake does not grant additional permissions to specialist agents or bypass their existing access rules.
+
+Use **Project overrides** to select another squad for a project, turn intake off for that project, or inherit the workspace default. Turning the workspace default off does not remove explicit project overrides. Saved changes affect future tickets only. A stale settings save is rejected; reload before retrying.
+
+## Instance coordinator
+
+An instance agent can lead the intake squads in multiple workspaces. Its runtime, model, instructions, and other configuration remain centrally managed through the source agent. Each squad, roster, intake setting, ticket, and execution history belongs to its workspace. Enable the instance agent in that workspace before using it as a leader. New workspaces receive the instance agent through normal provisioning; configure an intake squad there when ready.
+
+Give the squad a coordinator leader and specialist members with clear role descriptions. The leader uses the squad roster, existing sub-issues, and active work to decide what to dispatch. It should ask for clarification when requirements are unclear or no specialist fits. A simple request stays on its original ticket; split work uses assigned child issues with acceptance criteria. Dependency-blocked stages stay in Backlog until their prerequisites finish. Delegating through both a parent mention and an assigned sub-issue would duplicate work and is prohibited by the leader protocol.
+
+## Execution and recovery
+
+Backlog tickets can receive the default squad assignment but remain parked until promoted. Completed or cancelled tickets are excluded. For immediately runnable intake, the ticket and coordinator task are stored in one transaction. The task becomes runnable after commit; a durable one-minute deadline recovers an interrupted promotion. Media-backed channel tickets keep their existing attachment delay. An offline coordinator's task remains queued until its runtime returns.
+
+The coordinator keeps ownership with the squad, responds to specialist updates, and moves the parent to review when the overall goal is met. Human review or existing integrations decide final completion.
+
+If the configured squad is deleted or its leader loses workspace-wide access, new unassigned ticket submissions return an actionable error. Fix the intake setting or explicitly assign that ticket. No private-agent permission is borrowed from the administrator who configured intake.
+
+
+
+## JIRA tracking
+
+Every workspace has a standard **JIRA ticket ID** issue property. Enter a key such as `FS-123` in the new-issue form or issue details. Keys are normalized to uppercase; new subtasks inherit their parent's key unless they have an explicit one.
+
+In **Settings → General → JIRA tracking**, workspace owners and administrators can enable **Require JIRA ticket ID before agent work**. It is disabled by default. When enabled, issues may still be saved without a key, but intake and specialist runs wait until one is supplied. AI-assisted ticket creation directs users to create the issue manually first. Existing active runs are not interrupted.
+
+Agents receive the key in their task context and instructions to include it in new branch names, pull requests, commit references, and changelogs. Multica identifiers still identify issues in API operations. Existing branches are preserved, and a key cannot be changed while its issue has an active run. Machines need a current daemon that advertises JIRA task support.

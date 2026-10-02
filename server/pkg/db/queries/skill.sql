@@ -166,5 +166,5 @@ DELETE FROM agent_skill WHERE agent_id = $1;
 SELECT ask.agent_id, s.id, s.name, s.description, ask.enabled
 FROM agent_skill ask
 JOIN skill s ON s.id = ask.skill_id
-WHERE s.workspace_id = $1
+WHERE ask.agent_id IN (SELECT a.id FROM agent a WHERE a.workspace_id = $1)
 ORDER BY s.name ASC;

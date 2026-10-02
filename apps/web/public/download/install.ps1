@@ -32,4 +32,4 @@ if ($expected -notmatch '^[a-fA-F0-9]{64}$' -or $actual -ne $expected) {
     throw 'The downloaded Multica executable failed its checksum check.'
 }
 & (Join-Path $directory 'install-cloudflare-client.ps1') -ClientId $ClientId -ClientSecret $ClientSecret
-Write-Host 'Next: run the second setup command shown in Add computer.'
+Write-Host 'For an existing computer, run multica daemon start. For a new computer, run the second setup command shown in Add computer.'

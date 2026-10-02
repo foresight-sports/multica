@@ -1436,6 +1436,9 @@ func TestLoadConfig_UsesChatGPTAppBundleCodexPath(t *testing.T) {
 }
 
 func TestCodexDesktopAppBundlePaths_IncludesChatGPTAndLegacy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("macOS bundle layout")
+	}
 	paths := codexDesktopAppBundlePaths()
 	var hasChatGPT, hasLegacy bool
 	for _, p := range paths {

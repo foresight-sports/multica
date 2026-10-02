@@ -174,3 +174,7 @@ Workspace repos and project resources are not the same thing:
 Do not add a project resource just because `repo checkout` failed. First
 determine whether the user asked for durable project context or just a task
 checkout.
+
+## Agent execution profiles
+
+Use `multica agent execution <agent-id>` to inspect approved profiles and routing policy. Use `multica issue rerun <issue-id> --profile <profile-id>` or `--runtime <runtime-id> --model <model-id>` to request an exact approved combination. `--execution-mode automatic` asks the configured selector to choose; `--fresh-session` requests a fresh conversation. Selection never expands agent access, and explicit overrides do not silently fall back. Inspect task execution history for the chosen profile and reason. Instance profiles are managed in the source workspace.

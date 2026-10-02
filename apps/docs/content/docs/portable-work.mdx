@@ -1,0 +1,62 @@
+---
+title: Portable work and installation approvals
+description: Keep code portable and machine-specific setup on its approved machine.
+---
+
+An implementation request authorizes scoped work branches and reviewable draft PRs, subject to explicit repository or human restrictions. Merging, deployment and protected-branch changes retain their own authorization requirements.
+
+## Install once, continue on the same machine
+
+From a running issue task, request the exact tool, version, HTTPS source, scope, side effects and reason:
+
+```sh
+multica issue installation request APP-3 --tool fvm --version 3.2.1 --source https://pub.dev/packages/fvm --scope user --effects "Adds a user executable and SDK cache" --reason "Run Flutter validation"
+```
+
+Save any code checkpoint and finish the requesting turn. The issue's **Work and approvals** panel lets the human machine owner approve or decline. Agents cannot approve themselves. Approval queues a fresh continuation with a new instruction. Routing and task start both require the original owner/daemon machine identity and provider, even if the runtime registration changes. Offline machines keep their queued obligation; no other machine silently takes over.
+
+The approved continuation installs within the approved scope, verifies the actual task environment, records evidence, and resumes the original work:
+
+```sh
+multica issue doctor
+multica issue installation installed APP-3 RECORD_ID --verification "Resolved executable path and successful version check"
+```
+
+Stable user tool locations include `~/.multica/tools/bin`, `~/.local/bin`, and the current user's Pub cache bin. Discovery does not install anything or modify system PATH. Inventory refreshes each minute. The machine constraint remains until a continuation successfully completes after installation verification.
+
+## Pushed checkpoints
+
+Claim a branch before editing. The lease belongs to one running task; another task cannot claim it while its writer is active.
+
+```sh
+multica issue checkpoint claim APP-3 --repository owner/repo --branch work/APP-3
+# Inspect, commit and push intended changes using ordinary Git.
+multica issue checkpoint save APP-3 RECORD_ID --validation "Focused checks passed at SHA" --next-step "Finish integration" --pr-url https://github.com/owner/repo/pull/123
+```
+
+Saving verifies that the current branch's local HEAD equals the remote branch HEAD. It records the exact SHA, validation and next step, and releases the writer lease. Reclaim before further editing. Submodule checkpoints must be available on fetched remote branches before the parent checkpoint is advertised. Use repeated `--dependency PATH` flags for additional sibling repositories. These checks use the task machine's repository access; the server stores the verified client report rather than borrowing another user's Git credentials.
+
+On another machine or a fresh checkout:
+
+```sh
+multica issue checkpoint resume APP-3 RECORD_ID --directory PATH
+```
+
+Resume claims the branch, fetches it and verifies that the recorded commit is in its history. It permits only a clean checkout and a fast-forward update. Preserve local work and reconcile divergence explicitly; no reset or force push occurs. A crash may leave newer uncommitted work on the old machine: the recorded remote SHA is the last portable checkpoint, not proof that every local change was saved.
+
+## Bounded context and deliberate reruns
+
+```sh
+multica issue context APP-3 --output json
+multica issue context APP-3 --since CURSOR --output json
+multica issue run get APP-3 RUN_ID
+multica issue run logs RUN_ID --tail 100
+multica issue run logs RUN_ID --since 0 --tail 100
+multica issue rerun APP-3 --task RUN_ID --instruction "Continue integration using the approved contract"
+```
+
+Context returns decisions, blockers, checkpoints, recent runs and up to 50 comments. Cursors include a timestamp and ID so comments sharing a timestamp are not skipped. Truncation is explicit. Run logs default to the last 100 messages; `--since` reads forward from a sequence and can be combined with `--type`. Omitting a new rerun instruction preserves the existing replay behavior.
+
+Record consequential decisions and blockers with `multica issue work decision` or `blocker`, including `--text`, `--owner`, and `--next-step`. Agents cannot rewrite human decision records. Resolved work collapses in the issue panel, and past runs remain collapsed in execution history.
+
+Preparation failures distinguish authentication, missing repository/revision, path length, lock contention, network, timeout, cancellation and unknown errors. Detailed bounded, redacted diagnostics remain in owner-only machine logs. A busy checkout is retried within a bounded wait without resetting active work. Coordinator callback failures do not delegate recovery backward to the worker that replied.

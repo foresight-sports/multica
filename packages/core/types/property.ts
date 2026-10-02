@@ -155,6 +155,8 @@ export interface IssuePropertyOption {
 }
 
 export interface IssuePropertyConfig {
+  system_key?: string;
+  required?: boolean;
   options?: IssuePropertyOption[];
 }
 

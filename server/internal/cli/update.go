@@ -442,6 +442,10 @@ func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Dur
 		return "", fmt.Errorf("extract binary: %w", err)
 	}
 
+	return installBinary(binaryData, exePath, assetName)
+}
+
+func installBinary(binaryData []byte, exePath, assetName string) (string, error) {
 	// Atomic replace: write to temp file, then rename over the original.
 	dir := filepath.Dir(exePath)
 	tmpFile, err := os.CreateTemp(dir, "multica-update-*")

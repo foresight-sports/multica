@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/workspacerepo"
 	"log/slog"
 	"time"
 
@@ -59,6 +60,8 @@ func NewIssueService(q *db.Queries, tx TxStarter, bus *events.Bus, ac analytics.
 // to IssueService.Create. The handler owns the parsing step that turns its
 // request payload into this struct; the service stays transport-agnostic.
 type IssueCreateParams struct {
+	JiraTicketID  string
+	intakeRouted  bool
 	WorkspaceID   pgtype.UUID
 	Title         string
 	Description   pgtype.Text
@@ -211,6 +214,9 @@ type IssueCreateResult struct {
 // Caller-owned validation is limited to transport-shaped checks: title
 // required, RFC3339 date format, assignee pair sanity.
 func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts IssueCreateOpts) (IssueCreateResult, error) {
+	if err := workspacerepo.RequireConfigured(ctx, s.Queries, util.UUIDToString(p.WorkspaceID)); err != nil {
+		return IssueCreateResult{}, err
+	}
 	issueCountPolicy := ResolveIssueCountPolicy(ctx, s.Entitlements, p.WorkspaceID)
 	tx, err := s.TxStarter.Begin(ctx)
 	if err != nil {
@@ -295,6 +301,13 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			return IssueCreateResult{}, ErrProjectNotFound
 		}
 	}
+
+	if err := s.ResolveIssueIntake(ctx, qtx, &p, projectID); err != nil {
+		return IssueCreateResult{}, err
+	}
+
+	intakeRouted := p.intakeRouted
+	intakeRunnable := intakeRouted && issuestatus.Effective(ctx, qtx, p.WorkspaceID, p.Status) != "backlog"
 
 	// Validate labels before we increment the issue counter so a stale or
 	// wrong-scope selection fails the create cheaply. The de-duplicated rows
@@ -382,6 +395,18 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		return IssueCreateResult{}, fmt.Errorf("create issue: %w", err)
 	}
 
+	if p.JiraTicketID != "" {
+		prop, e := qtx.GetJiraProperty(ctx, p.WorkspaceID)
+		if e != nil {
+			return IssueCreateResult{}, e
+		}
+		raw, _ := json.Marshal(p.JiraTicketID)
+		issue, e = qtx.SetIssuePropertyValue(ctx, db.SetIssuePropertyValueParams{ID: issue.ID, WorkspaceID: p.WorkspaceID, Key: util.UUIDToString(prop.ID), Value: raw})
+		if e != nil {
+			return IssueCreateResult{}, e
+		}
+	}
+
 	if p.SourceContext != nil {
 		if _, err := PersistSourceContext(ctx, qtx, *p.SourceContext, issue.ID, pgtype.UUID{}); err != nil {
 			return IssueCreateResult{}, fmt.Errorf("persist source context: %w", err)
@@ -455,12 +480,16 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		}
 	}
 
-	if !opts.AssignedAgentRunFireAt.IsZero() && s.shouldEnqueueAgentTaskWithQueries(ctx, qtx, issue) {
+	if intakeRunnable || (!opts.AssignedAgentRunFireAt.IsZero() && s.shouldEnqueueAgentTaskWithQueries(ctx, qtx, issue)) {
 		// The issue must never become visible without its media-gated assigned
 		// task. Inserting both rows through qtx makes the unique-index winner
 		// deterministic: any observer that can discover the committed issue also
 		// sees the inert deferred task and must merge into it.
-		assignedTask, err = s.TaskService.createDeferredChannelIssueTaskWithQueries(ctx, qtx, issue, opts.AssignedAgentRunFireAt)
+		fireAt := opts.AssignedAgentRunFireAt
+		if fireAt.IsZero() {
+			fireAt = time.Now().Add(time.Minute)
+		} // Crash recovery if post-commit promotion is interrupted.
+		assignedTask, err = s.TaskService.createDeferredChannelIssueTaskWithQueries(ctx, qtx, issue, fireAt)
 		if err != nil {
 			return IssueCreateResult{}, fmt.Errorf("create deferred channel issue task: %w", err)
 		}
@@ -478,7 +507,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 
 	var assignedTaskID pgtype.UUID
-	if !opts.AssignedAgentRunFireAt.IsZero() {
+	if intakeRunnable || !opts.AssignedAgentRunFireAt.IsZero() {
 		assignedTaskID = assignedTask.ID
 		if assignedTaskID.Valid {
 			// The deferred task became durable with the issue at commit. Refresh the
@@ -503,7 +532,11 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 
 	s.publishIssueCreated(issue, attachments, labels, p.CreatorType, actorID, opts)
 	s.captureCreatedAnalytics(issue, p.CreatorType, actorID, opts)
-	if opts.AssignedAgentRunFireAt.IsZero() {
+	if intakeRunnable && opts.AssignedAgentRunFireAt.IsZero() {
+		if err := s.TaskService.PromoteDeferredChannelIssueTask(ctx, assignedTaskID); err != nil {
+			slog.Warn("intake task promotion deferred to deadline", "error", err)
+		}
+	} else if opts.AssignedAgentRunFireAt.IsZero() {
 		assignedTaskID = s.maybeEnqueueOnAssign(ctx, issue, p.CreatorType, actorID, opts.AssignedAgentRunFireAt)
 	}
 

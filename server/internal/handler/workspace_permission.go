@@ -13,7 +13,12 @@ import (
 // their own user allowlists here while sharing identity and membership checks.
 type workspacePermission string
 
-const permissionRegisterRuntime workspacePermission = "runtime.register"
+const (
+	permissionRegisterRuntime     workspacePermission = "runtime.register"
+	permissionCreateInstanceAgent workspacePermission = "instance-agent.create"
+	permissionCreateAgent         workspacePermission = "agent.create"
+	permissionEditAgent           workspacePermission = "agent.edit"
+)
 
 func (h *Handler) requireWorkspacePermission(w http.ResponseWriter, r *http.Request, workspaceID string, permission workspacePermission) (db.Member, bool) {
 	if permission != permissionRegisterRuntime {

@@ -1,0 +1,25 @@
+import {screen,fireEvent,waitFor} from "@testing-library/react";
+import {beforeEach,it,expect,vi} from "vitest";
+import {renderWithI18n} from "../../test/i18n";
+import {EMPTY_AGENT_DRAFT} from "@multica/core/agents";
+import {BuilderWorkspace} from "./builder-workspace";
+const state=vi.hoisted(()=>({pending:true,invalid:false,applied:null as string|null,mark:vi.fn(),setDraft:vi.fn(),refetch:vi.fn()}));
+const runtime={id:"rt",name:"Machine",provider:"codex",status:"online",owner_id:"user",visibility:"private"};
+const permissions={create_agents:true,create_instance_agents:true};
+vi.mock("@multica/core/auth",()=>({useAuthStore:Object.assign((selector:(s:unknown)=>unknown)=>selector({user:{permissions}}),{getState:()=>({user:{permissions}})})}));
+vi.mock("react-resizable-panels",()=>({useDefaultLayout:()=>({})}));
+vi.mock("@multica/ui/components/ui/resizable",()=>({ResizablePanelGroup:({children}: {children:React.ReactNode})=><div>{children}</div>,ResizablePanel:({children}: {children:React.ReactNode})=><div>{children}</div>,ResizableHandle:()=>null}));
+vi.mock("./agent-configuration-panel",()=>({AgentConfigurationPanel:()=>null}));
+vi.mock("./builder-conversation",()=>({BuilderConversation:()=>null}));
+vi.mock("./create-agent-footer",()=>({CreateAgentFooter:()=>null}));
+vi.mock("./use-create-agent-submit",()=>({useCreateAgentSubmit:()=>({allowed:true})}));
+vi.mock("./use-create-agent-form",()=>({useCreateAgentForm:()=>({draft:{...EMPTY_AGENT_DRAFT,runtimeId:"rt",model:"m"},setDraft:state.setDraft,selectedRuntime:runtime,runtimes:[runtime],currentUserId:"user",workspaceSkills:[],members:[],draftReady:true})}));
+vi.mock("./use-builder-draft-sync",()=>({useBuilderDraftSync:()=>({restored:true,appliedMessageId:state.applied,markApplied:(id:string)=>{state.applied=id;state.mark(id)}})}));
+vi.mock("./use-builder-session",()=>({useBuilderSession:()=>({messages:[{id:"reply",role:"assistant",content:'<agent_draft>'+JSON.stringify({name:"Updated",thinking_level:state.invalid?"invented":"high"})+'</agent_draft>'}]})}));
+vi.mock("@tanstack/react-query",()=>({queryOptions:(v:unknown)=>v,useQuery:()=>query(),useQueries:()=>[query()]}));
+function query(){return {isPending:state.pending,isFetching:state.pending,isSuccess:!state.pending,data:state.pending?undefined:{supported:true,models:[{id:"m",label:"Model",thinking:{supported_levels:[{value:"high",label:"High"}]}}]},refetch:state.refetch}}
+const props={sessionId:"session",squadId:null,session:undefined,sessionSettled:true,fallbackRuntimeId:"rt",onDiscarded:()=>{},onRuntimeLabel:()=>{}};
+beforeEach(()=>{state.pending=true;state.invalid=false;state.applied=null;vi.clearAllMocks();state.refetch.mockResolvedValue({})});
+it("waits for discovery before applying a restored reply",async()=>{const view=renderWithI18n(<BuilderWorkspace {...props}/>);expect(state.mark).not.toHaveBeenCalled();expect(screen.queryByRole("alert")).not.toBeInTheDocument();state.pending=false;view.rerender(<BuilderWorkspace {...props}/>);await waitFor(()=>expect(state.mark).toHaveBeenCalledWith("reply"));expect(state.setDraft).toHaveBeenCalledTimes(1)});
+it("does not persist a rejected reply as applied",async()=>{state.pending=false;state.invalid=true;renderWithI18n(<BuilderWorkspace {...props}/>);expect(await screen.findByRole("alert")).toBeInTheDocument();expect(state.mark).not.toHaveBeenCalled();expect(state.setDraft).not.toHaveBeenCalled()});
+it("can recover a reply previously marked applied",async()=>{state.pending=false;state.applied="reply";renderWithI18n(<BuilderWorkspace {...props}/>);expect(state.setDraft).not.toHaveBeenCalled();fireEvent.click(screen.getByRole("button",{name:"Reapply latest proposal"}));await waitFor(()=>expect(state.setDraft).toHaveBeenCalledTimes(1));expect(state.refetch).toHaveBeenCalled();expect(state.mark).toHaveBeenLastCalledWith("reply")});

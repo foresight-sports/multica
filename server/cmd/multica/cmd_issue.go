@@ -614,6 +614,11 @@ func init() {
 	issueUsageCmd.Flags().String("output", "table", "Output format: table or json")
 
 	// issue rerun
+	issueRerunCmd.Flags().String("profile", "", "Approved execution profile ID")
+	issueRerunCmd.Flags().String("runtime", "", "Approved runtime ID")
+	issueRerunCmd.Flags().String("model", "", "Approved model ID")
+	issueRerunCmd.Flags().String("execution-mode", "", "Selection mode: default or automatic")
+	issueRerunCmd.Flags().Bool("fresh-session", false, "Start a fresh execution session")
 	issueRerunCmd.Flags().String("output", "json", "Output format: table or json")
 	// issue cancel-task
 	issueCancelTaskCmd.Flags().String("output", "json", "Output format: table or json")
@@ -2533,13 +2538,33 @@ func runIssueRunMessages(cmd *cobra.Command, args []string) error {
 	}
 
 	path := "/api/tasks/" + url.PathEscape(taskRef.ID) + "/messages"
-	if since, _ := cmd.Flags().GetInt("since"); since > 0 {
+	if since, _ := cmd.Flags().GetInt("since"); cmd.Flags().Changed("since") {
+		if since < 0 {
+			return fmt.Errorf("since must be nonnegative")
+		}
 		path += fmt.Sprintf("?since=%d", since)
 	}
 
+	tail, _ := cmd.Flags().GetInt("tail")
+	if cmd.Flags().Lookup("tail") == nil {
+		tail = 100
+	}
+	kind, _ := cmd.Flags().GetString("type")
+	if tail < 1 || tail > 500 {
+		return fmt.Errorf("tail must be between 1 and 500")
+	}
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	path += separator + "tail=" + strconv.Itoa(tail) + "&type=" + url.QueryEscape(kind)
 	var messages []map[string]any
-	if err := client.GetJSON(ctx, path, &messages); err != nil {
-		return fmt.Errorf("list run messages: %w", err)
+	responseHeaders, readErr := client.GetJSONWithHeaders(ctx, path, &messages)
+	if readErr != nil {
+		return fmt.Errorf("list run messages: %w", readErr)
+	}
+	if responseHeaders.Get("X-Messages-Truncated") == "true" {
+		fmt.Fprintln(os.Stderr, "Messages omitted; use --since <last-seq> to continue or --since 0 to read from the beginning.")
 	}
 
 	output, _ := cmd.Flags().GetString("output")
@@ -2592,7 +2617,16 @@ func runIssueRerun(cmd *cobra.Command, args []string) error {
 	}
 
 	var task map[string]any
-	if err := client.PostJSON(ctx, "/api/issues/"+issueRef.ID+"/rerun", map[string]any{}, &task); err != nil {
+	if err := client.PostJSON(ctx, "/api/issues/"+issueRef.ID+"/rerun", func() map[string]any {
+		p, _ := cmd.Flags().GetString("profile")
+		r, _ := cmd.Flags().GetString("runtime")
+		m, _ := cmd.Flags().GetString("model")
+		mode, _ := cmd.Flags().GetString("execution-mode")
+		fresh, _ := cmd.Flags().GetBool("fresh-session")
+		taskID, _ := cmd.Flags().GetString("task")
+		instruction, _ := cmd.Flags().GetString("instruction")
+		return map[string]any{"task_id": taskID, "execution": map[string]any{"instruction": instruction, "profile_id": p, "runtime_id": r, "model": m, "mode": mode, "fresh_session": fresh}}
+	}(), &task); err != nil {
 		return fmt.Errorf("rerun issue: %w", err)
 	}
 

@@ -78,7 +78,7 @@ func TestInMemoryUpdateStore_RunningRequestTimesOut(t *testing.T) {
 	}
 
 	aged := time.Now().Add(-(updateRunningTimeout + time.Second))
-	claimed.RunStartedAt = &aged
+	store.requests[claimed.ID].RunStartedAt = &aged
 	got, err := store.Get(ctx, req.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)

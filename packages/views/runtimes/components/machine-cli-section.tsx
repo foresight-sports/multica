@@ -1,3 +1,4 @@
+import { InstanceUpdateSection } from "./instance-update-section";
 import type { AgentRuntime } from "@multica/core/types";
 import type { RuntimeMachine } from "./runtime-machines";
 import { UpdateSection } from "./update-section";
@@ -61,6 +62,8 @@ export function MachineCliSection({
   ) {
     return null;
   }
+
+  if(machine.cliVersion?.includes("-foresight.") && machine.runtimes[0]) return <InstanceUpdateSection runtimeId={updateRuntime?.id ?? machine.runtimes[0].id} currentVersion={machine.cliVersion}/>;
 
   return (
     <UpdateSection

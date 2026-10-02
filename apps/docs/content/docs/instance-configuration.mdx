@@ -1,0 +1,69 @@
+---
+title: Instance configuration
+description: Shared instructions and agents in the Foresight self-hosted server.
+---
+
+Open **Settings → Instance** from any workspace. These settings belong to the
+entire server. Accounts in the existing permission-manager configuration can
+edit instance instructions and create or edit instance agents.
+
+## Instructions
+
+Instance instructions accompany every agent run, including workspace agents,
+chats, assignments, comments, quick creation and autopilots. They are loaded at
+claim time, so edits apply to subsequent runs, including resumed conversations.
+Running turns are not interrupted. Clear the field to remove the shared prompt.
+
+Multica states that instance instructions take precedence over conflicting
+workspace and agent instructions. They use each provider's existing instruction
+delivery mechanism; this is prompt guidance, not an OS or API permission boundary.
+
+## Agents
+
+Use the normal **Create agent** flow (manual or AI builder) and select
+**Instance agent** in the configuration panel. It is checked by default for
+instance administrators; unchecking it creates a workspace agent. Your choice
+is saved with the draft. Creating requires a configured permission-manager
+account. Every workspace uses the same runtime, model, skills, avatar and access
+you selected. These settings are managed once, on the original agent.
+Creation of the definition and all workspace bindings is atomic.
+
+An instance agent shares its name, description and instructions.
+Those fields are managed centrally and edits apply to all workspaces. Each
+workspace gets an enabled execution binding, displayed as `Name (Instance)` in
+the ordinary agent list. Future workspaces receive the same agents by default.
+
+Workspace owners and admins can disable or re-enable each agent in Settings →
+Instance. Disabling archives only that workspace's binding, cancels its unfinished
+runs, and retains history. Global edits do not re-enable disabled bindings.
+
+Instance administrators use **Configure instance agent** in the original
+workspace to update the central setup. Changes propagate to every binding,
+including disabled ones, without re-enabling them. Other workspaces do not
+choose a runtime, attach skills, or change access. A workspace-wide access rule
+applies to members of each enabled workspace; private and selected-member rules
+retain the centrally chosen owner and users.
+
+The shared runtime executes tasks in the requesting workspace's context.
+Task tokens stay bound to that workspace and do not enroll the runtime owner
+as a human member there. Other workspace administrators cannot reveal the
+central agent's secrets. Conversations and history remain separate. The
+instance definition has a stable global ID; workspace bindings have their own IDs.
+
+Saves use revision checks. If another administrator saves first, reload and
+reapply your edit instead of overwriting their changes.
+
+
+## Agent permission access
+
+Permission Access has separate allowlists for creating instance agents, creating
+workspace agents, and editing agents, alongside runtime registration. Only
+server-configured permission managers can change these lists. Saving an empty
+list denies everyone, including managers; each list has its own revision check.
+
+Before a list is saved, instance creation is limited to configured permission
+managers, while workspace creation and editing retain their existing resource
+checks. Granting access does not grant workspace membership or ownership of an
+agent. Editing includes skills, environment changes, and archive/restore actions.
+Instance copies remain centrally configured. The AI builder requires permission
+to create at least one agent scope and checks the selected scope on final creation.

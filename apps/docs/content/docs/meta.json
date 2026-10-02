@@ -10,6 +10,7 @@
     "self-host-quickstart",
     "---Workspace---",
     "workspaces",
+    "workspace-repositories",
     "members-roles",
     "---Issues & projects---",
     "issues",
@@ -30,6 +31,8 @@
     "---Runtime & execution---",
     "tasks",
     "daemon-runtimes",
+    "execution-profiles",
+    "portable-work",
     "install-agent-runtime",
     "providers",
     "---Automation---",
@@ -56,6 +59,8 @@
     "---Community---",
     "community-maintained",
     "---Development---",
-    "developers"
+    "developers",
+    "daemon-updates",
+    "ticket-intake"
   ]
 }

@@ -900,5 +900,25 @@
     "surface_loading": "正在加载 {{name}}…",
     "surface_unavailable": "{{name}} 的界面无法加载，已安装的版本可能不包含它。",
     "surface_navigated": "{{name}} 试图把面板替换成从别处加载的页面。已经拦下并断开连接，建议告知工作区管理员。"
+  },
+  "work": {
+    "title": "Work and approvals",
+    "machine": "Machine",
+    "source": "Installation source",
+    "approval_help": "The machine owner must approve this exact installation before the agent can continue.",
+    "same_machine": "Continuation stays on this machine, including while it is offline.",
+    "approve": "Approve and continue",
+    "decline": "Decline",
+    "no_checkpoint": "Branch claimed; no pushed checkpoint saved yet.",
+    "pull_request": "Open pull request",
+    "owner": "Owner",
+    "next_step": "Next step",
+    "history": "Resolved work",
+    "truncated": "Older records are omitted. Active work is shown first.",
+    "reload": "Reload",
+    "decision": "Decision",
+    "blocker": "Blocker",
+    "human_record": "Recorded by a human",
+    "agent_record": "Recorded by an agent"
   }
 }

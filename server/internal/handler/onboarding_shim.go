@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/workspacerepo"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -212,6 +213,9 @@ func (h *Handler) BootstrapOnboardingRuntime(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if !assistant.ID.Valid {
+		if !h.requireAgentAction(w, r, permissionCreateAgent) {
+			return
+		}
 		assistant, err = qtx.CreateAgent(r.Context(), db.CreateAgentParams{
 			WorkspaceID:        wsUUID,
 			Name:               onboardingAssistantName,
@@ -248,6 +252,10 @@ func (h *Handler) BootstrapOnboardingRuntime(w http.ResponseWriter, r *http.Requ
 	}
 	issueCreated := false
 	if !foundIssue {
+		if err := workspacerepo.RequireConfigured(r.Context(), qtx, uuidToString(wsUUID)); err != nil {
+			writeError(w, 409, err.Error())
+			return
+		}
 		issueNumber, err := service.AllocateIssueNumber(r.Context(), qtx, wsUUID, issueCountPolicy)
 		if err != nil {
 			if writeIssueLimitReached(w, err) {

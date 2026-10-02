@@ -1,5 +1,6 @@
 "use client";
 
+import { IssueWorkPanel } from "./issue-work-panel";
 import {
   issueBehavesAs,
   issueBehavesAsAny,
@@ -2383,10 +2384,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               built-in optional props: a row renders when the issue has a
               value OR the user added the property this session. Archived
               definitions render read-only until their value is cleared. */}
+          {workspaceProperties.some((p) => p.config.system_key === "jira_ticket_id" && p.config.required && !issue.properties?.[p.id]) &&
+            <p role="status" className="px-2 py-2 text-caption text-muted-foreground">{t(($) => $.jira.required_notice)}</p>}
           {workspaceProperties
             .filter(
               (p) =>
                 issue.properties?.[p.id] !== undefined ||
+                p.config.system_key === "jira_ticket_id" ||
                 (!p.archived && visibleCustomProps.has(p.id)),
             )
             .map((p) => (
@@ -2396,6 +2400,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                   <>
                     <PropertyIcon property={p} className="size-3.5 text-caption" />
                     <span className="truncate">{p.name}</span>
+                    {p.config.system_key === "jira_ticket_id" && p.config.required && !issue.properties?.[p.id] && <span className="text-destructive">*</span>}
                   </>
                 }
               >
@@ -2567,7 +2572,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           own token spend, with the issue total on the section header.
           Self-contained; owns its own collapse state and WS subscriptions.
           Hides itself when there are no runs to show. */}
-      <ExecutionLogSection issueId={id} identifier={issue.identifier} />
+      <IssueWorkPanel issueId={id} />
+                <ExecutionLogSection issueId={id} identifier={issue.identifier} />
 
       {/* Details — creator and timestamps. Sits below the execution log
           because it is the least-read block in the sidebar: the values

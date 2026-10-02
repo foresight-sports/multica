@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
-import { runtimeDisplayLabel } from "@multica/core/runtimes";
+import { executionOptions } from "@multica/core/agents";
 import { agentListOptions } from "@multica/core/workspace/queries";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
@@ -38,8 +38,14 @@ export function ManualCreateAgentPage() {
   const form = useCreateAgentForm();
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const duplicateAgent = duplicateId
-    ? agents.find((agent) => agent.id === duplicateId) ?? null
+    ? (agents.find((agent) => agent.id === duplicateId) ?? null)
     : null;
+  const duplicatePolicy = useQuery(
+    executionOptions(
+      wsId,
+      duplicateAgent?.portable_execution ? duplicateAgent.id : "",
+    ),
+  );
 
   // True when a duplicate had to fall back to another runtime, which drops the
   // source's model / thinking / speed. The notice explains the empty fields.
@@ -55,12 +61,25 @@ export function ManualCreateAgentPage() {
     // runtime by looking it up in this list. An error is a decidable answer
     // (the runtime cannot be confirmed, so the fallback is right); a pending
     // query is not.
-    runtimesSettled: form.runtimesSettled,
+    runtimesSettled:
+      form.runtimesSettled &&
+      (!duplicateAgent?.portable_execution || !!duplicatePolicy.data),
     runtimes: form.runtimes,
     currentUserId: form.currentUserId,
     fallbackRuntimeId: form.usableRuntimes[0]?.id ?? "",
     nameSuffix: t(($) => $.create_dialog.duplicate_copy_suffix),
     onSeed: (duplicated, runtimeReset) => {
+      if (duplicatePolicy.data) {
+        const primary = duplicatePolicy.data.profiles[0];
+        duplicated = {
+          ...duplicated,
+          executionPolicy: { ...duplicatePolicy.data, revision: 0 },
+          model: primary?.model ?? "",
+          thinkingLevel: primary?.thinking_level ?? "",
+          serviceTier: primary?.service_tier ?? "",
+        };
+        runtimeReset = false;
+      }
       // Only the forced fallback gets the notice; a later manual runtime switch
       // is the user's own doing and needs no explanation.
       setDuplicateRuntimeReset(runtimeReset);
@@ -90,7 +109,10 @@ export function ManualCreateAgentPage() {
   });
 
   const canCreate =
-    form.draft.name.trim().length > 0 && form.draftReady && !submit.creating;
+    submit.allowed &&
+    form.draft.name.trim().length > 0 &&
+    form.draftReady &&
+    !submit.creating;
 
   return (
     <AgentCreateShell
@@ -114,11 +136,9 @@ export function ManualCreateAgentPage() {
           <AgentCreateChip>
             {t(($) => $.creation_studio.modes.blank.title)}
           </AgentCreateChip>
-          {form.selectedRuntime && (
-            <AgentCreateChip>
-              {runtimeDisplayLabel(form.selectedRuntime)}
-            </AgentCreateChip>
-          )}
+          <AgentCreateChip>
+            {t(($) => $.execution.automatic_machine)}
+          </AgentCreateChip>
         </>
       }
     >

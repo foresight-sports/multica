@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/redact"
 	"io"
 	"log/slog"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -84,6 +86,9 @@ func (e *preparationKindError) Unwrap() error { return e.kind }
 // preparationErrorKind names the class of err for the wire, or "" when it has
 // none.
 func preparationErrorKind(err error) string {
+	if errors.Is(err, ErrEnvRootBusy) {
+		return "env_root_busy"
+	}
 	if errors.Is(err, ErrOpenclawCLITimeout) {
 		return preparationErrorKindOpenclawCLITimeout
 	}
@@ -95,6 +100,8 @@ func preparationErrorKind(err error) string {
 // the original message rather than being dropped.
 func rehydratePreparationError(message, kind string) error {
 	switch kind {
+	case "env_root_busy":
+		return &preparationKindError{msg: message, kind: ErrEnvRootBusy}
 	case preparationErrorKindOpenclawCLITimeout:
 		return &preparationKindError{msg: message, kind: ErrOpenclawCLITimeout}
 	default:
@@ -145,7 +152,8 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 	if err != nil {
 		return nil, fmt.Errorf("execenv: create preparation stdin: %w", err)
 	}
-	var stdout, stderr bytes.Buffer
+	var stdout bytes.Buffer
+	var stderr preparationDiagnostics
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -182,6 +190,9 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 	}
 	writeErr := <-writeDone
 	finishErr := controller.finish()
+	if logger != nil && stderr.Len() > 0 {
+		logger.Info("Execution environment preparation diagnostics", "output", redact.Text(preparationURLCredentials.ReplaceAllString(stderr.String(), "${1}[REDACTED]@")))
+	}
 	if lifecycleErr := errors.Join(stopErr, finishErr); lifecycleErr != nil {
 		return nil, fmt.Errorf("execenv: stop preparation process tree: %w", lifecycleErr)
 	}
@@ -192,7 +203,7 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 	}
 	if err != nil {
 		if detail := strings.TrimSpace(stderr.String()); detail != "" {
-			return nil, fmt.Errorf("execenv: preparation helper failed: %w: %s", err, detail)
+			return nil, fmt.Errorf("execenv: preparation helper failed: %w; inspect this machine preparation diagnostics", err)
 		}
 		return nil, fmt.Errorf("execenv: preparation helper failed: %w", err)
 	}
@@ -214,6 +225,28 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 	}
 	return response.Environment, nil
 }
+
+// The helper logs to stderr even when it returns a structured error with exit
+// status zero. Retain a bounded tail so those diagnostics reach machine logs.
+var preparationURLCredentials = regexp.MustCompile(`(?i)(https?://)[^/\s@]+@`)
+
+type preparationDiagnostics struct{ data []byte }
+
+func (b *preparationDiagnostics) Write(p []byte) (int, error) {
+	n := len(p)
+	b.data = append(b.data, p...)
+	if len(b.data) > 65536 {
+		b.data = b.data[len(b.data)-65536:]
+		if i := bytes.IndexByte(b.data, '\n'); i >= 0 {
+			b.data = b.data[i+1:]
+		} else {
+			b.data = nil
+		}
+	}
+	return n, nil
+}
+func (b *preparationDiagnostics) String() string { return string(b.data) }
+func (b *preparationDiagnostics) Len() int       { return len(b.data) }
 
 // marshalPreparationRequest builds the private parent-to-helper payload. A
 // methodless view is required for OpenclawGateway so its bearer token survives

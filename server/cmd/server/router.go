@@ -419,6 +419,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	signupConfig := handler.Config{
 		PermissionManagerEmails:          splitAndTrim(os.Getenv("MULTICA_PERMISSION_MANAGER_EMAILS")),
+		DaemonReleaseDir:                 os.Getenv("MULTICA_DAEMON_RELEASE_DIR"),
 		CloudflareClientID:               os.Getenv("MULTICA_CLOUDFLARE_CLIENT_ID"),
 		CloudflareClientSecret:           os.Getenv("MULTICA_CLOUDFLARE_CLIENT_SECRET"),
 		AllowSignup:                      os.Getenv("ALLOW_SIGNUP") != "false",
@@ -1472,6 +1473,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// a secret never sits in a task record.
 		r.Get("/tasks/{id}/plugin-mcp/{contributionId}/credential", h.ResolvePluginMCPCredential)
 
+		r.Get("/release", h.GetDaemonRelease)
+		r.Get("/release/{version}/{os}/{arch}", h.DownloadDaemonRelease)
+		r.Post("/runtimes/{runtimeId}/execution-capabilities", h.ReportExecutionCapabilities)
+		r.Get("/runtimes/{runtimeId}/execution-capabilities", h.GetRuntimeRequiredTools)
+		r.Post("/runtimes/{runtimeId}/subscription-quota", h.ReportSubscriptionQuota)
 		r.Post("/runtimes/{runtimeId}/tasks/claim", h.ClaimTaskByRuntime)
 		// Canonical machine-level batch claim (MUL-4257). `/claim` is a
 		// transitional alias; the daemon coordinator targets the canonical
@@ -1482,11 +1488,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/skill-bundles/resolve", h.ResolveTaskSkillBundles)
 		r.Get("/runtimes/{runtimeId}/tasks/pending", h.ListPendingTasksByRuntime)
 		r.Post("/runtimes/{runtimeId}/update/{updateId}/result", h.ReportUpdateResult)
+ r.Post("/runtimes/{runtimeId}/logs",h.ReportMachineLogs)
+ r.Get("/runtimes/{runtimeId}/workspace-repositories",h.DaemonWorkspaceRepositories)
+ r.Post("/runtimes/{runtimeId}/workspace-repositories",h.DaemonWorkspaceRepositories)
 		r.Post("/runtimes/{runtimeId}/models/{requestId}/result", h.ReportModelListResult)
 		r.Post("/runtimes/{runtimeId}/local-skills/{requestId}/result", h.ReportLocalSkillListResult)
 		r.Post("/runtimes/{runtimeId}/local-skills/import/{requestId}/result", h.ReportLocalSkillImportResult)
 
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
+		r.Post("/tasks/{taskId}/execution/resolve", h.ResolveTaskExecution)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
 		r.Post("/tasks/{taskId}/wait-local-directory", h.MarkTaskWaitingLocalDirectory)
 		r.Post("/tasks/{taskId}/progress", h.ReportTaskProgress)
@@ -1549,9 +1559,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// no workspace in the path to gate on.
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
-		r.With(handler.RequireHumanActor).Get("/api/permission-policies/runtime-register", h.GetRuntimePermissionPolicy)
+		r.With(handler.RequireHumanActor).Get("/api/instance/configuration", h.GetInstanceConfiguration)
+		r.With(handler.RequireHumanActor).Put("/api/instance/configuration", h.UpdateInstanceConfiguration)
+		r.With(handler.RequireHumanActor).Get("/api/instance/agents", h.ListInstanceAgents)
+		r.With(handler.RequireHumanActor).Post("/api/instance/agents", h.SaveInstanceAgent)
+		r.With(handler.RequireHumanActor).Put("/api/instance/agents/{id}", h.SaveInstanceAgent)
+		r.With(handler.RequireHumanActor).Get("/api/permission-policies/{action}", h.GetRuntimePermissionPolicy)
 		r.With(handler.RequireHumanActor).Get("/api/runtime-installation", h.GetRuntimeInstallation)
-		r.With(handler.RequireHumanActor).Put("/api/permission-policies/runtime-register", h.UpdateRuntimePermissionPolicy)
+		r.With(handler.RequireHumanActor).Put("/api/permission-policies/{action}", h.UpdateRuntimePermissionPolicy)
 		r.Patch("/api/me", h.UpdateMe)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
@@ -1597,6 +1612,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
 					r.Get("/", h.GetWorkspace)
+					r.Get("/issue-intake", h.GetIssueIntake)
+					r.Get("/repository-settings", h.RepositorySettings)
+					r.Get("/jira-settings", h.JiraSettings)
+					r.With(handler.RequireHumanActor).Put("/jira-settings", h.JiraSettings)
 					r.Get("/members", h.ListMembersWithUser)
 					r.Post("/leave", h.LeaveWorkspace)
 					r.Get("/invitations", h.ListWorkspaceInvitations)
@@ -1632,6 +1651,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Put("/", h.UpdateWorkspace)
+					r.Put("/issue-intake", h.UpdateIssueIntake)
+					r.With(handler.RequireHumanActor).Put("/repository-settings", h.RepositorySettings)
 					r.Patch("/", h.UpdateWorkspace)
 					r.Post("/members", h.CreateInvitation)
 					r.Route("/members/{memberId}", func(r chi.Router) {
@@ -1942,6 +1963,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Task messages (user-facing, not daemon auth)
+			r.Get("/api/agents/{id}/execution", h.GetAgentExecution)
+			r.With(handler.RequireHumanActor).Put("/api/agents/{id}/execution", h.SaveAgentExecution)
+			r.Post("/api/agents/{id}/execution/preview", h.PreviewAgentExecution)
+			r.Put("/api/tasks/{taskId}/execution", h.UpdateTaskExecution)
 			r.Get("/api/tasks/{taskId}/messages", h.ListTaskMessagesByUser)
 			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/retry-source-context", h.RetrySourceContextQuickCreate)
 
@@ -2024,6 +2049,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Squad leader evaluation (writes to activity_log)
 			r.Post("/api/issues/{id}/squad-evaluated", h.RecordSquadLeaderEvaluation)
+ r.Get("/api/issues/{id}/context", h.IssueContext)
+ r.Get("/api/issues/{id}/work-records", h.WorkRecords)
+ r.Post("/api/issues/{id}/work-records", h.WorkRecords)
+ r.Put("/api/issues/{id}/work-records/{recordId}", h.WorkRecords)
 
 			// Autopilots
 			r.Route("/api/autopilots", func(r chi.Router) {
@@ -2195,10 +2224,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/", h.ListAgentRuntimes)
 				r.Route("/{runtimeId}", func(r chi.Router) {
 					r.Patch("/", h.UpdateAgentRuntime)
+					r.Get("/subscription-quota", h.GetSubscriptionQuota)
 					r.Get("/usage", h.GetRuntimeUsage)
 					r.Get("/usage/by-agent", h.GetRuntimeUsageByAgent)
 					r.Get("/usage/by-hour", h.GetRuntimeUsageByHour)
 					r.Get("/activity", h.GetRuntimeTaskActivity)
+					r.Get("/update-status", h.GetRuntimeUpdateStatus)
+ r.With(handler.RequireHumanActor).Get("/logs",h.GetMachineLogs)
+ r.Get("/workspace-repositories/{workspaceId}",h.WorkspaceRepositoryReadiness)
+					r.Get("/repository-settings", h.RepositorySettings)
+					r.With(handler.RequireHumanActor).Put("/repository-settings", h.RepositorySettings)
 					r.Post("/update", h.InitiateUpdate)
 					r.Get("/update/{updateId}", h.GetUpdate)
 					r.Post("/models", h.InitiateListModels)

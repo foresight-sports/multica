@@ -1,0 +1,24 @@
+---
+title: Workspace repositories
+description: Prepare workspace repositories on eligible computers and route tasks only when ready.
+---
+
+Set **Repositories folder** on each computer page, for example `D:\GitHub` or `/home/me/repos`. Choose an existing parent folder. This value is shared by that machine's runtimes and workspaces; only its owner can change it.
+
+In **Settings → General → Workspace repository**, choose one of these configurations:
+
+- **GitHub repository**, such as `owner/repository`: the local folder defaults to the repo name. If missing on an eligible computer, the daemon clones it over HTTPS using that computer's Git credentials. Private repositories require access configured on that computer. Clone prompts are disabled; authentication or network failures appear as unavailable, with automatic retry after a minute.
+- **Local folder only**: use an existing folder below the machine root. Multica never creates or clones this folder. Only computers where it exists and validates become usable. Direct execution supports non-Git folders; isolated worktrees require a Git checkout with a commit.
+- **Neither**: new issue creation is blocked, including API, agent, and onboarding issue creation. Both issue forms offer configuration guidance and preserve the draft. Existing issues are retained.
+
+The computer list and detail page display readiness for the current workspace: waiting, checking, cloning, ready, or unavailable with a reason. Computers without a root or with an older daemon display the required setup or upgrade. Readiness refreshes every five seconds in the UI; daemon checks run every fifteen seconds. A stopped daemon or a stale report cannot remain eligible. Changes to workspace mapping or machine root invalidate previous reports immediately.
+
+Daemons from **0.4.44-foresight.17** prepare workspaces independently of task dispatch. Clones go into a temporary sibling folder, are validated, and are moved into place only when the destination is still absent. Existing folders are never replaced to fix a mismatch. The daemon verifies canonical containment, the Git root and GitHub origin, then checks the directory again before task execution. GitHub SSH and HTTPS origins are recognized for existing checkouts. Cloning does not launch an AI task.
+
+Execution routing excludes computers until readiness is confirmed, while retaining the agent's approved profiles and runtime-access rules. A configured workspace can queue issues while computers prepare. Legacy claims are returned to the queue instead of starting in the wrong directory. An unavailable machine does not gain access to another runtime or execution profile automatically.
+
+**Use isolated Git worktrees** defaults on for GitHub repositories and off for folder-only mappings. This uses Multica's existing task worktree lifecycle. Source folder and task worktree are included in agent context. Direct execution uses the existing local-directory lock, including chat tasks. The setting applies to intake, quick-create, chat and execution profiles. Active runs retain their configuration snapshot; later claims use current settings.
+
+**Workspace instructions** remains the place for workspace-specific guidance. Agent instructions identify the working directory but are not an operating-system sandbox. The repositories parent is used by Multica for preparation; it is not a general write area for agents.
+
+Settings use revisions to reject stale saves. Workspace deletion removes its mapping and readiness records, preserving shared machine configuration.

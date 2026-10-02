@@ -18,6 +18,32 @@ const (
 	ctxKeyMember
 )
 
+// InstanceTaskMember grants a task token member-level access only to the
+// workspace of its explicitly linked instance task. It does not enroll the
+// runtime owner in that workspace or grant any human account new access.
+func InstanceTaskMember(r *http.Request, queries *db.Queries, workspaceID string) (db.Member, bool) {
+	if r.Header.Get("X-Actor-Source") != "task_token" || r.Header.Get("X-Workspace-ID") != workspaceID {
+		return db.Member{}, false
+	}
+	taskID, err := util.ParseUUID(r.Header.Get("X-Task-ID"))
+	if err != nil {
+		return db.Member{}, false
+	}
+	task, err := queries.GetAgentTask(r.Context(), taskID)
+	if err != nil || util.UUIDToString(task.AgentID) != r.Header.Get("X-Agent-ID") {
+		return db.Member{}, false
+	}
+	ws, err := queries.InstanceTaskWorkspace(r.Context(), db.InstanceTaskWorkspaceParams{AgentID: task.AgentID, RuntimeID: task.RuntimeID})
+	if err != nil || util.UUIDToString(ws) != workspaceID {
+		return db.Member{}, false
+	}
+	userID, err := util.ParseUUID(r.Header.Get("X-User-ID"))
+	if err != nil {
+		return db.Member{}, false
+	}
+	return db.Member{WorkspaceID: ws, UserID: userID, Role: "member"}, true
+}
+
 // MemberFromContext returns the workspace member injected by the workspace middleware.
 func MemberFromContext(ctx context.Context) (db.Member, bool) {
 	m, ok := ctx.Value(ctxKeyMember).(db.Member)
@@ -239,6 +265,9 @@ func buildMiddleware(queries *db.Queries, resolve workspaceResolver, roles []str
 				UserID:      userUUID,
 				WorkspaceID: wsUUID,
 			})
+			if instanceMember, ok := InstanceTaskMember(r, queries, workspaceID); ok {
+				member, err = instanceMember, nil
+			}
 			if err != nil {
 				writeError(w, http.StatusNotFound, "workspace not found")
 				return

@@ -1,3 +1,8 @@
+import type {
+  ExecutionSelection,
+  ExecutionRequest,
+  ExecutionPolicy,
+} from "../api/execution-schema";
 import type { ChatSession } from "./chat";
 
 export type AgentStatus = "idle" | "working" | "blocked" | "error" | "offline";
@@ -288,6 +293,8 @@ export interface TaskCancellationActor {
 }
 
 export interface AgentTask {
+  execution?: ExecutionSelection;
+  execution_request?: ExecutionRequest;
   id: string;
   agent_id: string;
   runtime_id: string;
@@ -470,6 +477,8 @@ export interface MikaBootstrapResponse extends Agent {
 }
 
 export interface Agent {
+  instance_agent_id?: string;
+  instance_source_agent_id?: string;
   id: string;
   workspace_id: string;
   /**
@@ -482,6 +491,7 @@ export interface Agent {
   runtime_id: string;
   /** False exactly when the agent has no runtime. Older backends omit it. */
   runtime_bound?: boolean;
+  portable_execution?: boolean;
   /** Privacy-safe coarse liveness for a runtime hidden from the runtime list. */
   runtime_availability?: "online" | "unstable" | "offline";
   name: string;
@@ -638,11 +648,13 @@ export interface AgentSkillSummary {
   id: string;
   name: string;
   description: string;
-	/** Older servers omit this field; consumers must treat that as enabled. */
-	enabled?: boolean;
+  /** Older servers omit this field; consumers must treat that as enabled. */
+  enabled?: boolean;
 }
 
 export interface CreateAgentRequest {
+  execution_policy?: ExecutionPolicy;
+  instance_agent?: boolean;
   name: string;
   description?: string;
   instructions?: string;
@@ -696,6 +708,8 @@ export type AgentPermissionScope = "private" | "workspace" | "members";
  * over edits the user made after it.
  */
 export interface StoredAgentDraft {
+  execution_policy?: ExecutionPolicy;
+  instance_agent?: boolean;
   name: string;
   description: string;
   instructions: string;
@@ -849,8 +863,8 @@ export interface SkillSummary {
   created_by: string | null;
   created_at: string;
   updated_at: string;
-	/** Present only when returned from an agent-scoped assignment endpoint. */
-	enabled?: boolean;
+  /** Present only when returned from an agent-scoped assignment endpoint. */
+  enabled?: boolean;
 }
 
 export interface Skill extends SkillSummary {
@@ -1268,10 +1282,10 @@ export interface RuntimeLocalSkillSummary {
 }
 
 export interface RuntimeLocalMcpServerSummary {
-	name: string;
-	transport?: "stdio" | "http" | "sse" | "unknown";
-	source?: string;
-	enabled: boolean;
+  name: string;
+  transport?: "stdio" | "http" | "sse" | "unknown";
+  source?: string;
+  enabled: boolean;
 }
 
 export interface RuntimeLocalSkillListRequest {
@@ -1280,8 +1294,8 @@ export interface RuntimeLocalSkillListRequest {
   status: RuntimeLocalSkillStatus;
   skills?: RuntimeLocalSkillSummary[];
   supported: boolean;
-	mcp_servers?: RuntimeLocalMcpServerSummary[];
-	mcp_supported?: boolean;
+  mcp_servers?: RuntimeLocalMcpServerSummary[];
+  mcp_supported?: boolean;
   error?: string;
   created_at: string;
   updated_at: string;
@@ -1316,8 +1330,8 @@ export interface RuntimeLocalSkillImportRequest {
 export interface RuntimeLocalSkillsResult {
   skills: RuntimeLocalSkillSummary[];
   supported: boolean;
-	mcpServers: RuntimeLocalMcpServerSummary[];
-	mcpSupported: boolean;
+  mcpServers: RuntimeLocalMcpServerSummary[];
+  mcpSupported: boolean;
 }
 
 export interface RuntimeLocalSkillImportResult {

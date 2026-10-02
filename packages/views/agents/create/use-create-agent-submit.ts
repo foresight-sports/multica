@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuthStore } from "@multica/core/auth";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -51,6 +52,7 @@ export function useCreateAgentSubmit(options: {
   onCreated?: (agent: Agent) => Promise<void> | void;
 }) {
   const { t } = useT("agents");
+  const permissions = useAuthStore((s) => s.user?.permissions);
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
@@ -63,8 +65,10 @@ export function useCreateAgentSubmit(options: {
   const { draft, runtimeId, squadId, template, duplicateSource, onCreated } =
     options;
 
+  const allowed = (draft.instanceAgent ? permissions?.create_instance_agents : permissions?.create_agents) === true;
   const create = async () => {
-    if (!runtimeId || creating) return;
+    if (!allowed) return;
+    if ((!runtimeId && !draft.executionPolicy?.profiles.length) || creating) return;
     setCreating(true);
     setNameError(null);
     setFormError(null);
@@ -72,7 +76,7 @@ export function useCreateAgentSubmit(options: {
       const agent = await api.createAgent(
         buildCreateAgentRequest({
           draft,
-          runtimeId,
+          runtimeId: runtimeId ?? "",
           template,
           duplicateSource,
         }),
@@ -109,6 +113,9 @@ export function useCreateAgentSubmit(options: {
       // Reconcile other list projections in the background instead of making
       // navigation wait on a second network request.
       void qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+      if (agent.instance_agent_id) {
+        void qc.invalidateQueries({ queryKey: ["instance-agents"] });
+      }
       toast.success(
         t(($) => $.creation_studio.created, {
           name: agent.name || draft.name.trim(),
@@ -130,10 +137,11 @@ export function useCreateAgentSubmit(options: {
   };
 
   return {
+    allowed,
     create,
     creating,
     nameError,
-    formError,
+    formError: allowed ? formError : "You do not have permission to create this type of agent.",
     clearNameError: () => setNameError(null),
   };
 }

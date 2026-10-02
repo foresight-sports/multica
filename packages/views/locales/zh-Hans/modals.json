@@ -242,6 +242,9 @@
       "error_daemon_version": "该智能体的守护进程 CLI（{{current}}）低于要求的 {{min}}。请升级守护进程后再使用通过智能体创建。",
       "error_unknown": "提交失败，请重试。",
       "sub_issue_of": "作为 {{identifier}} 的子任务"
-    }
+    },
+    "intake_routing": "接单协调员将审核此工单并分配工作。",
+    "intake_loading": "正在加载工单路由…",
+    "intake_retry": "无法加载工单路由。重试"
   }
 }

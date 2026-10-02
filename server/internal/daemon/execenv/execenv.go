@@ -1450,7 +1450,7 @@ func claimEnvRoot(envRoot, workspaceID, taskID string) (lockFile *os.File, reset
 	}
 	if !locked {
 		lockFile.Close()
-		return nil, false, fmt.Errorf("env root %s is held by a running execution; refusing to reset it for task %s", envRoot, taskID)
+		return nil, false, fmt.Errorf("env root %s: %w; refusing to reset it for task %s", envRoot, ErrEnvRootBusy, taskID)
 	}
 	// Past this point we are the only execution touching this env root, in this
 	// process or any other, so the checks below cannot race.

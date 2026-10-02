@@ -7,9 +7,9 @@ import type { Agent } from "../types";
  * response ever carries contradictory data.
  */
 export function isAgentRuntimeBound(
-  agent: Pick<Agent, "runtime_id" | "runtime_bound">,
+  agent: Pick<Agent, "runtime_id" | "runtime_bound" | "portable_execution">,
 ): boolean {
-  return (
+  return agent.portable_execution === true || (
     agent.runtime_bound !== false &&
     (agent.runtime_id ?? "").trim().length > 0
   );

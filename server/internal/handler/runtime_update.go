@@ -54,6 +54,7 @@ type UpdateStore interface {
 	PopPending(ctx context.Context, runtimeID string) (*UpdateRequest, error)
 	Complete(ctx context.Context, id string, output string) error
 	Fail(ctx context.Context, id string, errMsg string) error
+	Progress(ctx context.Context, id string, output string) error
 }
 
 func updateRequestTerminal(status UpdateStatus) bool {
@@ -122,7 +123,8 @@ func (s *InMemoryUpdateStore) Create(_ context.Context, runtimeID, targetVersion
 		UpdatedAt:       time.Now(),
 	}
 	s.requests[req.ID] = req
-	return req, nil
+	copy := *req
+	return &copy, nil
 }
 
 var errUpdateInProgress = &updateError{msg: "an update is already in progress for this runtime"}
@@ -140,7 +142,8 @@ func (s *InMemoryUpdateStore) Get(_ context.Context, id string) (*UpdateRequest,
 		return nil, nil
 	}
 	applyUpdateTimeout(req, time.Now())
-	return req, nil
+	copy := *req
+	return &copy, nil
 }
 
 func (s *InMemoryUpdateStore) HasPending(_ context.Context, runtimeID string) (bool, error) {
@@ -178,16 +181,45 @@ func (s *InMemoryUpdateStore) PopPending(_ context.Context, runtimeID string) (*
 		oldest.RunStartedAt = &startedAt
 		oldest.UpdatedAt = now
 	}
-	return oldest, nil
+	if oldest == nil {
+		return nil, nil
+	}
+	copy := *oldest
+	return &copy, nil
 }
 
 func (s *InMemoryUpdateStore) Complete(_ context.Context, id string, output string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if req, ok := s.requests[id]; ok {
+	if req, ok := s.requests[id]; ok && !updateRequestTerminal(req.Status) {
 		req.Status = UpdateCompleted
-		req.Output = output
+		req.Output = appendUpdateOutput(req.Output, output)
+		req.UpdatedAt = time.Now()
+	}
+	return nil
+}
+
+// Keep diagnostics bounded and retain previous progress after failure/completion.
+func appendUpdateOutput(previous, next string) string {
+	if next == "" {
+		return previous
+	}
+	if previous != "" {
+		previous += "\n"
+	}
+	output := previous + next
+	if len(output) > 32768 {
+		output = output[len(output)-32768:]
+	}
+	return output
+}
+
+func (s *InMemoryUpdateStore) Progress(_ context.Context, id, output string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req := s.requests[id]; req != nil && !updateRequestTerminal(req.Status) {
+		req.Output = appendUpdateOutput(req.Output, output)
 		req.UpdatedAt = time.Now()
 	}
 	return nil
@@ -224,7 +256,7 @@ func (h *Handler) InitiateUpdate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TargetVersion string `json:"target_version"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -233,6 +265,16 @@ func (h *Handler) InitiateUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.cfg.DaemonReleaseDir != "" {
+		status := h.instanceUpdateStatus(rt, true)
+		if !status.CanUpdate || req.TargetVersion != status.LatestVersion {
+			if req.TargetVersion != status.LatestVersion {
+				status.Reason = "release_changed"
+			}
+			writeError(w, 409, "Instance update unavailable: "+status.Reason)
+			return
+		}
+	}
 	update, err := h.UpdateStore.Create(
 		r.Context(),
 		uuidToString(rt.ID),
@@ -319,7 +361,7 @@ func (h *Handler) ReportUpdateResult(w http.ResponseWriter, r *http.Request) {
 		Output string `json:"output"`
 		Error  string `json:"error"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -338,9 +380,10 @@ func (h *Handler) ReportUpdateResult(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "running":
-		// No-op: status is already "running" from PopPending. This call is
-		// just a progress signal from the daemon to confirm it received the
-		// update command and is executing it.
+		if err := h.UpdateStore.Progress(r.Context(), updateID, req.Output); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to persist update progress")
+			return
+		}
 	default:
 		writeError(w, http.StatusBadRequest, "invalid status: "+req.Status)
 		return

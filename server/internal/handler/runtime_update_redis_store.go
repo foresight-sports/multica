@@ -228,7 +228,7 @@ func (s *RedisUpdateStore) Complete(ctx context.Context, id string, output strin
 		return nil
 	}
 	req.Status = UpdateCompleted
-	req.Output = output
+	req.Output = appendUpdateOutput(req.Output, output)
 	req.UpdatedAt = time.Now()
 	if err := s.persistRequest(ctx, req); err != nil {
 		return err
@@ -238,6 +238,27 @@ func (s *RedisUpdateStore) Complete(ctx context.Context, id string, output strin
 	}
 	s.rdb.ZRem(ctx, updatePendingKey(req.RuntimeID), req.ID)
 	return nil
+}
+
+// Atomically append progress so a late report cannot revive a terminal update.
+var updateProgressScript = redis.NewScript(`
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local env = cjson.decode(raw)
+local status = env.r.status
+if status ~= 'pending' and status ~= 'running' then return 0 end
+local output = env.r.output or ''
+if output ~= '' and ARGV[1] ~= '' then output = output .. '\n' end
+output = output .. ARGV[1]
+if string.len(output) > 32768 then output = string.sub(output, -32768) end
+env.r.output = output
+env.r.updated_at = ARGV[2]
+redis.call('SET', KEYS[1], cjson.encode(env), 'KEEPTTL')
+return 1
+`)
+
+func (s *RedisUpdateStore) Progress(ctx context.Context, id, output string) error {
+	return updateProgressScript.Run(ctx, s.rdb, []string{updateKey(id)}, output, time.Now().UTC().Format(time.RFC3339Nano)).Err()
 }
 
 func (s *RedisUpdateStore) Fail(ctx context.Context, id string, errMsg string) error {

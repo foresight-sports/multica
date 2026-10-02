@@ -134,6 +134,9 @@ func TestCreateMediaGatedIssueCommitsDeferredTaskAtomicallyBeforeCreatedEvent(t 
 	q := db.New(pool)
 	workspaceID, userID, agentID, _ := seedAttributionFixture(t, pool)
 	workspaceUUID := util.MustParseUUID(workspaceID)
+	if _, err := pool.Exec(ctx, `INSERT INTO repository_configuration(scope,subject,config,revision) VALUES('workspace',$1,'{"folder":"test-repo","mode":"in_place"}',1) ON CONFLICT DO NOTHING`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
 	userUUID := util.MustParseUUID(userID)
 	agentUUID := util.MustParseUUID(agentID)
 

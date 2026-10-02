@@ -3,6 +3,7 @@
 import React from "react";
 import { useAuthStore } from "@multica/core/auth";
 import { PermissionAccessTab } from "./permission-access-tab";
+import { InstanceTab } from "./instance-tab";
 import {
   ChevronRight,
   User,
@@ -118,6 +119,12 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
           <TokensTab />,
         ),
       ],
+    },
+    {
+      key: "instance",
+      label: t(($) => $.instance.title),
+      scope: t(($) => $.instance.title),
+      entries: [entry("instance", t(($) => $.instance.title), Server, <InstanceTab />)],
     },
     {
       key: "workspace",

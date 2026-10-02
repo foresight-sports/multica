@@ -1,0 +1,109 @@
+---
+title: Agent execution profiles
+description: Choose model requirements and automatically place tasks on capable machines.
+---
+
+Open **Agent → Settings → Execution** to add approved provider/model profiles.
+Profiles belong to agents; machines are selected separately for each task.
+
+During manual or AI-assisted creation, use **Execution profiles** to configure the same choices before creating the agent.
+The form offers provider, model, reasoning and speed controls. The creation assistant uses its own machine; switching it does not change the finished agent. Draft restoration retains
+your profiles. The agent and profiles save together; invalid profiles leave the
+draft available to correct without creating a partial agent. Instance-agent
+profiles remain centrally controlled by their source workspace.
+
+## Configure through the AI builder
+
+Describe the profiles, selection preference, task-understanding model, fallback,
+and instance/workspace scope you want. Each turn supplies the current draft and
+accessible runtime/model catalogs, including advertised reasoning and speed
+options. Proposed configuration is validated before updating the form; rejected
+proposals leave the draft unchanged and show an explanation. The create API still
+checks permissions and runtime/model access when saving.
+
+Existing builder conversations receive current instructions on their next run.
+The creation assistant stays on its current runtime; use its runtime picker to
+move that conversation. The builder can choose any accessible advertised provider/model for agent profiles.
+Avatar uploads and existing team grants remain managed through the UI.
+
+## Configure an agent
+
+Each profile has a provider, model, optional reasoning effort and speed. The model list combines catalogs from accessible machines with that provider. Describe which tasks suit the profile and specify required tools and OS. Advanced settings add keywords and relative quality/speed/cost ratings. Ratings are your preferences, not benchmarks.
+
+Choose a default profile and either default or automatic selection. Automatic
+selection uses keywords and your preference. Optionally select a **Task
+understanding** profile: its model classifies the task and proposes an eligible
+profile. The server validates that proposal again.
+
+Model routing supports built-in Codex and Claude Code. It uses a separate session
+with a 60-second inference timeout, a temporary directory, disabled tools, and no
+task token, agent custom environment, repository checkout or resumed session.
+Codex uses temporary configuration with account authentication; custom provider
+settings and custom runtime wrappers are not routing providers. Routing usage is
+recorded on the task. Invalid responses and timeouts follow the fallback policy.
+With fallback disabled, a failed inference stays blocked until selection is
+retried or the policy changes.
+
+**Allow another approved model profile** controls model fallback before work starts. Explicit model/profile requests remain exact, but can move to another machine meeting the same requirements. An explicit runtime override stays pinned. Started retries remain pinned.
+
+A machine must be accessible, online, have a ready workspace repository/folder, advertise the exact model/reasoning/speed, and report every required tool and OS. Fresh exhausted subscription quota excludes a machine. Among matching machines, routing prefers lower active workload. Readiness is checked again before execution. Runtime-local skills and integrations still depend on the selected host and provider.
+
+The **Machines → Capabilities** tab shows advertised models and installed commands. The updated daemon refreshes tool inventory every minute and model catalogs in the background. Required tools are executable command names such as `git`, `dotnet`, or `unity`, not file paths. Windows Unity Hub editor installations are detected as `unity`. Stale tool reports cannot satisfy tool requirements.
+
+Existing profiles are migrated without their machine bindings. Legacy user agents receive a default profile when their configured model or an advertised default is known; unknown defaults are left for explicit configuration. Queued portable work survives machine removal.
+
+## Select execution for a task
+
+Expand **Run with** below a run in the issue execution log. Apply a policy or
+profile to queued work, or start a new run from completed, failed or cancelled
+work. History records profile, model, runtime, time and selection reason.
+Running work cannot be retargeted.
+
+Follow-up turns retain their previous eligible profile. An explicit profile
+selection or fresh-session request starts a new session with task context and a
+handoff notice. This does not transfer uncommitted files from another machine.
+Automatic retries of work that already started retain the original selection.
+
+Preview checks saved rules and eligibility without calling a model. With model
+routing configured, the model makes the final decision when the task runs.
+
+## CLI and API
+
+```bash
+multica agent execution <agent-id>
+multica issue rerun <issue-id> --profile <profile-id>
+multica issue rerun <issue-id> --runtime <runtime-id> --model <model-id> --fresh-session
+multica issue rerun <issue-id> --execution-mode automatic
+```
+
+Overrides must match an approved combination. Agent callers need invocation
+permission, just like other task requests.
+
+- `GET /api/agents/{id}/execution` reads the policy.
+- `PUT /api/agents/{id}/execution` saves the policy with its current revision.
+- `POST /api/agents/{id}/execution/preview` accepts a prompt and optional execution request.
+- `PUT /api/tasks/{id}/execution` changes a queued task's execution request.
+- `POST /api/issues/{id}/rerun` accepts execution alongside optional task_id.
+
+Execution requests accept mode (default or automatic), profile_id, runtime_id,
+model and fresh_session. Explicit constraints take precedence over automatic mode.
+
+## Permissions and lifecycle
+
+Profile edits require agent-edit permission and resource ownership/admin access.
+Instance profiles are managed in the source workspace; other workspaces inherit
+them. Enabling an instance agent does not grant configuration rights. Task tokens
+remain scoped to the task's workspace.
+
+Remove a runtime from profiles before deleting it. Finish or cancel profiled
+tasks before removing all profiles. Revision checks prevent concurrent editors
+from overwriting each other's work. Settings are rechecked before dispatch and
+start; removed access or unsupported models fail closed.
+
+## Subscription capacity
+
+Built-in Codex and Claude runtimes poll read-only account usage every two minutes, including while idle. Claude uses the existing local Claude Code subscription login and reports five-hour, weekly and available model-family windows. Failed Claude reads retry after ten minutes; owner-only machine logs explain missing/expired credentials or provider errors. Open Claude Code on that computer to refresh an expired login. The daemon does not refresh or modify credentials or start inference to measure usage. Claude session events also supply partial limit observations. Other providers, custom authentication/settings and custom runtime profiles are not currently measured.
+
+Runtime details show remaining percentages, reset times, missing reports and stale observations. Reports expire after ten minutes; passing a reset time requires a new observation and does not imply a full balance. Fresh exhausted limits exclude matching profiles before execution. Explicit choices and profiles with fallback disabled remain queued when unavailable. Started work remains pinned. Unknown capacity does not prevent execution. This does not reserve quota or guarantee admission by a provider.
+
+Workspace bindings on the same daemon share their built-in CLI observations. Reports across machines are reconciled only when the provider supplies a stable account identifier and both runtimes have the same owner; identifiers are hashed. Email is never used as an account key. Balances must not be added across runtimes. No credits are purchased or redeemed.

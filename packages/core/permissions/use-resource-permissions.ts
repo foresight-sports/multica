@@ -9,6 +9,7 @@ import {
   canEditSkill,
 } from "./rules";
 import { deny, type Decision } from "./types";
+import { useAuthStore } from "../auth";
 
 const PENDING: Decision = deny("unknown", "");
 
@@ -37,6 +38,7 @@ export function useAgentPermissions(
   isLoading: boolean;
 } {
   const { userId, role, isLoading } = useCurrentMember(wsId);
+  const canEdit = useAuthStore((s) => s.user?.permissions?.edit_agents === true);
   const ctx = { userId, role };
   // While the member query is in flight, `role` is null and the rules below
   // would misread a legitimate member as denied (e.g. `not_member` for a
@@ -46,7 +48,9 @@ export function useAgentPermissions(
     return { canEdit: PENDING, canAssign: PENDING, isLoading };
   }
   return {
-    canEdit: canEditAgent(agent, ctx),
+    canEdit: !canEdit ? deny("not_resource_owner", "You do not have permission to edit agents.") : agent.instance_agent_id && agent.instance_source_agent_id !== agent.id
+      ? deny("not_resource_owner", "This instance agent is configured centrally.")
+      : canEditAgent(agent, ctx),
     canAssign: canAssignAgentToIssue(agent, ctx),
     isLoading,
   };

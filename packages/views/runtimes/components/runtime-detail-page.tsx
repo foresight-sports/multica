@@ -1,4 +1,8 @@
 "use client";
+import { MachineCapabilities } from "./machine-capabilities";
+import { MachineLogs } from "./machine-logs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@multica/ui/components/ui/tabs";
+import { WorkspaceReadiness } from "./workspace-readiness";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Cloud, Monitor, Pencil, Plus, Server } from "lucide-react";
@@ -27,6 +31,7 @@ import {
 import { RenameMachineDialog } from "./rename-machine-dialog";
 import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
 import { pendingRuntimesForProfiles } from "./pending-runtime";
+import { RepositorySettingsSection } from "../../settings/components/repository-settings-section";
 import { MachineCliSection } from "./machine-cli-section";
 import { HealthIcon, useHealthLabel } from "./shared";
 import { useT, useTimeAgo } from "../../i18n";
@@ -295,6 +300,11 @@ export function RuntimeDetailPage({
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-background">
         <div className={cn(PAGE_RAIL, PAGE_GUTTER, "py-4 sm:py-6")}>
+          <Tabs defaultValue="overview"><TabsList variant="line" className="mb-4"><TabsTrigger value="overview">{t(($) => $.logs.overview)}</TabsTrigger><TabsTrigger value="capabilities">{t(($)=>$.capabilities.tab)}</TabsTrigger><TabsTrigger value="logs">{t(($) => $.logs.tab)}</TabsTrigger></TabsList><TabsContent value="overview">
+<div className="mb-6">
+          {machineRuntimes[0] && <WorkspaceReadiness runtimeId={(machineRuntimes.find((runtime)=>runtime.status === "online") ?? machineRuntimes[0]).id}/> }
+          {machineRuntimes[0] && <RepositorySettingsSection key={machineRuntimes[0].id} wsId={wsId} runtimeId={machineRuntimes[0].id} />}
+          </div>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <h2 className="text-body font-semibold">
@@ -344,6 +354,7 @@ export function RuntimeDetailPage({
               </p>
             </div>
           )}
+</TabsContent><TabsContent value="capabilities"><MachineCapabilities runtimes={machineRuntimes}/></TabsContent><TabsContent value="logs"><MachineLogs key={machine.id} wsId={wsId} runtimeId={(machineRuntimes.find((runtime) => runtime.status === "online") ?? machineRuntimes[0])?.id} owner={machineRuntimes.some((runtime) => runtime.owner_id === currentUserId)} /></TabsContent></Tabs>
         </div>
       </div>
 

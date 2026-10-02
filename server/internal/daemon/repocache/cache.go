@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/daemon/gitsubmodule"
 	"github.com/multica-ai/multica/server/internal/daemon/processtree"
 )
 
@@ -72,7 +73,7 @@ var agentGitExcludePatterns = []string{
 const repoCacheGitTimeout = 10 * time.Minute
 
 func newGitCommand(args ...string) *exec.Cmd {
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", append([]string{"-c", "core.longpaths=true"}, args...)...)
 	// A daemon can outlive the checkout it was launched from. Run Git from the
 	// filesystem root instead of inheriting a cwd that may have been deleted.
 	cmd.Dir = filepath.VolumeName(os.TempDir()) + string(os.PathSeparator)
@@ -894,6 +895,11 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 			return nil, context.Cause(ctx)
 		}
 
+		if result.Kept == "" {
+			if err := gitsubmodule.Prepare(ctx, worktreePath, c.logger); err != nil {
+				return nil, err
+			}
+		}
 		c.logCheckoutReady("repo checkout: isolated checkout ready", params.RepoURL, baseRef, result)
 		return result, nil
 	}
@@ -920,6 +926,11 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 			return nil, context.Cause(ctx)
 		}
 
+		if result.Kept == "" {
+			if err := gitsubmodule.Prepare(ctx, worktreePath, c.logger); err != nil {
+				return nil, err
+			}
+		}
 		c.logCheckoutReady("repo checkout: existing worktree updated", params.RepoURL, baseRef, result)
 		return result, nil
 	}
@@ -944,6 +955,9 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 		return nil, context.Cause(ctx)
 	}
 
+	if err := gitsubmodule.Prepare(ctx, worktreePath, c.logger); err != nil {
+		return nil, err
+	}
 	c.logger.Info("repo checkout: worktree created",
 		"url", params.RepoURL,
 		"path", worktreePath,

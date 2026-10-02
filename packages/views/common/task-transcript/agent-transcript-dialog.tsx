@@ -608,6 +608,9 @@ export function AgentTranscriptDialog({
     if (!open) return;
     let cancelled = false;
 
+    setAgentInfo(null);
+    setRuntimeInfo(null);
+
     if (task.agent_id) {
       api.getAgent(task.agent_id).then((agent) => {
         if (!cancelled) setAgentInfo(agent);
@@ -828,6 +831,17 @@ export function AgentTranscriptDialog({
   // Diagnostic detail for the ⓘ popover: everything a reader needs only when
   // debugging this specific run, kept off the always-visible surface.
   const providerLabel = runtimeInfo?.provider ? transcriptProviderLabel(runtimeInfo.provider) : null;
+  // Resolve the run's runtime, never the agent's current binding. Usage is
+  // authoritative for actual model IDs; the selection is a per-run snapshot.
+  const runRuntime = runtimeInfo?.id === task.runtime_id ? runtimeInfo : null;
+  const machineLabel = runRuntime?.device_info?.split(" · ")[0]?.trim()
+    || (runRuntime ? runtimeDisplayName(runRuntime) : task.runtime_id)
+    || t(($) => $.transcript.execution_not_recorded);
+  const reportedModels = [...new Set(task.usage?.map((entry) => entry.model.trim()).filter(Boolean) ?? [])];
+  const selectedModel = ["selected", "selecting"].includes(task.execution?.state ?? "")
+    ? task.execution?.profile?.model : undefined;
+  const modelLabel = reportedModels.join(", ") || selectedModel
+    || t(($) => $.transcript.execution_not_recorded);
   const createdLabel = task.created_at ? formatRunTime(task.created_at, locale) : null;
   const startedLabel = task.started_at ? formatRunTime(task.started_at, locale) : null;
   const completedLabel = task.completed_at ? formatRunTime(task.completed_at, locale) : null;
@@ -1086,6 +1100,17 @@ export function AgentTranscriptDialog({
             </div>
           </div>
         </div>
+
+        <dl className="flex shrink-0 flex-wrap gap-x-6 gap-y-2 border-b bg-muted/20 px-4 py-2 text-caption">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <dt className="shrink-0 text-muted-foreground">{t(($) => $.transcript.execution_machine)}</dt>
+            <dd className="min-w-0 break-all font-medium">{machineLabel}</dd>
+          </div>
+          <div className="flex min-w-0 items-baseline gap-2">
+            <dt className="shrink-0 text-muted-foreground">{t(($) => $.transcript.execution_model)}</dt>
+            <dd className="min-w-0 break-all font-medium">{modelLabel}</dd>
+          </div>
+        </dl>
 
         {/* ── What the run produced ──────────────────────────────────── */}
         <RunOutcomeRow outcome={outcome} branch={task.branch_name} />

@@ -74,6 +74,9 @@ func TestIssueCountLimitSerializesConcurrentCreatesAndDeleteFreesCapacity(t *tes
 	queries := db.New(pool)
 	workspaceIDString, userIDString, _, _ := seedAttributionFixture(t, pool)
 	workspaceID := util.MustParseUUID(workspaceIDString)
+	if _, err := pool.Exec(ctx, `INSERT INTO repository_configuration(scope,subject,config,revision) VALUES('workspace',$1,'{"folder":"test-repo","mode":"in_place"}',1) ON CONFLICT DO NOTHING`, workspaceIDString); err != nil {
+		t.Fatal(err)
+	}
 	userID := util.MustParseUUID(userIDString)
 
 	var initialCount int64

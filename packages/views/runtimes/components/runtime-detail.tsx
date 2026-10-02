@@ -1,13 +1,9 @@
 "use client";
+import { InstanceUpdateSection } from "./instance-update-section";
+import { SubscriptionQuotaSection } from "./subscription-quota-section";
 
 import { useEffect, useState } from "react";
-import {
-  Trash2,
-  ChevronRight,
-  Cpu,
-  Globe,
-  Lock,
-} from "lucide-react";
+import { Trash2, ChevronRight, Cpu, Globe, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import type {
@@ -18,7 +14,10 @@ import type {
 } from "@multica/core/types";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { memberListOptions, agentListOptions } from "@multica/core/workspace/queries";
+import {
+  memberListOptions,
+  agentListOptions,
+} from "@multica/core/workspace/queries";
 import { useUpdateRuntime } from "@multica/core/runtimes/mutations";
 import {
   deriveRuntimeHealth,
@@ -109,7 +108,7 @@ export function RuntimeDetail({
 
   const health = deriveRuntimeHealth(runtime, now);
   const ownerMember = runtime.owner_id
-    ? members.find((m) => m.user_id === runtime.owner_id) ?? null
+    ? (members.find((m) => m.user_id === runtime.owner_id) ?? null)
     : null;
 
   const currentMember = user
@@ -122,7 +121,7 @@ export function RuntimeDetail({
   const canEditRuntime = isAdmin || isRuntimeOwner;
   const canReadRuntime = isRuntimeUsableForUser(runtime, user?.id ?? null);
   const runtimeProfile: RuntimeProfile | null = runtime.profile_id
-    ? profiles.find((p) => p.id === runtime.profile_id) ?? null
+    ? (profiles.find((p) => p.id === runtime.profile_id) ?? null)
     : null;
   const isCustomRuntime = !!runtime.profile_id;
   const canDelete = isCustomRuntime
@@ -195,6 +194,10 @@ export function RuntimeDetail({
               cliVersion={cliVersion}
               daemonShort={daemonShort}
             />
+            {canReadRuntime && cliVersion?.includes("-foresight.") && <div className="rounded-lg border bg-card p-4"><InstanceUpdateSection runtimeId={runtime.id} currentVersion={cliVersion}/></div>}
+            {canReadRuntime && (
+              <SubscriptionQuotaSection runtimeId={runtime.id} />
+            )}
             {canReadRuntime && <UsageSection runtime={runtime} />}
           </div>
 
@@ -269,7 +272,9 @@ function HeroCard({
 }) {
   const { t } = useT("runtimes");
   const [showDetails, setShowDetails] = useState(false);
-  const device = runtime.device_info ? parseDeviceInfo(runtime.device_info) : null;
+  const device = runtime.device_info
+    ? parseDeviceInfo(runtime.device_info)
+    : null;
   const hasTechDetails = !!cliVersion || !!daemonShort;
 
   return (
@@ -305,7 +310,9 @@ function HeroCard({
                 size="sm"
                 enableHoverCard
               />
-              <span className="cursor-pointer truncate text-body">{ownerMember.name}</span>
+              <span className="cursor-pointer truncate text-body">
+                {ownerMember.name}
+              </span>
             </span>
           ) : (
             <span className="text-body text-muted-foreground">—</span>
@@ -389,7 +396,9 @@ function Fact({
       <dt className="text-micro uppercase tracking-wider text-muted-foreground">
         {label}
       </dt>
-      <dd className={`mt-1 ${mono ? "font-mono text-caption" : ""}`}>{children}</dd>
+      <dd className={`mt-1 ${mono ? "font-mono text-caption" : ""}`}>
+        {children}
+      </dd>
     </div>
   );
 }
@@ -408,7 +417,9 @@ function ServingAgentsCard({
   return (
     <div className="rounded-lg border">
       <div className="flex items-center justify-between border-b px-4 py-2.5">
-        <span className="text-caption font-semibold">{t(($) => $.detail.serving_title)}</span>
+        <span className="text-caption font-semibold">
+          {t(($) => $.detail.serving_title)}
+        </span>
         <span className="text-caption text-muted-foreground">
           {t(($) => $.detail.serving_count, { count: agents.length })}
         </span>
@@ -427,7 +438,9 @@ function ServingAgentsCard({
             const av = detail
               ? availabilityConfig[detail.availability]
               : availabilityConfig.offline;
-            const avLabel = tAgents(($) => $.availability[detail?.availability ?? "offline"]);
+            const avLabel = tAgents(
+              ($) => $.availability[detail?.availability ?? "offline"],
+            );
             const wl = detail ? workloadConfig[detail.workload] : null;
             const running = detail?.runningCount ?? 0;
             const queued = detail?.queuedCount ?? 0;
@@ -437,28 +450,44 @@ function ServingAgentsCard({
                 href={agentHref(agent.id)}
                 className="group flex items-center gap-2 px-4 py-2 transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none"
               >
-                <ActorAvatar actorType="agent" actorId={agent.id} size="sm" enableHoverCard showStatusDot />
+                <ActorAvatar
+                  actorType="agent"
+                  actorId={agent.id}
+                  size="sm"
+                  enableHoverCard
+                  showStatusDot
+                />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-caption font-medium">
                     {agent.name}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption">
                     <span className="inline-flex items-center gap-1.5">
-                      <span className={`h-1.5 w-1.5 rounded-full ${av.dotClass}`} />
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${av.dotClass}`}
+                      />
                       <span className={av.textClass}>{avLabel}</span>
                     </span>
                     {wl && detail && detail.workload !== "idle" && (
-                      <span className={`inline-flex items-center gap-1 ${wl.textClass}`}>
+                      <span
+                        className={`inline-flex items-center gap-1 ${wl.textClass}`}
+                      >
                         <span className="text-muted-foreground">·</span>
                         <wl.icon
                           className={`h-3 w-3 ${detail.workload === "working" ? "animate-spin" : ""}`}
                         />
                         {tAgents(($) => $.workload[detail.workload])}
                         {running > 0 && (
-                          <span className="text-muted-foreground">{t(($) => $.detail.running_chip, { count: running })}</span>
+                          <span className="text-muted-foreground">
+                            {t(($) => $.detail.running_chip, {
+                              count: running,
+                            })}
+                          </span>
                         )}
                         {queued > 0 && (
-                          <span className="text-muted-foreground">{t(($) => $.detail.queued_chip, { count: queued })}</span>
+                          <span className="text-muted-foreground">
+                            {t(($) => $.detail.queued_chip, { count: queued })}
+                          </span>
                         )}
                       </span>
                     )}
@@ -495,7 +524,9 @@ function DiagnosticsCard({
   return (
     <div className="rounded-lg border">
       <div className="border-b px-4 py-2.5">
-        <span className="text-caption font-semibold">{t(($) => $.detail.diagnostics_title)}</span>
+        <span className="text-caption font-semibold">
+          {t(($) => $.detail.diagnostics_title)}
+        </span>
       </div>
       <div className="space-y-3 p-4">
         <div>

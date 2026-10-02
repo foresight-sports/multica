@@ -2002,6 +2002,12 @@ func (c *codexClient) startOrResumeThread(ctx context.Context, opts ExecOptions,
 		"experimentalRawEvents":  false,
 		"persistExtendedHistory": true,
 	}
+	if opts.RoutingOnly {
+		startParams["sandbox"] = "read-only"
+		startParams["approvalPolicy"] = "never"
+		startParams["includeApplyPatchTool"] = false
+		startParams["config"] = map[string]any{"features.shell_tool": false, "features.multi_agent": false, "features.apps": false, "web_search": "disabled"}
+	}
 	applyCodexReasoningEffort(startParams, opts.ThinkingLevel)
 	applyCodexServiceTier(startParams, opts.ServiceTier)
 	c.threadSetupMethod = "thread/start"

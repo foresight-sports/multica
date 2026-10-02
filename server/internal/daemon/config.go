@@ -102,6 +102,8 @@ var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
 type Config struct {
+	LogPath                        string
+	CrashLogPath                   string
 	ServerBaseURL                  string
 	DaemonID                       string
 	LegacyDaemonIDs                []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
@@ -983,6 +985,9 @@ var defaultAgentCommandNames = append([]string{
 // new ChatGPT.app path is tried before the legacy Codex.app path, so updated
 // installs win while older installs still resolve.
 var codexDesktopAppBundlePaths = func() []string {
+	if runtime.GOOS == "windows" {
+		return windowsCodexBundlePaths(os.Getenv("LOCALAPPDATA"))
+	}
 	paths := []string{
 		"/Applications/ChatGPT.app/Contents/Resources/codex",
 		"/Applications/Codex.app/Contents/Resources/codex",
@@ -993,6 +998,19 @@ var codexDesktopAppBundlePaths = func() []string {
 			filepath.Join(home, "Applications", "Codex.app", "Contents", "Resources", "codex"),
 		)
 	}
+	return paths
+}
+
+func windowsCodexBundlePaths(localAppData string) []string {
+	if !filepath.IsAbs(localAppData) {
+		return nil
+	}
+	paths, _ := filepath.Glob(filepath.Join(localAppData, "OpenAI", "Codex", "bin", "*", "codex.exe"))
+	sort.SliceStable(paths, func(i, j int) bool {
+		a, ea := os.Stat(paths[i])
+		b, eb := os.Stat(paths[j])
+		return ea == nil && (eb != nil || a.ModTime().After(b.ModTime()))
+	})
 	return paths
 }
 

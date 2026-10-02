@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { AgentDraft } from "./draft";
 import {
+  buildCreateAgentRequest,
+  isDraftExecutionReady,
+  getDraftExecutionPolicy,
+  applyDraftRuntimeChange,
+} from "./draft";
+import { StoredAgentDraftSchema } from "../api/schemas";
+import {
   fromStoredAgentDraft,
   storedAgentDraftsEqual,
   toStoredAgentDraft,
@@ -25,6 +32,101 @@ const draft = (): AgentDraft => ({
 });
 
 describe("stored agent draft", () => {
+  it("preserves model requirements when the creation assistant changes machine", () => {
+    const initial = draft();
+    initial.executionPolicy = getDraftExecutionPolicy(initial, undefined, true, "codex");
+    const switched = applyDraftRuntimeChange(initial, "runtime-2");
+    const restored = fromStoredAgentDraft(toStoredAgentDraft(switched, null), "runtime-2");
+    expect(restored.executionPolicy).toEqual(initial.executionPolicy);
+    expect(restored.model).toBe(initial.model);
+    expect(restored.executionPolicy?.profiles[0]?.runtime_id).toBe("");
+    expect(isDraftExecutionReady(restored.executionPolicy)).toBe(true);
+  });
+  it("restores execution profiles and submits them atomically with a new revision", () => {
+    const policy = {
+      revision: 7,
+      mode: "automatic" as const,
+      preference: "balanced" as const,
+      default_profile: "fast",
+      router_profile: "fast",
+      allow_fallback: false,
+      profiles: [
+        {
+          id: "fast",
+          name: "Fast",
+          provider: "codex", runtime_id: "",
+          model: "m",
+          thinking_level: "",
+          service_tier: "",
+          purpose: "",
+          keywords: [],
+          required_os: "",
+          required_tools: [],
+          quality: 3,
+          speed: 3,
+          cost: 3,
+        },
+      ],
+    };
+    const stored = StoredAgentDraftSchema.parse(
+      toStoredAgentDraft({ ...draft(), executionPolicy: policy }, null),
+    );
+    const restored = fromStoredAgentDraft(stored, "runtime-1");
+    expect(restored.executionPolicy).toEqual(policy);
+    expect(
+      buildCreateAgentRequest({
+        draft: restored,
+        runtimeId: restored.runtimeId,
+      }).execution_policy,
+    ).toEqual({ ...policy, revision: 0 });
+    expect(isDraftExecutionReady(policy)).toBe(true);
+    expect(
+      isDraftExecutionReady({
+        ...policy,
+        profiles: [{ ...policy.profiles[0]!, model: "" }],
+      }),
+    ).toBe(false);
+    expect(
+      isDraftExecutionReady({ ...policy, default_profile: "missing" }),
+    ).toBe(false);
+    expect(isDraftExecutionReady()).toBe(true);
+  });
+  it("preserves an explicit instance opt-out across draft restoration", () => {
+    const restored = fromStoredAgentDraft(
+      toStoredAgentDraft({ ...draft(), instanceAgent: false }, null),
+      "runtime-1",
+    );
+    expect(restored.instanceAgent).toBe(false);
+  });
+  it("preserves instance scope through storage, API parsing and normal submission", () => {
+    const original = { ...draft(), instanceAgent: true };
+    const stored = StoredAgentDraftSchema.parse(
+      toStoredAgentDraft(original, null),
+    );
+    const restored = fromStoredAgentDraft(stored, original.runtimeId);
+    expect(restored.instanceAgent).toBe(true);
+    expect(
+      buildCreateAgentRequest({
+        draft: restored,
+        runtimeId: restored.runtimeId,
+      }).instance_agent,
+    ).toBe(true);
+    expect(
+      buildCreateAgentRequest({ draft: draft(), runtimeId: "runtime-1" }),
+    ).not.toHaveProperty("instance_agent");
+  });
+
+  it("never enables instance scope from malformed API values", () => {
+    for (const value of ["true", 1, null, {}, undefined]) {
+      const stored = StoredAgentDraftSchema.parse({
+        ...toStoredAgentDraft(draft(), null),
+        instance_agent: value,
+      });
+      expect(fromStoredAgentDraft(stored, "runtime-1").instanceAgent).not.toBe(
+        true,
+      );
+    }
+  });
   it("round-trips every editable field", () => {
     const original = draft();
     const restored = fromStoredAgentDraft(

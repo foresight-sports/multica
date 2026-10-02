@@ -4,7 +4,13 @@ import {
   AGENT_CONVERSATION_STARTER_MAX_LENGTH,
   AGENT_CONVERSATION_STARTERS_MAX,
 } from "./constants";
-import type { AgentDraft } from "./draft";
+import { getDraftExecutionPolicy, type AgentDraft } from "./draft";
+import {
+  BuilderPolicySchema,
+  validateBuilderConfiguration,
+  type BuilderConfigurationContext,
+  type BuilderConfigurationPayload,
+} from "./builder-configuration";
 
 /**
  * Wire format between the Agent Creation Studio and the hidden builder agent.
@@ -23,7 +29,7 @@ import type { AgentDraft } from "./draft";
  */
 const BUILDER_INPUT_PREFIX = "MULTICA_AGENT_BUILDER_INPUT\n";
 
-export interface BuilderDraftPayload {
+export interface BuilderDraftPayload extends BuilderConfigurationPayload {
   name?: unknown;
   description?: unknown;
   instructions?: unknown;
@@ -36,22 +42,25 @@ export interface BuilderDraftPayload {
 
 export function parseBuilderDraft(content: string): BuilderDraftPayload | null {
   const match = content.match(/<agent_draft>([\s\S]*?)<\/agent_draft>/);
-  if (!match?.[1]) return null;
+  const raw = content.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, "$1");
+  const source = match?.[1] ?? raw;
+  const accept = (value: unknown): BuilderDraftPayload | null => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const payload = value as BuilderDraftPayload;
+    // Recover complete JSON-only replies, never arbitrary prose or snippets.
+    // Configuration validation still runs before any draft fields are merged.
+    if (!match && (typeof payload.name !== "string" || typeof payload.instructions !== "string")) return null;
+    return payload;
+  };
   try {
-    const value = JSON.parse(match[1]);
-    return value && typeof value === "object"
-      ? (value as BuilderDraftPayload)
-      : null;
+    return accept(JSON.parse(source));
   } catch {
     // Some CLI-backed models emit literal newlines in the Markdown
     // instructions string even when asked for compact JSON. Repair only JSON
     // control characters that occur inside strings; object structure and all
     // other syntax still have to pass JSON.parse.
     try {
-      const value = JSON.parse(escapeJsonStringControlCharacters(match[1]));
-      return value && typeof value === "object"
-        ? (value as BuilderDraftPayload)
-        : null;
+      return accept(JSON.parse(escapeJsonStringControlCharacters(source)));
     } catch {
       return null;
     }
@@ -126,7 +135,9 @@ export function encodeBuilderInput(
   members: Array<{ user_id: string; name: string }>,
   runtime: Pick<RuntimeDevice, "id" | "name" | "provider"> | null,
   models: RuntimeModel[] | null,
+  configuration?: BuilderConfigurationContext,
 ): string {
+  const policy = getDraftExecutionPolicy(draft, undefined, true, runtime?.provider ?? configuration?.runtimes.find(c=>c.runtime.id===draft.runtimeId)?.runtime.provider ?? "");
   return (
     BUILDER_INPUT_PREFIX +
     JSON.stringify(
@@ -138,10 +149,41 @@ export function encodeBuilderInput(
           instructions: draft.instructions,
           conversation_starters: draft.conversationStarters,
           model: draft.model,
+          thinking_level: draft.thinkingLevel,
+          service_tier: draft.serviceTier,
+          instance_agent: draft.instanceAgent === true,
+          execution_policy: {
+            ...policy,
+            profiles: policy.profiles.map(({ runtime_id: _runtimeId, ...profile }) => profile),
+          },
+          has_avatar: !!draft.avatarUrl,
+          team_ids: [...draft.teamIds],
           skill_ids: [...draft.skillIds],
           permission_scope: draft.permissionScope,
           member_ids: [...draft.memberIds],
         },
+        configuration_permissions: configuration
+          ? {
+              create_agents: configuration.canCreateAgents,
+              create_instance_agents: configuration.canCreateInstanceAgents,
+            }
+          : null,
+        available_execution_runtimes:
+          configuration?.runtimes.map(({ runtime: r, models: m }) => ({
+            id: r.id,
+            name: r.name,
+            provider: r.provider,
+            status: r.status,
+            built_in: !r.profile_id,
+            os: typeof r.metadata?.os === "string" ? r.metadata.os : null,
+            tools: Array.isArray(r.metadata?.tools)
+              ? r.metadata.tools.filter(
+                  (v): v is string => typeof v === "string",
+                )
+              : [],
+            supports_execution_profiles: r.metadata?.execution_version === 1,
+            models: m,
+          })) ?? [],
         selected_runtime: runtime
           ? {
               id: runtime.id,
@@ -156,6 +198,10 @@ export function encodeBuilderInput(
                 id: model.id,
                 label: model.label,
                 provider: model.provider,
+                thinking: model.thinking,
+                service_tiers: model.service_tiers,
+                supports_explicit_standard_service_tier:
+                  model.supports_explicit_standard_service_tier,
               })),
         available_workspace_skills: skills.map((skill) => ({
           id: skill.id,
@@ -222,7 +268,13 @@ export function mergeBuilderDraft(
   validSkillIds: Set<string>,
   validMemberIds: Set<string>,
   validModelIds: ReadonlySet<string> | null,
+  configuration?: BuilderConfigurationContext,
 ): AgentDraft {
+  if (
+    configuration &&
+    validateBuilderConfiguration(current, payload, configuration)
+  )
+    return current;
   const scope =
     payload.permission_scope === "workspace" ||
     payload.permission_scope === "members" ||
@@ -273,7 +325,7 @@ export function mergeBuilderDraft(
         }))
     : current.conversationStarters;
 
-  return {
+  const next: AgentDraft = {
     ...current,
     name: typeof payload.name === "string" ? payload.name : current.name,
     description:
@@ -296,4 +348,23 @@ export function mergeBuilderDraft(
     memberIds: new Set(scope === "members" ? memberIds : []),
     teamIds: current.teamIds,
   };
+  if (configuration) {
+    if (typeof payload.instance_agent === "boolean")
+      next.instanceAgent = payload.instance_agent;
+    if (typeof payload.thinking_level === "string")
+      next.thinkingLevel = payload.thinking_level;
+    if (typeof payload.service_tier === "string")
+      next.serviceTier = payload.service_tier;
+    if (payload.execution_policy !== undefined) {
+      const policy = BuilderPolicySchema.parse(payload.execution_policy);
+      next.executionPolicy = { ...policy, revision: 0 };
+      const primary = policy.profiles[0];
+      if (primary) {
+        next.model = primary.model;
+        next.thinkingLevel = primary.thinking_level;
+        next.serviceTier = primary.service_tier;
+      }
+    }
+  }
+  return next;
 }

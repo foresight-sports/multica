@@ -44,6 +44,9 @@ vi.mock("./tabs/skills-tab", () => ({
 vi.mock("./tabs/env-tab", () => ({
   EnvTab: () => <div>env-tab</div>,
 }));
+vi.mock("./tabs/execution-tab", () => ({
+  ExecutionTab: () => <div>execution-tab</div>,
+}));
 vi.mock("./tabs/custom-args-tab", () => ({
   CustomArgsTab: () => <div>custom-args-tab</div>,
 }));
@@ -141,7 +144,7 @@ function makeRuntime(provider: string): AgentRuntime {
 
 function renderPane(
   runtimes: AgentRuntime[],
-  { canEdit = true }: { canEdit?: boolean } = {},
+  { canEdit = true, agent = baseAgent }: { canEdit?: boolean; agent?: Agent } = {},
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -160,7 +163,7 @@ function renderPane(
       <NavigationProvider value={navigation}>
         <QueryClientProvider client={queryClient}>
           <AgentOverviewPane
-            agent={baseAgent}
+            agent={agent}
             runtime={runtimes[0] ?? null}
             owner={null}
             runtimes={runtimes}
@@ -189,6 +192,11 @@ beforeEach(() => {
 });
 
 describe("AgentOverviewPane MCP tab visibility", () => {
+  it("disables configuration controls for an instance copy", () => {
+    const view = renderPane([makeRuntime("codex")], { canEdit: false, agent: { ...baseAgent, instance_agent_id: "instance", instance_source_agent_id: "source" } });
+    openSettings();
+    expect(view.container.querySelector("fieldset")).toBeDisabled();
+  });
   it.each([
     ["Claude", "claude"],
     ["Codex", "codex"],

@@ -10,6 +10,9 @@ import type { Agent } from "@multica/core/types";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import enAgents from "../../locales/en/agents.json";
 
+const permissionState = vi.hoisted(() => ({ create_agents: true, create_instance_agents: true }));
+vi.mock("@multica/core/auth", () => ({ useAuthStore: (selector: (s: unknown) => unknown) => selector({ user: { permissions: permissionState } }) }));
+
 const mockCreateAgent = vi.hoisted(() => vi.fn());
 const mockPush = vi.hoisted(() => vi.fn());
 
@@ -90,6 +93,8 @@ function wrapper(queryClient: QueryClient) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  permissionState.create_agents = true;
+  permissionState.create_instance_agents = true;
   mockCreateAgent.mockResolvedValue(CREATED_AGENT);
 });
 
@@ -146,4 +151,14 @@ describe("useCreateAgentSubmit cache handoff", () => {
       queryKey: workspaceKeys.agents("ws-1"),
     });
   });
+});
+
+it("blocks creation when only the other scope is granted", async () => {
+ permissionState.create_agents = false;
+ const queryClient = new QueryClient();
+ const { result } = renderHook(() => useCreateAgentSubmit({ draft: { ...EMPTY_AGENT_DRAFT, name: "Denied", instanceAgent: false }, runtimeId: "runtime-1", squadId: null }), { wrapper: wrapper(queryClient) });
+ expect(result.current.allowed).toBe(false);
+ await act(async () => { await result.current.create(); });
+ expect(mockCreateAgent).not.toHaveBeenCalled();
+ expect(result.current.formError).toContain("permission");
 });

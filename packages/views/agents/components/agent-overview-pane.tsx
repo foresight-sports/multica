@@ -1,4 +1,5 @@
 "use client";
+import { ExecutionTab } from "./tabs/execution-tab";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -58,7 +59,8 @@ export type DetailTab =
   | "access"
   | "env"
   | "custom_args"
-  | "runtime_config";
+  | "runtime_config"
+ | "execution";
 
 type SecondaryTab = {
   id: DetailTab;
@@ -72,7 +74,8 @@ type SecondaryTab = {
     | "access"
     | "environment"
     | "custom_args"
-    | "runtime_config";
+    | "runtime_config"
+ | "execution";
 };
 
 const CAPABILITY_TABS: SecondaryTab[] = [
@@ -84,6 +87,7 @@ const CAPABILITY_TABS: SecondaryTab[] = [
 ];
 
 const SETTINGS_TABS: SecondaryTab[] = [
+ {id:"execution",labelKey:"execution"},
   { id: "general", labelKey: "general" },
   { id: "access", labelKey: "access" },
   { id: "env", labelKey: "environment" },
@@ -447,7 +451,7 @@ export function AgentOverviewPane({
                   </h2>
                 </header>
 
-                <div className="mt-6">
+                <fieldset className="mt-6 min-w-0" disabled={!canEdit}>
                   {effectiveView === "instructions" && (
                     <InstructionsTab
                       agent={agent}
@@ -499,7 +503,8 @@ export function AgentOverviewPane({
                       onUpdate={onUpdate}
                     />
                   )}
-                  {effectiveView === "env" && (
+                  {effectiveView === "execution" && <ExecutionTab agent={agent} runtimes={runtimes} onDirtyChange={setActiveDirty}/>}
+ {effectiveView === "env" && (
                     <EnvTab agent={agent} onDirtyChange={setActiveDirty} />
                   )}
                   {effectiveView === "custom_args" && (
@@ -517,7 +522,7 @@ export function AgentOverviewPane({
                       onDirtyChange={setActiveDirty}
                     />
                   )}
-                </div>
+                </fieldset>
               </div>
             </section>
           </div>

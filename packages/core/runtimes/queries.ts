@@ -3,6 +3,7 @@ import { api } from "../api";
 
 export const runtimeKeys = {
   all: (wsId: string) => ["runtimes", wsId] as const,
+  subscriptionQuota: (wsId: string, runtimeId: string) => [...runtimeKeys.all(wsId),runtimeId,"subscription-quota"] as const,
   list: (wsId: string) => [...runtimeKeys.all(wsId), "list"] as const,
   listMine: (wsId: string) => [...runtimeKeys.all(wsId), "list", "mine"] as const,
   usage: (rid: string, days: number, tz: string) =>
@@ -59,3 +60,5 @@ export function runtimeListOptions(wsId: string, owner?: "me", wsSlug?: string) 
     queryFn: () => api.listRuntimes({ workspace_id: wsId, owner }, wsSlug),
   });
 }
+
+export function subscriptionQuotaOptions(workspaceId:string,runtimeId:string){return queryOptions({queryKey:runtimeKeys.subscriptionQuota(workspaceId,runtimeId),queryFn:()=>api.getSubscriptionQuota(runtimeId),refetchInterval:30000});}

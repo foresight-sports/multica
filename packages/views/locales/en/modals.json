@@ -1,4 +1,9 @@
 {
+  "jira": {
+    "manual_required": "This workspace requires a JIRA ticket ID before AI-assisted work. Switch to manual creation and fill in the ticket's JIRA ticket ID.",
+    "loading": "Checking the workspace JIRA requirement…",
+    "load_error": "Could not check the JIRA requirement. Reload to retry."
+  },
   "common": {
     "back": "Back",
     "close": "Close",
@@ -244,6 +249,9 @@
       "error_daemon_version": "This agent's daemon CLI ({{current}}) is below the required {{min}}. Upgrade the daemon to use Create with agent.",
       "error_unknown": "Failed to submit. Try again.",
       "sub_issue_of": "Sub-issue of {{identifier}}"
-    }
+    },
+    "intake_routing": "Intake Coordinator will review this ticket and assign the work.",
+    "intake_loading": "Loading ticket routing…",
+    "intake_retry": "Could not load ticket routing. Retry"
   }
 }

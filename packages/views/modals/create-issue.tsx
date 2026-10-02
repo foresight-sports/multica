@@ -1,4 +1,5 @@
 "use client";
+import { IssueRepositoryNotice, useIssueRepositoryGate } from "./issue-repository-notice";
 
 import { issueStatusCategory } from "@multica/core/issues";
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
@@ -59,6 +60,7 @@ import { StatusIcon, StatusPicker, PriorityIcon, PriorityPicker, StagePicker, As
 import { maxSiblingStage } from "../issues/components/pickers/stage-picker";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { useIssueTriggerPreview } from "../issues/hooks/use-issue-trigger-preview";
+import { issueIntakeOptions } from "@multica/core/workspace";
 import { useActorName } from "@multica/core/workspace/hooks";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -119,12 +121,16 @@ import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
 // editor absorbs the delta), and it expands only once the predicate resolves,
 // animating straight to the correct copy.
 function CreateRunHint({
+  projectId,
+  parentIssueId,
   assigneeType,
   assigneeId,
   status,
 }: {
   assigneeType?: IssueAssigneeType;
   assigneeId?: string;
+  projectId?: string;
+  parentIssueId?: string;
   status: IssueStatus;
 }) {
   const { t } = useT("modals");
@@ -132,15 +138,17 @@ function CreateRunHint({
   const isAgentLike = assigneeType === "agent" || assigneeType === "squad";
   const preview = useIssueTriggerPreview({
     isCreate: true,
+    projectId,
+    parentIssueId,
     assigneeType: assigneeType ?? null,
     assigneeId: assigneeId ?? null,
     status,
-    enabled: isAgentLike && !!assigneeId,
+    enabled: (isAgentLike && !!assigneeId) || (!assigneeType && !assigneeId),
   });
 
   // Reveal only after the predicate resolves so the band animates to the final
   // copy instead of flashing "parked" before the run preview lands.
-  const ready = isAgentLike && !!assigneeId && !preview.isLoading;
+  const ready = ((isAgentLike && !!assigneeId) || preview.totalCount > 0) && !preview.isLoading;
   const willStart = preview.totalCount > 0;
   const isSquad = assigneeType === "squad";
   const triggerAgentId = preview.triggers[0]?.agent_id ?? assigneeId;
@@ -259,13 +267,13 @@ export function ManualCreatePanel({
   const [priority, setPriority] = useState<IssuePriority>(
     (data?.priority as IssuePriority | undefined) ?? draft.shared.priority,
   );
-  const [assigneeType, setAssigneeType] = useState<IssueAssigneeType | undefined>(() => {
+  const [selectedAssigneeType, setAssigneeType] = useState<IssueAssigneeType | undefined>(() => {
     if (data && "assignee_type" in data) {
       return (data.assignee_type as IssueAssigneeType | null) ?? undefined;
     }
     return draft.manual.assigneeType;
   });
-  const [assigneeId, setAssigneeId] = useState<string | undefined>(() => {
+  const [selectedAssigneeId, setAssigneeId] = useState<string | undefined>(() => {
     if (data && "assignee_id" in data) {
       return (data.assignee_id as string | null) ?? undefined;
     }
@@ -321,6 +329,14 @@ export function ManualCreatePanel({
   // Fetch parent issue details for the chip (status/identifier/title).
   // List cache usually has it already, so this resolves synchronously.
   const wsId = useWorkspaceId();
+  const repositoryGate=useIssueRepositoryGate();
+  const intake = useQuery({ ...issueIntakeOptions(wsId), enabled: !parentIssueId, retry: false });
+  const intakeSquadId = intake.data?.projects[projectId ?? ""] ?? intake.data?.defaultSquadId;
+  const usesIntake = !parentIssueId && !!intakeSquadId;
+  const intakeUnavailable = !parentIssueId && (intake.isPending || intake.isError);
+  // Remembered or prefilled assignees must not silently bypass intake.
+  const assigneeType = usesIntake || intakeUnavailable ? undefined : selectedAssigneeType;
+  const assigneeId = usesIntake || intakeUnavailable ? undefined : selectedAssigneeId;
   const { categoryOf: draftStatusCategory, colorOf, iconOf } = useIssueStatuses(wsId);
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId));
   const { data: parentIssue } = useQuery({
@@ -474,6 +490,7 @@ export function ManualCreatePanel({
     uploadGate: gate,
     normalize: () => title.trim(),
     onSubmit: async (): Promise<boolean> => {
+      if (intakeUnavailable || repositoryGate.blocked) return false;
       // Flush the description editor's pending debounce into the store BEFORE
       // snapshotting, so a late flush of pre-submit typing cannot masquerade
       // as an edit made during the request.
@@ -494,6 +511,7 @@ export function ManualCreatePanel({
             capture_token: sourcePreview.capture_token,
             issue: {
               title: title.trim(),
+          jira_ticket_id: workspaceProperties.filter(p => p.config.system_key === "jira_ticket_id").map(p => propertyValues[p.id]).find(v => typeof v === "string") as string | undefined,
               description,
               status,
               priority,
@@ -511,6 +529,7 @@ export function ManualCreatePanel({
       } else {
         issue = await createIssueMutation.mutateAsync({
           title: title.trim(),
+          jira_ticket_id: workspaceProperties.filter(p => p.config.system_key === "jira_ticket_id").map(p => propertyValues[p.id]).find(v => typeof v === "string") as string | undefined,
           description,
           status,
           priority,
@@ -535,7 +554,7 @@ export function ManualCreatePanel({
       // Custom-property values can only be addressed once the issue has an
       // id. Keep the modal in its submitting state until every value settles
       // so closing or "Create another" cannot race the fan-out.
-      const propertyEntries = Object.entries(propertyValues);
+      const propertyEntries = Object.entries(propertyValues).filter(([id]) => !workspaceProperties.some(p => p.id === id && p.config.system_key === "jira_ticket_id"));
       if (propertyEntries.length > 0) {
         const results = await Promise.allSettled(
           propertyEntries.map(([propertyId, value]) =>
@@ -767,6 +786,7 @@ export function ManualCreatePanel({
   // at the fix; otherwise hand off to the composer (single-flight + gate live
   // there).
   const handleSubmit = () => {
+    if (intakeUnavailable || repositoryGate.blocked) return;
     if (anchorCommentId && !sourcePreview) return;
     if (!title.trim()) {
       titleEditorRef.current?.focus();
@@ -849,7 +869,7 @@ export function ManualCreatePanel({
       // for a missing title — a native-disabled button is not focusable, so
       // keyboard and screen-reader users could never reach the tooltip that
       // explains why nothing happens. `handleSubmit` is the real gate either way.
-      disabled={submitBusy}
+      disabled={submitBusy || intakeUnavailable || repositoryGate.blocked}
       aria-disabled={submitState === "missing_title" || submitState === "source_unavailable" || undefined}
       aria-busy={submitBusy || undefined}
       // The Button base only dims/blocks on native `disabled`, so aria-disabled
@@ -944,6 +964,7 @@ export function ManualCreatePanel({
               />
             </div>
 
+            <IssueRepositoryNotice onConfigure={()=>{const pending=descEditorRef.current?.flushPendingUpdate?.();if(pending!=null)setManual({description:pending});onClose();}} />
             {/* Description — takes remaining space */}
             <div {...descDropZoneProps} className="relative flex flex-1 min-h-0 overflow-y-auto px-5">
               <ContentEditor
@@ -973,9 +994,18 @@ export function ManualCreatePanel({
               />
             )}
 
+            {!parentIssueId && (usesIntake || intakeUnavailable) && (
+              <div className="px-4 py-2 text-sm text-muted-foreground" role="status">
+                {intake.isError ? (
+                  <button type="button" className="underline" onClick={() => void intake.refetch()}>
+                    {t(($) => $.create_issue.intake_retry)}
+                  </button>
+                ) : intake.isPending ? t(($) => $.create_issue.intake_loading) : t(($) => $.create_issue.intake_routing)}
+              </div>
+            )}
             {/* Pre-trigger preview — a passive caption above the toolbar; reveals
                 when an agent assignee will pick the issue up. */}
-            <CreateRunHint assigneeType={assigneeType} assigneeId={assigneeId} status={status} />
+            <CreateRunHint projectId={projectId} parentIssueId={parentIssueId} assigneeType={assigneeType} assigneeId={assigneeId} status={status} />
 
             {/* Property toolbar — each field renders per the Settings → Preferences → Issue creation
                 selection (see showField above). */}
@@ -1005,7 +1035,7 @@ export function ManualCreatePanel({
               )}
 
               {/* Assignee */}
-              {showField.assignee && (
+              {!usesIntake && !intakeUnavailable && showField.assignee && (
                 <AssigneePicker
                   assigneeType={assigneeType ?? null}
                   assigneeId={assigneeId ?? null}
@@ -1100,6 +1130,7 @@ export function ManualCreatePanel({
                 .filter(
                   (property) =>
                     Object.prototype.hasOwnProperty.call(propertyValues, property.id) ||
+                    property.config.system_key === "jira_ticket_id" ||
                     customPropertyPickerId === property.id,
                 )
                 .map((property) => {
@@ -1223,7 +1254,7 @@ export function ManualCreatePanel({
                       {t(($) => $.create_issue.set_priority)}
                     </DropdownMenuItem>
                   )}
-                  {!showField.assignee && (
+                  {!usesIntake && !intakeUnavailable && !showField.assignee && (
                     <DropdownMenuItem onClick={() => setFieldPickerOpen("assignee")}>
                       <CircleUser className="h-3.5 w-3.5" />
                       {t(($) => $.create_issue.set_assignee)}

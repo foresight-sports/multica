@@ -11,13 +11,18 @@ import { useQuery } from "@tanstack/react-query";
 import {
   EMPTY_AGENT_DRAFT,
   isDraftDescriptionWithinLimit,
+  isDraftExecutionReady,
+  getDraftExecutionPolicy,
   AGENT_CONVERSATION_STARTER_LABEL_MAX_LENGTH,
   AGENT_CONVERSATION_STARTER_MAX_LENGTH,
   type AgentDraft,
 } from "@multica/core/agents";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { isRuntimeUsableForUser, runtimeListOptions } from "@multica/core/runtimes";
+import {
+  isRuntimeUsableForUser,
+  runtimeListOptions,
+} from "@multica/core/runtimes";
 import type {
   MemberWithUser,
   RuntimeDevice,
@@ -90,6 +95,13 @@ export function useCreateAgentForm(options?: {
   const { data: workspaceSkills = [] } = useQuery(skillListOptions(wsId));
 
   const [draft, setDraft] = useState<AgentDraft>(EMPTY_AGENT_DRAFT);
+  useEffect(() => {
+    if (!currentUser || draft.instanceAgent !== undefined) return;
+    setDraft((current) => ({
+      ...current,
+      instanceAgent: currentUser.permissions?.create_instance_agents === true,
+    }));
+  }, [currentUser, draft.instanceAgent]);
 
   const usableRuntimes = useMemo(
     () =>
@@ -121,6 +133,28 @@ export function useCreateAgentForm(options?: {
     setDraft((current) => ({ ...current, runtimeId: next }));
   }, [draft.runtimeId, seedReady, seedRuntimeId, usableRuntimes]);
 
+  // Restore older saved drafts without keeping their machine bindings.
+  useEffect(() => {
+    const policy = draft.executionPolicy;
+    if (!policy) return;
+    let changed = false;
+    const profiles = policy.profiles.map((profile) => {
+      if (!profile.runtime_id) return profile;
+      const provider =
+        profile.provider ||
+        runtimes.find((r) => r.id === profile.runtime_id)?.provider;
+      if (!provider) return profile;
+      changed = true;
+      return { ...profile, provider, runtime_id: "" };
+    });
+    if (changed)
+      setDraft((current) =>
+        current.executionPolicy === policy
+          ? { ...current, executionPolicy: { ...policy, profiles } }
+          : current,
+      );
+  }, [draft.executionPolicy, runtimes]);
+
   const accessInvalid =
     draft.permissionScope === "members" &&
     draft.memberIds.size === 0 &&
@@ -146,9 +180,11 @@ export function useCreateAgentForm(options?: {
     workspaceSkills,
     currentUserId,
     draftReady:
-      selectedRuntime != null &&
-      isRuntimeUsableForUser(selectedRuntime, currentUserId) &&
+      !!draft.executionPolicy?.profiles.length &&
       isDraftDescriptionWithinLimit(draft.description) &&
+      isDraftExecutionReady(
+        draft.executionPolicy ? getDraftExecutionPolicy(draft) : undefined,
+      ) &&
       !accessInvalid &&
       !conversationStartersInvalid,
   };

@@ -242,6 +242,9 @@
       "error_daemon_version": "이 에이전트의 데몬 CLI({{current}})가 필요한 버전 {{min}}보다 낮습니다. 에이전트로 만들기를 사용하려면 데몬을 업그레이드하세요.",
       "error_unknown": "제출하지 못했습니다. 다시 시도하세요.",
       "sub_issue_of": "{{identifier}}의 하위 태스크"
-    }
+    },
+    "intake_routing": "접수 코디네이터가 이 티켓을 검토하고 작업을 배정합니다.",
+    "intake_loading": "티켓 라우팅을 불러오는 중…",
+    "intake_retry": "티켓 라우팅을 불러오지 못했습니다. 다시 시도"
   }
 }

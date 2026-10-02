@@ -39,7 +39,7 @@ type RuntimeTeardownResult struct {
 // application-layer guard is required before a runtime teardown changes data.
 func ValidateRuntimeAgentWorkspaces(runtime db.AgentRuntime, agents []db.Agent) error {
 	for _, agent := range agents {
-		if agent.WorkspaceID != runtime.WorkspaceID {
+		if agent.WorkspaceID != runtime.WorkspaceID && !(agent.InstanceAgentID.Valid && agent.InstanceSourceAgentID.Valid && agent.OwnerID == runtime.OwnerID) {
 			return fmt.Errorf("%w: agent %x runtime %x", ErrRuntimeWorkspaceMismatch, agent.ID.Bytes, runtime.ID.Bytes)
 		}
 	}
@@ -58,6 +58,13 @@ func ValidateRuntimeAgentWorkspaces(runtime db.AgentRuntime, agents []db.Agent) 
 // deletion so the legacy ON DELETE CASCADE cannot erase it.
 func TeardownRuntime(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID, opts RuntimeTeardownOptions) (RuntimeTeardownResult, error) {
 	var out RuntimeTeardownResult
+	referenced, checkErr := qtx.RuntimeHasExecutionProfiles(ctx, runtimeID)
+	if checkErr != nil {
+		return out, checkErr
+	}
+	if referenced {
+		return out, fmt.Errorf("remove this runtime from agent execution profiles before deleting it")
+	}
 
 	runtime, err := qtx.LockAgentRuntime(ctx, runtimeID)
 	if err != nil {
@@ -77,6 +84,9 @@ func TeardownRuntime(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID
 	}
 
 	if opts.CancelNonTerminalTasks {
+		if err := qtx.ReleasePortableTasksFromRuntime(ctx, runtimeID); err != nil {
+			return out, fmt.Errorf("release portable tasks: %w", err)
+		}
 		cancelled, err := qtx.CancelAgentTasksByRuntimeOrAgent(ctx, db.CancelAgentTasksByRuntimeOrAgentParams{
 			RuntimeIds: []pgtype.UUID{runtimeID},
 			AgentIds:   lockedAgentIDs,

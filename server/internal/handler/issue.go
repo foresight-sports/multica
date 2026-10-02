@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/workspacerepo"
 	"io"
 	"log/slog"
 	"net/http"
@@ -2596,6 +2597,18 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if prop, err := h.Queries.GetJiraProperty(r.Context(), wsUUID); err != nil {
+		writeError(w, 500, "could not check workspace JIRA requirement")
+		return
+	} else if parsePropertyConfig(prop.Config).Required {
+		writeError(w, 409, "Create the issue manually and set its JIRA ticket ID before starting agent work")
+		return
+	}
+
+	if err := workspacerepo.RequireConfigured(r.Context(), h.Queries, workspaceID); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
 	requesterID, ok := requireUserID(w, r)
 	if !ok {
 		return
@@ -2605,6 +2618,31 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Intake owns top-level human requests, including requests authored through AI.
+	if req.ParentIssueID == "" {
+		candidate := service.IssueCreateParams{WorkspaceID: wsUUID, CreatorType: "member", CreatorID: requesterUUID, Status: "todo"}
+		if req.ProjectID != "" {
+			pid, valid := parseUUIDOrBadRequest(w, req.ProjectID, "project_id")
+			if !valid {
+				return
+			}
+			if _, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{ID: pid, WorkspaceID: wsUUID}); err != nil {
+				writeError(w, http.StatusBadRequest, "project not found")
+				return
+			}
+			candidate.ProjectID = pid
+		}
+		if err := h.IssueService.ResolveIssueIntake(r.Context(), h.Queries, &candidate, candidate.ProjectID); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		if candidate.AssigneeType.String == "squad" {
+			req.SquadID = uuidToString(candidate.AssigneeID)
+			req.AgentID = ""
+			hasSquad = true
+			hasAgent = false
+		}
+	}
 	// Resolve the actor to the agent that will actually run the task. For
 	// agent picks that's the agent itself; for squad picks it's the squad's
 	// leader agent. The leader receives a squad-leader briefing on dispatch
@@ -2688,17 +2726,25 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 	// twenty seconds later. Dev-built
 	// daemons (git-describe shape) are exempted inside CheckMinCLIVersion
 	// so `make daemon` works without weakening staging or production.
-	if status, payload := h.checkQuickCreateDaemonVersion(r.Context(), obsmetrics.RuntimeLookupSourceIssue, agent.RuntimeID); status != 0 {
-		writeJSON(w, status, payload)
-		return
-	}
-	if priority != "" || dueDate != "" {
-		if status, payload := h.checkQuickCreateDaemonVersionAtLeast(
-			r.Context(), obsmetrics.RuntimeLookupSourceIssue, agent.RuntimeID, agentpkg.MinQuickCreateFieldsCLIVersion,
-		); status != 0 {
+	if service.HasExecutionProfiles(agent) {
+		if status, payload := h.checkPortableQuickCreate(r.Context(), agent, priority != "" || dueDate != "", false); status != 0 {
 			writeJSON(w, status, payload)
 			return
 		}
+	} else {
+		if status, payload := h.checkQuickCreateDaemonVersion(r.Context(), obsmetrics.RuntimeLookupSourceIssue, agent.RuntimeID); status != 0 {
+			writeJSON(w, status, payload)
+			return
+		}
+		if priority != "" || dueDate != "" {
+			if status, payload := h.checkQuickCreateDaemonVersionAtLeast(
+				r.Context(), obsmetrics.RuntimeLookupSourceIssue, agent.RuntimeID, agentpkg.MinQuickCreateFieldsCLIVersion,
+			); status != 0 {
+				writeJSON(w, status, payload)
+				return
+			}
+		}
+
 	}
 
 	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
@@ -2858,6 +2904,7 @@ func readRuntimeCLIVersion(metadata []byte) string {
 }
 
 type CreateIssueRequest struct {
+	JiraTicketID  string   `json:"jira_ticket_id,omitempty"`
 	Title         string   `json:"title"`
 	Description   *string  `json:"description"`
 	Status        string   `json:"status"`
@@ -3104,7 +3151,16 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		return out
 	}
 
-	res, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
+	if req.JiraTicketID != "" {
+		key, e := normalizeJiraKey(req.JiraTicketID)
+		if e != nil {
+			writeError(w, 400, e.Error())
+			return
+		}
+		req.JiraTicketID = key
+	}
+
+	res, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{JiraTicketID: req.JiraTicketID,
 		WorkspaceID:    wsUUID,
 		Title:          req.Title,
 		Description:    ptrToText(req.Description),
@@ -3147,6 +3203,10 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	if errors.Is(err, service.ErrIssueIntakeUnavailable) || errors.Is(err, workspacerepo.ErrConfigurationRequired) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if errors.Is(err, service.ErrActiveDuplicate) {
 		dup := *res.DuplicateIssue
 		existing := issueToResponse(dup, h.getIssuePrefix(r.Context(), dup.WorkspaceID))
@@ -3907,7 +3967,7 @@ func (h *Handler) assigneeFallbackAgent(ctx context.Context, issue db.Issue, act
 		return db.Agent{}, false, false
 	}
 	agent, err := h.Queries.GetAgent(ctx, issue.AssigneeID)
-	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
+	if err != nil || (!agent.RuntimeID.Valid && !service.HasExecutionProfiles(agent)) || agent.ArchivedAt.Valid {
 		return db.Agent{}, false, false
 	}
 	if !h.canInvokeAgent(ctx, agent, actorType, actorID, opts.OriginatorUserID, uuidToString(issue.WorkspaceID)) {

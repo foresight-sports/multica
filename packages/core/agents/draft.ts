@@ -1,3 +1,4 @@
+import type { ExecutionPolicy } from "../api/execution-schema";
 import { isRuntimeUsableForUser } from "../runtimes/access";
 import type {
   Agent,
@@ -23,6 +24,8 @@ export type { AgentPermissionScope };
  * validated, seeded and submitted the same way regardless of entry point.
  */
 export interface AgentDraft {
+  executionPolicy?: ExecutionPolicy;
+  instanceAgent?: boolean;
   name: string;
   description: string;
   instructions: string;
@@ -70,6 +73,7 @@ export function applyDraftRuntimeChange(
   draft: AgentDraft,
   runtimeId: string,
 ): AgentDraft {
+  if (draft.executionPolicy?.profiles.length) return { ...draft, runtimeId };
   return {
     ...draft,
     runtimeId,
@@ -189,14 +193,16 @@ export function buildDuplicateDraft(
     name: `${source.name}${options.nameSuffix}`,
     description: source.description ?? "",
     instructions: source.instructions ?? "",
-    conversationStarters: (source.conversation_starters ?? []).map((item) => ({ ...item })),
+    conversationStarters: (source.conversation_starters ?? []).map((item) => ({
+      ...item,
+    })),
     avatarUrl: source.avatar_url ?? null,
     runtimeId: keepsRuntime
       ? (source.runtime_id as string)
       : options.fallbackRuntimeId,
-    model: keepsRuntime ? source.model ?? "" : "",
-    thinkingLevel: keepsRuntime ? source.thinking_level ?? "" : "",
-    serviceTier: keepsRuntime ? source.service_tier ?? "" : "",
+    model: keepsRuntime ? (source.model ?? "") : "",
+    thinkingLevel: keepsRuntime ? (source.thinking_level ?? "") : "",
+    serviceTier: keepsRuntime ? (source.service_tier ?? "") : "",
     skillIds: new Set(source.skills.map((skill) => skill.id)),
     ...deriveDuplicateAccess(source),
   };
@@ -217,6 +223,10 @@ export function buildCreateAgentRequest(options: {
 }): CreateAgentRequest {
   const { draft, runtimeId, template, duplicateSource } = options;
   const request: CreateAgentRequest = {
+    ...(draft.instanceAgent ? { instance_agent: true } : {}),
+    ...(draft.executionPolicy?.profiles.length
+      ? { execution_policy: { ...getDraftExecutionPolicy(draft), revision: 0 } }
+      : {}),
     name: draft.name.trim(),
     description: draft.description.trim(),
     instructions: draft.instructions.trim() || undefined,
@@ -253,4 +263,59 @@ export function buildCreateAgentRequest(options: {
     }
   }
   return request;
+}
+
+/** Profiles are optional, but every configured profile must be complete. */
+export function isDraftExecutionReady(policy?: ExecutionPolicy): boolean {
+  if (!policy?.profiles.length) return true;
+  const ids = new Set(policy.profiles.map((p) => p.id));
+  return (
+    ids.size === policy.profiles.length &&
+    ids.has(policy.default_profile) &&
+    (!policy.router_profile || ids.has(policy.router_profile)) &&
+    policy.profiles.every(
+      (p) => !!p.id && !!p.name.trim() && !!p.provider && !!p.model,
+    )
+  );
+}
+
+/** Profiles describe the finished agent independently of the creation assistant. */
+export function getDraftExecutionPolicy(
+  draft: AgentDraft,
+  primaryName = "Default profile",
+  includePrimary = false,
+  primaryProvider = "",
+): ExecutionPolicy {
+  if (
+    draft.executionPolicy &&
+    !draft.executionPolicy.profiles.length &&
+    !includePrimary
+  )
+    return draft.executionPolicy;
+  const primary = {
+    id: "creation-primary",
+    name: primaryName,
+    runtime_id: "",
+    provider: primaryProvider,
+    model: draft.model,
+    thinking_level: draft.thinkingLevel,
+    service_tier: draft.serviceTier,
+    purpose: "",
+    keywords: [],
+    required_os: "",
+    required_tools: [],
+    quality: 3,
+    speed: 3,
+    cost: 3,
+  };
+  if (draft.executionPolicy?.profiles.length) return draft.executionPolicy;
+  return {
+    revision: 0,
+    mode: "default",
+    default_profile: primary.id,
+    router_profile: "",
+    preference: "balanced",
+    allow_fallback: false,
+    profiles: [primary],
+  };
 }

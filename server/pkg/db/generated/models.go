@@ -53,6 +53,9 @@ type Agent struct {
 	DisabledRuntimeSkills []byte      `json:"disabled_runtime_skills"`
 	ServiceTier           pgtype.Text `json:"service_tier"`
 	ConversationStarters  []byte      `json:"conversation_starters"`
+	InstanceAgentID       pgtype.UUID `json:"instance_agent_id"`
+	InstanceSourceAgentID pgtype.UUID `json:"instance_source_agent_id"`
+	ExecutionPolicy       []byte      `json:"execution_policy"`
 }
 
 type AgentBuilderDraft struct {
@@ -176,6 +179,8 @@ type AgentTaskQueue struct {
 	CancelledByType           pgtype.Text `json:"cancelled_by_type"`
 	CancelledByID             pgtype.UUID `json:"cancelled_by_id"`
 	CancelledByName           pgtype.Text `json:"cancelled_by_name"`
+	ExecutionRequest          []byte      `json:"execution_request"`
+	ExecutionSelection        []byte      `json:"execution_selection"`
 }
 
 type AgentToLabel struct {
@@ -762,6 +767,25 @@ type InboxItem struct {
 	Details       []byte             `json:"details"`
 }
 
+type InstanceAgent struct {
+	ID            pgtype.UUID        `json:"id"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Instructions  string             `json:"instructions"`
+	Revision      int64              `json:"revision"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	SourceAgentID pgtype.UUID        `json:"source_agent_id"`
+}
+
+type InstanceConfiguration struct {
+	Singleton    bool               `json:"singleton"`
+	Instructions string             `json:"instructions"`
+	Revision     int64              `json:"revision"`
+	UpdatedBy    pgtype.UUID        `json:"updated_by"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type InstanceTelemetryState struct {
 	Singleton         bool               `json:"singleton"`
 	InstanceID        pgtype.UUID        `json:"instance_id"`
@@ -1032,6 +1056,12 @@ type LarkUserBinding struct {
 	BoundAt        pgtype.Timestamptz `json:"bound_at"`
 }
 
+type MachineLog struct {
+	MachineKey string             `json:"machine_key"`
+	Snapshot   []byte             `json:"snapshot"`
+	ReceivedAt pgtype.Timestamptz `json:"received_at"`
+}
+
 type MaintenanceJob struct {
 	ID             pgtype.UUID        `json:"id"`
 	JobType        string             `json:"job_type"`
@@ -1245,6 +1275,13 @@ type QuickAction struct {
 	CreatedByID   pgtype.UUID        `json:"created_by_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RepositoryConfiguration struct {
+	Scope    string `json:"scope"`
+	Subject  string `json:"subject"`
+	Config   []byte `json:"config"`
+	Revision int64  `json:"revision"`
 }
 
 type RuntimeProfile struct {
@@ -1564,6 +1601,26 @@ type WebhookDelivery struct {
 	ReplayIdempotencyKey   pgtype.Text        `json:"replay_idempotency_key"`
 }
 
+type WorkRecord struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	IssueID            pgtype.UUID        `json:"issue_id"`
+	AgentID            pgtype.UUID        `json:"agent_id"`
+	TaskID             pgtype.UUID        `json:"task_id"`
+	Kind               string             `json:"kind"`
+	ResourceKey        string             `json:"resource_key"`
+	State              string             `json:"state"`
+	MachineOwnerID     pgtype.UUID        `json:"machine_owner_id"`
+	DaemonID           string             `json:"daemon_id"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	ApprovedBy         pgtype.UUID        `json:"approved_by"`
+	ContinuationTaskID pgtype.UUID        `json:"continuation_task_id"`
+	Data               []byte             `json:"data"`
+	Revision           int64              `json:"revision"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Workspace struct {
 	ID           pgtype.UUID        `json:"id"`
 	Name         string             `json:"name"`
@@ -1578,7 +1635,8 @@ type Workspace struct {
 	IssueCounter int32              `json:"issue_counter"`
 	AvatarUrl    pgtype.Text        `json:"avatar_url"`
 	// When TRUE, an agent run that resolves to no precise accountable human (would be owner_fallback) is refused at enqueue instead of degrading to the agent owner (MUL-4302 §3.5). Default FALSE = owner_fallback. Never affects authorization (originator_user_id).
-	AttributionFailClosed bool `json:"attribution_fail_closed"`
+	AttributionFailClosed bool   `json:"attribution_fail_closed"`
+	IssueIntake           []byte `json:"issue_intake"`
 }
 
 type WorkspaceInvitation struct {

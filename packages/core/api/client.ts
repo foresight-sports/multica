@@ -1,4 +1,15 @@
+import { WorkRecordsSchema, WorkRecordSchema, type WorkRecords, type WorkRecord } from "./work-record-schema";
+import { MachineLogsSchema, type MachineLogs } from "./machine-logs-schema";
+import { RepositoryReadinessSchema, type RepositoryReadiness } from "./repository-readiness-schema";
+import { RepositorySettingsSchema, type RepositorySettings } from "./repository-settings-schema";
+import { JiraSettingsSchema, type JiraSettings } from "./jira-settings-schema";
+import { IssueIntakeSchema, type IssueIntake } from "./issue-intake-schema";
+import { InstanceUpdateSchema, RuntimeUpdateResponseSchema, type InstanceUpdateInfo } from "./runtime-update-schema";
+import { SubscriptionQuotaSchema, unknownSubscriptionQuota } from "./subscription-quota-schema";
+import { ExecutionPolicySchema, ExecutionPreviewSchema, type ExecutionPolicy, type ExecutionRequest, type ExecutionPreview } from "./execution-schema";
+import { parseAgentResponse, parseAgentListResponse } from "./agent-schema";
 import { configStore } from "../config";
+import { InstanceConfigurationSchema, InstanceAgentListSchema, InstanceAgentSavedSchema, type InstanceConfiguration, type InstanceAgent, type InstanceAgentInput } from "./instance-schema";
 import type {
   Issue,
   IssuePriority,
@@ -667,6 +678,19 @@ function dingTalkGroupSearch(params: ListDingTalkGroupsParams): string {
 }
 
 export class ApiClient {
+  async getWorkRecords(issueId: string): Promise<WorkRecords> {
+    const endpoint = "/api/issues/" + encodeURIComponent(issueId) + "/work-records";
+    const parsed = parseWithFallback<WorkRecords | null>(await this.fetch<unknown>(endpoint), WorkRecordsSchema, null, { endpoint });
+    if (!parsed) throw new Error("Could not read work records");
+    return parsed;
+  }
+  async updateWorkRecord(issueId: string, recordId: string, input: { action: string; revision: number }): Promise<WorkRecord> {
+    const endpoint = "/api/issues/" + encodeURIComponent(issueId) + "/work-records/" + encodeURIComponent(recordId);
+    const parsed = parseWithFallback<WorkRecord | null>(await this.fetch<unknown>(endpoint, { method: "PUT", body: JSON.stringify({ action: input.action, revision: input.revision }) }), WorkRecordSchema, null, { endpoint });
+    if (!parsed) throw new Error("Could not read updated work record; reload before retrying");
+    return parsed;
+  }
+
   private baseUrl: string;
   private token: string | null = null;
   private logger: Logger;
@@ -830,8 +854,37 @@ export class ApiClient {
     if (!result) throw new Error("Could not load runtime installer");
     return result;
   }
-  async getRuntimePermissionPolicy(): Promise<RuntimePermissionPolicy> {
-    const raw = await this.fetch<unknown>("/api/permission-policies/runtime-register");
+  async getInstanceConfiguration(): Promise<InstanceConfiguration> {
+    const raw = await this.fetch<unknown>("/api/instance/configuration", { cache: "no-store" });
+    const result = parseWithFallback<InstanceConfiguration | null>(raw, InstanceConfigurationSchema, null, { endpoint: "GET /api/instance/configuration" });
+    if (!result) throw new Error("Could not load instance instructions. Please reload.");
+    return result;
+  }
+
+  async updateInstanceConfiguration(data: InstanceConfiguration): Promise<InstanceConfiguration> {
+    const raw = await this.fetch<unknown>("/api/instance/configuration", { method: "PUT", body: JSON.stringify(data) });
+    const result = parseWithFallback<InstanceConfiguration | null>(raw, InstanceConfigurationSchema, null, { endpoint: "PUT /api/instance/configuration" });
+    if (!result) throw new Error("Could not confirm saved instance instructions. Please reload.");
+    return result;
+  }
+
+  async listInstanceAgents(): Promise<InstanceAgent[]> {
+    const raw = await this.fetch<unknown>("/api/instance/agents", { cache: "no-store" });
+    const result = parseWithFallback<InstanceAgent[] | null>(raw, InstanceAgentListSchema, null, { endpoint: "GET /api/instance/agents" });
+    if (!result) throw new Error("Could not load instance agents. Please reload.");
+    return result;
+  }
+
+  async saveInstanceAgent(data: InstanceAgentInput, id?: string): Promise<{ id: string }> {
+    const path = id ? `/api/instance/agents/${id}` : "/api/instance/agents";
+    const raw = await this.fetch<unknown>(path, { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
+    const result = parseWithFallback<{ id: string } | null>(raw, InstanceAgentSavedSchema, null, { endpoint: path });
+    if (!result) throw new Error("Could not confirm saved instance agent. Reload before retrying.");
+    return result;
+  }
+
+  async getRuntimePermissionPolicy(action = "runtime-register"): Promise<RuntimePermissionPolicy> {
+    const raw = await this.fetch<unknown>(`/api/permission-policies/${encodeURIComponent(action)}`);
     const policy = parseWithFallback<RuntimePermissionPolicy | null>(raw, RuntimePermissionPolicySchema, null, {
       endpoint: "GET /api/permission-policies/runtime-register",
     });
@@ -839,8 +892,8 @@ export class ApiClient {
     return policy;
   }
 
-  async updateRuntimePermissionPolicy(data: Pick<RuntimePermissionPolicy, "allowed_emails" | "revision">): Promise<RuntimePermissionPolicy> {
-    const raw = await this.fetch<unknown>("/api/permission-policies/runtime-register", {
+  async updateRuntimePermissionPolicy(data: Pick<RuntimePermissionPolicy, "allowed_emails" | "revision">, action = "runtime-register"): Promise<RuntimePermissionPolicy> {
+    const raw = await this.fetch<unknown>(`/api/permission-policies/${encodeURIComponent(action)}`, {
       method: "PUT", body: JSON.stringify(data),
     });
     const policy = parseWithFallback<RuntimePermissionPolicy | null>(raw, RuntimePermissionPolicySchema, null, {
@@ -1351,12 +1404,56 @@ export class ApiClient {
    *  (create / single assign / single status / batch). Returns the runs that
    *  would start; no side effect. The four entry points consult this instead
    *  of re-implementing the rule (MUL-3375). */
+  async getMachineLogs(runtimeId: string): Promise<MachineLogs> {
+    const endpoint = `/api/runtimes/${runtimeId}/logs`;
+    const raw = await this.fetch<unknown>(endpoint);
+    const parsed = parseWithFallback(raw, MachineLogsSchema, null, { endpoint });
+    if (!parsed) throw new Error("Invalid machine logs response");
+    return parsed;
+  }
+  async getRepositoryReadiness(wsId:string,runtimeId:string): Promise<RepositoryReadiness> {
+ const endpoint=`/api/runtimes/${runtimeId}/workspace-repositories/${wsId}`;
+ const raw=await this.fetch<unknown>(endpoint);
+ const parsed=parseWithFallback(raw,RepositoryReadinessSchema,null,{endpoint});
+ if(!parsed) throw new Error("Invalid workspace readiness response");
+ return parsed;
+ }
+  async getRepositorySettings(wsId:string,runtimeId?:string):Promise<RepositorySettings> {
+    const endpoint=runtimeId ? `/api/runtimes/${runtimeId}/repository-settings` : `/api/workspaces/${wsId}/repository-settings`;
+    const raw=await this.fetch<unknown>(endpoint);
+    const parsed=parseWithFallback(raw,RepositorySettingsSchema,null,{endpoint});
+    if(!parsed) throw new Error("Invalid repository settings response");
+    return parsed;
+  }
+
+  async getJiraSettings(wsId: string): Promise<JiraSettings> {
+    const endpoint = `/api/workspaces/${wsId}/jira-settings`;
+    const parsed = parseWithFallback(await this.fetch<unknown>(endpoint), JiraSettingsSchema, null, { endpoint });
+    if (!parsed) throw new Error("Could not load JIRA settings");
+    return parsed;
+  }
+  async saveJiraSettings(wsId: string, value: JiraSettings): Promise<JiraSettings> {
+    const endpoint = `/api/workspaces/${wsId}/jira-settings`;
+    const raw = await this.fetch<unknown>(endpoint, { method: "PUT", body: JSON.stringify(value) });
+    const parsed = parseWithFallback(raw, JiraSettingsSchema, null, { endpoint });
+    if (!parsed) throw new Error("Could not save JIRA settings");
+    return parsed;
+  }
+  async saveRepositorySettings(wsId:string,value:RepositorySettings,runtimeId?:string):Promise<RepositorySettings> {
+    const endpoint=runtimeId ? `/api/runtimes/${runtimeId}/repository-settings` : `/api/workspaces/${wsId}/repository-settings`;
+    const raw=await this.fetch<unknown>(endpoint,{method:"PUT",body:JSON.stringify(value)});
+    const parsed=parseWithFallback(raw,RepositorySettingsSchema,null,{endpoint});
+    if(!parsed) throw new Error("Invalid repository settings response");
+    return parsed;
+  }
   async previewIssueTrigger(params: IssueTriggerPreviewParams): Promise<IssueTriggerPreview> {
     const raw = await this.fetch<unknown>("/api/issues/preview-trigger", {
       method: "POST",
       body: JSON.stringify({
         ...(params.issueIds?.length ? { issue_ids: params.issueIds } : {}),
         ...(params.isCreate ? { is_create: true } : {}),
+        ...(params.projectId ? { project_id: params.projectId } : {}),
+        ...(params.parentIssueId ? { parent_issue_id: params.parentIssueId } : {}),
         ...(params.assigneeType ? { assignee_type: params.assigneeType } : {}),
         ...(params.assigneeId ? { assignee_id: params.assigneeId } : {}),
         ...(params.status ? { status: params.status } : {}),
@@ -1499,19 +1596,19 @@ export class ApiClient {
     const search = new URLSearchParams();
     if (params?.workspace_id) search.set("workspace_id", params.workspace_id);
     if (params?.include_archived) search.set("include_archived", "true");
-    return this.fetch(`/api/agents?${search}`);
+    return parseAgentListResponse(await this.fetch(`/api/agents?${search}`));
   }
 
   async getAgent(id: string): Promise<Agent> {
-    return this.fetch(`/api/agents/${id}`);
+    return parseAgentResponse(await this.fetch(`/api/agents/${id}`));
   }
 
   async createAgent(data: CreateAgentRequest): Promise<Agent> {
     assertAgentConversationStartersWriteSupported(data);
-    return this.fetch("/api/agents", {
+    return parseAgentResponse(await this.fetch("/api/agents", {
       method: "POST",
       body: JSON.stringify(data),
-    });
+    }));
   }
 
   /**
@@ -1624,14 +1721,14 @@ export class ApiClient {
 
   async updateAgent(id: string, data: UpdateAgentRequest): Promise<Agent> {
     assertAgentConversationStartersWriteSupported(data);
-    return this.fetch(`/api/agents/${id}`, {
+    return parseAgentResponse(await this.fetch(`/api/agents/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
-    });
+    }));
   }
 
   async archiveAgent(id: string): Promise<Agent> {
-    return this.fetch(`/api/agents/${id}/archive`, { method: "POST" });
+    return parseAgentResponse(await this.fetch(`/api/agents/${id}/archive`, { method: "POST" }));
   }
 
   /**
@@ -1660,7 +1757,7 @@ export class ApiClient {
   }
 
   async restoreAgent(id: string): Promise<Agent> {
-    return this.fetch(`/api/agents/${id}/restore`, { method: "POST" });
+    return parseAgentResponse(await this.fetch(`/api/agents/${id}/restore`, { method: "POST" }));
   }
 
   // Bulk-cancel every active task (queued/dispatched/running) for the agent.
@@ -2105,6 +2202,10 @@ export class ApiClient {
     );
   }
 
+  async getSubscriptionQuota(runtimeId:string) {
+ const raw=await this.fetch<unknown>(`/api/runtimes/${runtimeId}/subscription-quota`);
+ return parseWithFallback(raw,SubscriptionQuotaSchema,unknownSubscriptionQuota,{endpoint:"GET /api/runtimes/:id/subscription-quota"});
+ }
   async getRuntimeUsage(
     runtimeId: string,
     params?: { days?: number; tz?: string },
@@ -2287,21 +2388,29 @@ export class ApiClient {
     );
   }
 
+  async getIssueIntake(wsId:string):Promise<IssueIntake>{const path="/api/workspaces/"+wsId+"/issue-intake";const raw=await this.fetch<unknown>(path);const result=parseWithFallback<IssueIntake|null>(raw,IssueIntakeSchema,null,{endpoint:path});if(!result)throw new Error("Invalid intake response");return result;}
+  async updateIssueIntake(wsId:string,c:IssueIntake):Promise<IssueIntake>{const path="/api/workspaces/"+wsId+"/issue-intake";const raw=await this.fetch<unknown>(path,{method:"PUT",body:JSON.stringify({revision:c.revision,default_squad_id:c.defaultSquadId,projects:c.projects})});const result=parseWithFallback<IssueIntake|null>(raw,IssueIntakeSchema,null,{endpoint:path});if(!result)throw new Error("Invalid intake response");return result;}
+
+  async getInstanceUpdateStatus(runtimeId:string):Promise<InstanceUpdateInfo> {
+ const path=`/api/runtimes/${runtimeId}/update-status`;const raw=await this.fetch<unknown>(path); const value=parseWithFallback<InstanceUpdateInfo|null>(raw,InstanceUpdateSchema,null,{endpoint:path});if(!value)throw new Error("Invalid update status response");return value;
+ }
+
   async initiateUpdate(
     runtimeId: string,
     targetVersion: string,
   ): Promise<RuntimeUpdate> {
-    return this.fetch(`/api/runtimes/${runtimeId}/update`, {
+    const raw=await this.fetch<unknown>(`/api/runtimes/${runtimeId}/update`, {
       method: "POST",
       body: JSON.stringify({ target_version: targetVersion }),
     });
+ const result=parseWithFallback<RuntimeUpdate|null>(raw,RuntimeUpdateResponseSchema,null,{endpoint:"POST /api/runtimes/:id/update"});if(!result)throw new Error("Invalid update response");return result;
   }
 
   async getUpdateResult(
     runtimeId: string,
     updateId: string,
   ): Promise<RuntimeUpdate> {
-    return this.fetch(`/api/runtimes/${runtimeId}/update/${updateId}`);
+    const raw=await this.fetch<unknown>(`/api/runtimes/${runtimeId}/update/${updateId}`);const result=parseWithFallback<RuntimeUpdate|null>(raw,RuntimeUpdateResponseSchema,null,{endpoint:"GET /api/runtimes/:id/update/:id"});if(!result)throw new Error("Invalid update response");return result;
   }
 
   // Both discovery endpoints feed a UI state machine (poll while
@@ -2469,12 +2578,31 @@ export class ApiClient {
     return task;
   }
 
-  async rerunIssue(issueId: string, taskId?: string): Promise<AgentTask> {
-    return this.fetch(`/api/issues/${issueId}/rerun`, {
-      method: "POST",
-      body: JSON.stringify(taskId ? { task_id: taskId } : {}),
-    });
-  }
+  async getAgentExecution(id:string):Promise<ExecutionPolicy> {
+ const raw=await this.fetch<unknown>(`/api/agents/${id}/execution`);
+ const value=parseWithFallback<ExecutionPolicy|null>(raw,ExecutionPolicySchema,null,{endpoint:"GET /api/agents/:id/execution"});
+ if(!value) throw new Error("Invalid execution policy response"); return value;
+ }
+ async saveAgentExecution(id:string,policy:ExecutionPolicy):Promise<ExecutionPolicy> {
+ const raw=await this.fetch<unknown>(`/api/agents/${id}/execution`,{method:"PUT",body:JSON.stringify(policy)});
+ const value=parseWithFallback<ExecutionPolicy|null>(raw,ExecutionPolicySchema,null,{endpoint:"PUT /api/agents/:id/execution"});
+ if(!value) throw new Error("Invalid execution policy response"); return value;
+ }
+ async previewAgentExecution(id:string,prompt:string,execution?:ExecutionRequest):Promise<ExecutionPreview> {
+ const raw=await this.fetch<unknown>(`/api/agents/${id}/execution/preview`,{method:"POST",body:JSON.stringify({prompt,execution})});
+ const value=parseWithFallback<ExecutionPreview|null>(raw,ExecutionPreviewSchema,null,{endpoint:"POST /api/agents/:id/execution/preview"});
+ if(!value) throw new Error("Invalid execution preview response"); return value;
+ }
+ async updateTaskExecution(id:string,execution:ExecutionRequest):Promise<AgentTask> {
+ const raw=await this.fetch<unknown>(`/api/tasks/${id}/execution`,{method:"PUT",body:JSON.stringify(execution)});
+ const value=parseWithFallback<AgentTask|null>(raw,AgentTaskSchema,null,{endpoint:"PUT /api/tasks/:id/execution"});
+ if(!value) throw new Error("Invalid task response"); return value;
+ }
+ async rerunIssue(issueId:string,taskId?:string,execution?:ExecutionRequest):Promise<AgentTask> {
+ const raw=await this.fetch<unknown>(`/api/issues/${issueId}/rerun`,{method:"POST",body:JSON.stringify({task_id:taskId,execution})});
+ const task=parseWithFallback<AgentTask|null>(raw,AgentTaskSchema,null,{endpoint:"POST /api/issues/:id/rerun"});
+ if(!task) throw new Error("Invalid task response"); return task;
+ }
 
   async retrySourceContextQuickCreate(taskId: string): Promise<AgentTask> {
     const raw = await this.fetch<unknown>(`/api/tasks/${taskId}/retry-source-context`, {

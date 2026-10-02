@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { api } from "@multica/core/api";
+import { AgentTaskSchema } from "@multica/core/api/schemas";
 import type { SupportedLocale } from "@multica/core/i18n";
 import type { AgentRuntime, AgentTask } from "@multica/core/types/agent";
 import { useTranscriptViewStore } from "@multica/core/agents/stores";
@@ -18,6 +19,7 @@ vi.mock("./use-trace-issue-labels", () => ({
 }));
 
 const copyTextMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+const ExecutionSelectionSchema = AgentTaskSchema.shape.execution;
 
 vi.mock("@multica/core/api", () => ({
   api: {
@@ -242,6 +244,29 @@ beforeEach(() => {
     sortDirection: "chronological",
     selectedFilterKeys: [],
   });
+});
+
+it("shows the run machine and reported models in the visible header", async () => {
+  vi.mocked(api.listRuntimes).mockResolvedValue([
+    { ...runtimeFor("claude"), device_info: "FSS-KPETERSON · Claude Code 2.1", custom_name: "Engineering" },
+  ]);
+  renderDialog(items, { task: {
+    ...baseTask, runtime_id: "runtime-1",
+    execution: ExecutionSelectionSchema.parse({ state: "selected", profile: { id: "primary", name: "Primary", model: "configured-model" } }),
+    usage: ["actual-model", "actual-model", "helper-model"].map((model) => ({ model, input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0 })),
+  } });
+  expect(await screen.findByText("FSS-KPETERSON")).toBeInTheDocument();
+  expect(screen.getByText("actual-model, helper-model")).toBeInTheDocument();
+  expect(screen.queryByText("configured-model")).not.toBeInTheDocument();
+});
+
+it("uses the run's selected model and preserves runtime identity when its machine is unavailable", () => {
+  renderDialog(items, { task: {
+    ...baseTask, runtime_id: "removed-runtime",
+    execution: ExecutionSelectionSchema.parse({ state: "selected", profile: { id: "primary", name: "Primary", model: "historical-model" } }),
+  } });
+  expect(screen.getByText("removed-runtime")).toBeInTheDocument();
+  expect(screen.getByText("historical-model")).toBeInTheDocument();
 });
 
 afterEach(() => {

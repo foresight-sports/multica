@@ -3,11 +3,11 @@ import { api } from "../api";
 import { useAuthStore } from "../auth";
 
 // Instance-wide policy, isolated by viewer so account switches never reuse it.
-export const permissionPolicyKey = (userId: string) => ["permission-policy", userId, "runtime.register"] as const;
-export function runtimePermissionPolicyOptions(userId: string, enabled: boolean) {
+export const permissionPolicyKey = (userId: string, action = "runtime-register") => ["permission-policy", userId, action] as const;
+export function runtimePermissionPolicyOptions(userId: string, enabled: boolean, action = "runtime-register") {
   return queryOptions({
-    queryKey: permissionPolicyKey(userId),
-    queryFn: () => api.getRuntimePermissionPolicy(),
+    queryKey: permissionPolicyKey(userId, action),
+    queryFn: () => api.getRuntimePermissionPolicy(action),
     enabled: enabled && !!userId,
     staleTime: 0,
     // Keep unsaved drafts stable; managers explicitly reload after a conflict.
@@ -16,12 +16,12 @@ export function runtimePermissionPolicyOptions(userId: string, enabled: boolean)
     retry: false,
   });
 }
-export function useUpdateRuntimePermissionPolicy(userId: string) {
+export function useUpdateRuntimePermissionPolicy(userId: string, action = "runtime-register") {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { allowed_emails: string[]; revision: number }) => api.updateRuntimePermissionPolicy(data),
+    mutationFn: (data: { allowed_emails: string[]; revision: number }) => api.updateRuntimePermissionPolicy(data, action),
     onSuccess: (policy) => {
-      queryClient.setQueryData(permissionPolicyKey(userId), policy);
+      queryClient.setQueryData(permissionPolicyKey(userId, action), policy);
       void useAuthStore.getState().refreshMe();
     },
   });

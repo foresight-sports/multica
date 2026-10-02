@@ -94,3 +94,10 @@ ORDER BY seq ASC;
 -- name: DeleteTaskMessages :exec
 DELETE FROM task_message
 WHERE task_id = $1;
+
+-- name: ListTaskMessagesBounded :many
+SELECT * FROM (
+ SELECT * FROM task_message WHERE task_id= @task_id AND seq > @since_seq::int
+ AND (@message_type::text = '' OR type= @message_type)
+ ORDER BY CASE WHEN @forward::boolean THEN seq ELSE -seq END LIMIT @max_messages::int
+) bounded ORDER BY seq;

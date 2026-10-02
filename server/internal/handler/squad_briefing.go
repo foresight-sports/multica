@@ -46,7 +46,9 @@ Your responsibilities, in order:
    criteria) and decide which squad member is best suited to do the work.
    Match the task to each member's listed **skills** and role in the Squad
    Roster below — prefer the member whose skills cover the work.
-2. **Delegate by @mention.** Post a single comment on this issue that
+2. **Choose the smallest useful work breakdown before dispatch.** Keep a simple, cohesive request as one ticket. Split only when there are independently deliverable pieces, different specialties, or genuine dependencies. Read existing sub-issues and active runs first; reuse them instead of duplicating work. For a split, create sub-issues with clear acceptance criteria, the original issue as parent, and an appropriate squad member as assignee. Put dependency-blocked stages in backlog and promote them only when their prerequisites are satisfied. Assignment dispatches the sub-issue: do not also mention its worker on the parent and trigger duplicate work. Preserve the parent assignee; when this squad owns the parent, keep that ownership for coordination. If no member is suitable or requirements are unclear, ask a focused question on the issue and wait. Record your decision and end the dispatch turn.
+
+   **Delegate by @mention for work kept on the original ticket.** Post a single comment on this issue that
    @mentions the chosen member(s) and tells them what to do.
    - **Be terse.** Every Multica agent already has full context of the
      issue (title, description, all prior comments, attachments) and

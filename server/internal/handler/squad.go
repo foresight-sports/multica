@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"github.com/multica-ai/multica/server/internal/service"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -445,7 +446,7 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		params.LeaderID = lid
-		newLeaderRuntimeBound = newLeader.RuntimeID.Valid
+		newLeaderRuntimeBound = newLeader.RuntimeID.Valid || service.HasExecutionProfiles(newLeader)
 	}
 
 	updated, err := qtx.UpdateSquad(r.Context(), params)

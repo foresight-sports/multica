@@ -21,3 +21,5 @@ export {
 export { useCurrentMember } from "./use-current-member";
 export { permissionPolicyKey, runtimePermissionPolicyOptions, useUpdateRuntimePermissionPolicy } from "./runtime-policy";
 export { runtimeInstallationOptions } from "./runtime-policy";
+export { instanceConfigurationOptions, instanceAgentsOptions, useUpdateInstanceConfiguration, useSaveInstanceAgent, useSetInstanceAgentEnabled } from "./instance";
+export type { InstanceConfiguration, InstanceAgent, InstanceAgentInput } from "../api/instance-schema";

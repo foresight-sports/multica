@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -26,13 +27,25 @@ type RuntimePermissionPolicyResponse struct {
 // Environment values bootstrap the policy until the first explicit save.
 // Persisted policy takes precedence afterward, including an empty deny-all list.
 func (h *Handler) runtimePermissionPolicy(ctx context.Context) (RuntimePermissionPolicyResponse, error) {
-	initial := RuntimePermissionPolicyResponse{Action: string(permissionRegisterRuntime),
+	return h.actionPermissionPolicy(ctx, permissionRegisterRuntime)
+}
+
+func (h *Handler) actionPermissionPolicy(ctx context.Context, action workspacePermission) (RuntimePermissionPolicyResponse, error) {
+	initial := RuntimePermissionPolicyResponse{Action: string(action),
 		AllowedEmails: append([]string{}, h.cfg.RuntimeRegistrationAllowedEmails...),
 		Restricted:    h.cfg.RuntimeRegistrationRestricted}
+	if action != permissionRegisterRuntime {
+		initial.AllowedEmails = []string{}
+		initial.Restricted = false
+		if action == permissionCreateInstanceAgent {
+			initial.AllowedEmails = append([]string{}, h.cfg.PermissionManagerEmails...)
+			initial.Restricted = true
+		}
+	}
 	if h.Queries == nil {
 		return initial, fmt.Errorf("permission database unavailable")
 	}
-	policy, err := h.Queries.GetPermissionPolicy(ctx, string(permissionRegisterRuntime))
+	policy, err := h.Queries.GetPermissionPolicy(ctx, string(action))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return initial, nil
 	}
@@ -67,7 +80,12 @@ func (h *Handler) GetRuntimePermissionPolicy(w http.ResponseWriter, r *http.Requ
 	if _, ok := h.requirePermissionManager(w, r); !ok {
 		return
 	}
-	policy, err := h.runtimePermissionPolicy(r.Context())
+	action, valid := permissionAction(r)
+	if !valid {
+		writeError(w, 404, "unknown permission action")
+		return
+	}
+	policy, err := h.actionPermissionPolicy(r.Context(), action)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not load permission access")
 		return
@@ -79,6 +97,11 @@ func (h *Handler) GetRuntimePermissionPolicy(w http.ResponseWriter, r *http.Requ
 func (h *Handler) UpdateRuntimePermissionPolicy(w http.ResponseWriter, r *http.Request) {
 	actor, ok := h.requirePermissionManager(w, r)
 	if !ok {
+		return
+	}
+	action, valid := permissionAction(r)
+	if !valid {
+		writeError(w, 404, "unknown permission action")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 256*1024)
@@ -100,10 +123,10 @@ func (h *Handler) UpdateRuntimePermissionPolicy(w http.ResponseWriter, r *http.R
 	var saved db.PermissionPolicy
 	if *req.Revision == 0 {
 		saved, err = h.Queries.CreatePermissionPolicy(r.Context(), db.CreatePermissionPolicyParams{
-			Action: string(permissionRegisterRuntime), AllowedEmails: emails, UpdatedBy: actor})
+			Action: string(action), AllowedEmails: emails, UpdatedBy: actor})
 	} else {
 		saved, err = h.Queries.UpdatePermissionPolicy(r.Context(), db.UpdatePermissionPolicyParams{
-			Action: string(permissionRegisterRuntime), AllowedEmails: emails, UpdatedBy: actor, ExpectedRevision: *req.Revision})
+			Action: string(action), AllowedEmails: emails, UpdatedBy: actor, ExpectedRevision: *req.Revision})
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusConflict, "permission access changed; reload the latest list before saving")
@@ -134,4 +157,61 @@ func normalizePermissionEmails(input []string) ([]string, error) {
 	}
 	slices.Sort(emails)
 	return slices.Compact(emails), nil
+}
+
+func permissionAction(r *http.Request) (workspacePermission, bool) {
+	switch chi.URLParam(r, "action") {
+	case "", "runtime-register":
+		return permissionRegisterRuntime, true
+	case "instance-agent-create":
+		return permissionCreateInstanceAgent, true
+	case "agent-create":
+		return permissionCreateAgent, true
+	case "agent-edit":
+		return permissionEditAgent, true
+	default:
+		return "", false
+	}
+}
+
+func (h *Handler) actionAllowed(ctx context.Context, email string, action workspacePermission) bool {
+	policy, err := h.actionPermissionPolicy(ctx, action)
+	return err == nil && (!policy.Restricted || emailAllowedForPermission(email, policy.AllowedEmails))
+}
+
+// This policy supplements resource membership/ownership, never replaces it.
+func (h *Handler) requireAgentAction(w http.ResponseWriter, r *http.Request, action workspacePermission) bool {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return false
+	}
+	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
+	if err != nil {
+		writeError(w, 403, "could not verify agent permission")
+		return false
+	}
+	policy, err := h.actionPermissionPolicy(r.Context(), action)
+	if err != nil {
+		writeError(w, 500, "could not check agent permission")
+		return false
+	}
+	if policy.Restricted && !emailAllowedForPermission(user.Email, policy.AllowedEmails) {
+		writeError(w, 403, "you are not allowed to perform this agent action; contact your administrator")
+		return false
+	}
+	return true
+}
+
+// The builder drafts either scope; final creation checks the selected scope again.
+func (h *Handler) requireAgentCreation(w http.ResponseWriter, r *http.Request) bool {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return false
+	}
+	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
+	if err == nil && (h.actionAllowed(r.Context(), user.Email, permissionCreateAgent) || h.actionAllowed(r.Context(), user.Email, permissionCreateInstanceAgent)) {
+		return true
+	}
+	writeError(w, 403, "you are not allowed to create agents; contact your administrator")
+	return false
 }

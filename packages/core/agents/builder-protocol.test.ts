@@ -26,6 +26,15 @@ const draft = (): AgentDraft => ({
 });
 
 describe("agent builder protocol", () => {
+  it("recovers complete JSON-only drafts without accepting prose, arrays, or partial objects", () => {
+    const raw = '{"name":"Engineer","instructions":"First line\nSecond line","execution_policy":{"profiles":[{"runtime_id":"obsolete"}]}}';
+    for (const content of [raw, "```json\n" + raw + "\n```", "<agent_draft>" + raw + "</agent_draft>"]) {
+      expect(parseBuilderDraft(content)).toMatchObject({ name: "Engineer", instructions: "First line\nSecond line", execution_policy: { profiles: [{runtime_id: "obsolete"}] } });
+    }
+    for (const content of ['{"name":"Engineer"}', '[]', 'Here is an example: ' + raw, raw.slice(0, -1)]) {
+      expect(parseBuilderDraft(content)).toBeNull();
+    }
+  });
   it("parses and hides the structured draft block", () => {
     const content =
       'Here is a first draft.\n<agent_draft>{"name":"Researcher","permission_scope":"workspace"}</agent_draft>';

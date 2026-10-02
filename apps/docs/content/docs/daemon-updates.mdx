@@ -1,0 +1,50 @@
+---
+title: Instance daemon updates
+description: Publish custom daemon releases and update connected computers.
+---
+
+Custom Foresight daemons use an authenticated release channel hosted by this server. The computer page and runtime details show the current version, available version, update eligibility, and progress. Runtime owners and workspace administrators with access may request an update. All runtimes on that computer share the binary.
+
+An update starts only when the daemon has no active tasks or in-flight claims. Busy computers reject the request; retry when idle. The daemon verifies the artifact size and SHA-256, replaces its executable using the existing platform-specific installer, and restarts. The UI confirms success only after the new version registers online. The server never sends shell commands or accepts an arbitrary download URL.
+
+## Enable the release channel
+
+Set `MULTICA_DAEMON_RELEASE_DIR=/app/daemon-releases` in the self-host environment and recreate the backend. Compose mounts the local `daemon-releases` directory read-only into the backend. Only administrators with access to the server filesystem publish releases; workspace users cannot upload binaries.
+
+Build the daemon with a version such as `0.4.44-foresight.11` embedded through `main.version`. Publish it from PowerShell:
+
+```powershell
+./scripts/publish-daemon-release.ps1 -Version 0.4.44-foresight.11 -Artifacts @{
+    'windows-amd64' = './bin/multica-updates.exe'
+}
+```
+
+The script copies immutable, versioned artifacts and atomically publishes a manifest containing their sizes and checksums. Bump the version for changed binaries. Windows, Linux, and macOS on amd64 or arm64 are supported when a corresponding artifact is published. Publish the complete platform set together. Release publication is independent of backend or web deployments.
+
+## Older computers
+
+Clients older than `0.4.44-foresight.10` require a one-time installer upgrade because their updater only understands upstream releases. When idle, run `multica daemon stop`, follow **Manual update instructions** on that computer, then run `multica daemon start`. Existing configuration and login are preserved. Keep the hosted installer ZIP updated with the current custom binary and checksum. Subsequent releases can be applied remotely through the UI. Desktop-managed binaries remain managed by the desktop application.
+
+If a download or checksum fails, the installed executable is not replaced. If reconnection cannot be confirmed, inspect the computer before retrying. An offline computer cannot start a remote update. The previous executable is preserved as `.old` during Windows replacement and may be removed by normal CLI startup cleanup; retain a separate operator backup for rollback.
+
+## Update diagnostics
+
+The computer page shows a live update log refreshed every two seconds while the request runs. Daemons from `0.4.44-foresight.16` report manifest lookup, download byte counts, checksum verification, installation, and restart intent. Earlier clients provide only their existing status messages until upgraded. Logs are bounded to 32 KiB and remain attached to failed requests; raw task logs, credentials and environment variables are not collected. Reconnection with the requested version is still required for success. If startup fails after replacement, inspect `~/.multica/daemon.log` and `daemon.err.log` on that computer.
+
+**Manual update instructions** remain available offline and after an unsuccessful remote update. On Windows, extract the instance ZIP and replace the stopped daemon executable while preserving configuration. Codex Desktop CLI installations under `%LOCALAPPDATA%/OpenAI/Codex/bin` are discovered even when the terminal PATH does not contain Codex.
+
+## Machine logs
+
+Open **Machines → your machine → Logs** to inspect recent CLI daemon activity.
+The CLI uploads the latest 64 KiB of `daemon.log` and 16 KiB of `daemon.err.log`
+every ten seconds. The tab refreshes automatically and includes search,
+pause/resume, and manual refresh. The last snapshot remains available when a
+machine is offline; its receipt time indicates how old it is. This is a recent
+snapshot, not a complete log archive. Full rotated logs remain on the machine.
+
+Only the machine owner can read machine-wide logs because they can include
+activity from several workspaces. Known secret patterns are redacted before
+upload and again on the server. Update older clients to enable log collection.
+A foreground daemon logging to the terminal must be restarted in background
+mode to populate `daemon.log`. Crashes after the last upload appear after the
+daemon reconnects.

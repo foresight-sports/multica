@@ -661,6 +661,10 @@ DELETE FROM project WHERE project.workspace_id = $1;
 
 -- name: DeleteWorkspaceAdministration :exec
 WITH
+deleted_work_records AS (DELETE FROM work_record WHERE workspace_id=$1),
+deleted_repository_configuration AS (
+ DELETE FROM repository_configuration WHERE (scope = 'workspace' AND subject = $1::uuid::text) OR (scope='readiness' AND subject LIKE $1::uuid::text || ':%')
+),
 deleted_members AS (
     DELETE FROM member WHERE member.workspace_id = $1
 ),

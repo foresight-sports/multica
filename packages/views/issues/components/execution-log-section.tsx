@@ -1,4 +1,5 @@
 "use client";
+import { TaskExecutionControls } from "./task-execution-controls";
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -166,7 +167,7 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
       {open && (
         <div className="space-y-0.5 pl-2">
           {activeTasks.map((task) => (
-            <ActiveTaskRow key={task.id} task={task} issueId={issueId} />
+            <div key={task.id}><ActiveTaskRow task={task} issueId={issueId} /><TaskExecutionControls task={task} issueId={issueId}/></div>
           ))}
 
           {pastTasks.length > 0 && (
@@ -191,7 +192,7 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
               {showPast && (
                 <div className="mt-0.5 space-y-0.5">
                   {pastTasks.map((task) => (
-                    <PastRow key={task.id} task={task} issueId={issueId} />
+                    <div key={task.id}><PastRow task={task} issueId={issueId} /><TaskExecutionControls task={task} issueId={issueId}/></div>
                   ))}
                 </div>
               )}

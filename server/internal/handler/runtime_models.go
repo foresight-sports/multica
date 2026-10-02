@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -532,6 +533,23 @@ func (h *Handler) ReportModelListResult(w http.ResponseWriter, r *http.Request) 
 		if body.Supported != nil {
 			supported = *body.Supported
 		}
+		// Persist the same selectable choices returned to the picker before publishing
+		// completion. The discovery cache deliberately excludes static fallback lists;
+		// that cache policy must not make displayed choices impossible to configure.
+		// Provenance remains explicit: fallback choices are not live availability proof.
+		selectable := body.Models
+		if !supported || selectable == nil {
+			selectable = []ModelEntry{}
+		}
+		source := "discovered"
+		if body.Fallback {
+			source = "fallback"
+		}
+		choices, _ := json.Marshal(map[string]any{"execution_models": selectable, "execution_catalog_observed_at": time.Now().UTC(), "execution_catalog_source": source})
+		if err := h.Queries.SetExecutionCapabilities(r.Context(), db.SetExecutionCapabilitiesParams{ID: parseUUID(runtimeID), Capabilities: choices}); err != nil {
+			writeError(w, 500, "could not store selectable runtime models")
+			return
+		}
 		if err := h.ModelListStore.Complete(r.Context(), requestID, body.Models, body.UnavailableModels, supported); err != nil {
 			// Surface the store failure as 5xx so the daemon can retry instead
 			// of swallowing the report (leaves the request stuck in running
@@ -559,10 +577,13 @@ func (h *Handler) ReportModelListResult(w http.ResponseWriter, r *http.Request) 
 		if h.ModelCatalogCache != nil {
 			switch modelCatalogCacheDecision(body.Models, supported, body.Fallback) {
 			case modelCatalogCacheStore:
+				catalogJSON, _ := json.Marshal(body.Models)
+				_ = h.Queries.SetExecutionCatalog(r.Context(), db.SetExecutionCatalogParams{ID: parseUUID(runtimeID), Models: catalogJSON})
 				if err := h.ModelCatalogCache.Put(r.Context(), runtimeID, body.Models, body.UnavailableModels, supported); err != nil {
 					slog.Warn("model catalog cache write failed", "error", err, "runtime_id", runtimeID)
 				}
 			case modelCatalogCacheDrop:
+				_ = h.Queries.SetExecutionCatalog(r.Context(), db.SetExecutionCatalogParams{ID: parseUUID(runtimeID), Models: []byte(`[]`)})
 				if err := h.ModelCatalogCache.Invalidate(r.Context(), runtimeID); err != nil {
 					slog.Warn("model catalog cache invalidate failed", "error", err, "runtime_id", runtimeID)
 				}

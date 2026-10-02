@@ -81,7 +81,13 @@ func (h *Handler) authorizeAgentEnv(w http.ResponseWriter, r *http.Request) (db.
 		return db.Agent{}, db.Member{}, false
 	}
 
+	if r.Method != http.MethodGet && !h.requireAgentAction(w, r, permissionEditAgent) {
+		return db.Agent{}, db.Member{}, false
+	}
 	workspaceID := uuidToString(agent.WorkspaceID)
+	if !h.canConfigureInstanceAgent(w, r, agent) {
+		return db.Agent{}, db.Member{}, false
+	}
 	userID := requestUserID(r)
 
 	// Reject agent actors before anything else. resolveActor returns
@@ -276,6 +282,7 @@ func (h *Handler) UpdateAgentEnv(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceID := uuidToString(updated.WorkspaceID)
 	h.publish(protocol.EventAgentStatus, workspaceID, "member", uuidToString(member.UserID), map[string]any{"agent": broadcastAgentResponse(resp)})
+	h.publishInstanceSetup(r.Context(), updated, "member", uuidToString(member.UserID))
 
 	writeJSON(w, http.StatusOK, AgentEnvResponse{
 		AgentID:   uuidToString(updated.ID),

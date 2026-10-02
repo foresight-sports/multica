@@ -30,9 +30,11 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
 	"github.com/multica-ai/multica/server/internal/selfexec"
 	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/multica-ai/multica/server/pkg/quota"
 	"github.com/multica-ai/multica/server/pkg/redact"
 	"github.com/multica-ai/multica/server/pkg/skillbundle"
 	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/multica-ai/multica/server/pkg/workflow"
 )
 
 // ErrRepoNotConfigured is returned by ensureRepoReady when the requested repo
@@ -182,6 +184,7 @@ func taskMulticaEnvironment(task Task, agentName, token, configRoot, workspacesR
 		"MULTICA_AGENT_NAME":   agentName,
 		"MULTICA_AGENT_ID":     task.AgentID,
 		"MULTICA_TASK_ID":      task.ID,
+		"MULTICA_RUNTIME_ID":   task.RuntimeID,
 		"MULTICA_TASK_SLOT":    strconv.Itoa(slot),
 		"TMPDIR":               tempDir,
 		"TMP":                  tempDir,
@@ -383,15 +386,19 @@ type repoCacheBackend interface {
 
 // Daemon is the local agent runtime that polls for and executes tasks.
 type Daemon struct {
-	cfg        Config
-	client     *Client
-	repoCache  repoCacheBackend
-	skillCache *SkillBundleCache
-	logger     *slog.Logger
+	subscriptionQuotaReports chan quota.Report
+	cfg                      Config
+	client                   *Client
+	repoCache                repoCacheBackend
+	skillCache               *SkillBundleCache
+	logger                   *slog.Logger
 
-	mu           sync.Mutex
-	workspaces   map[string]*workspaceState
-	runtimeIndex map[string]Runtime // runtimeID -> Runtime for provider lookups
+	mu         sync.Mutex
+	workspaces map[string]*workspaceState
+	// Claim-provided repos for instance tasks in workspaces this daemon does
+	// not otherwise watch. Never register runtimes or credentials for these.
+	taskWorkspaces map[string]*workspaceState
+	runtimeIndex   map[string]Runtime // runtimeID -> Runtime for provider lookups
 	// profileLaunchSpecs maps a custom runtime profile_id -> the absolute
 	// executable path plus fixed launch args resolved for that profile
 	// (MUL-3284). Populated in registerRuntimesForWorkspace when a profile's
@@ -676,7 +683,8 @@ type Daemon struct {
 	// runUpdateFn executes the brew-or-download upgrade. Set to d.runUpdate by
 	// New() and overridable in tests so the auto-update poller can be exercised
 	// without touching the real network or the brew CLI.
-	runUpdateFn func(targetVersion string) (string, error)
+	runUpdateFn    func(targetVersion string) (string, error)
+	updateProgress atomic.Pointer[func(string)]
 }
 
 type profileLaunchSpec struct {
@@ -2143,7 +2151,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	taskWakeups := make(chan taskWakeup, 256)
 	go d.taskWakeupLoop(ctx, taskWakeups)
+	d.subscriptionQuotaReports = make(chan quota.Report, 32)
 	go d.heartbeatLoop(ctx)
+	go d.workspaceRepositoryLoop(ctx)
+	go d.executionCapabilitiesLoop(ctx)
+	go d.machineLogsLoop(ctx)
+	go d.subscriptionQuotaLoop(ctx)
 	go d.gcLoop(ctx)
 	go d.autoUpdateLoop(ctx)
 	go d.tokenRenewalLoop(ctx)
@@ -2966,6 +2979,7 @@ func (d *Daemon) registerRuntimesForWorkspaceBatchLocked(ctx context.Context, wo
 		return nil, "", fmt.Errorf("register runtimes: empty response")
 	}
 	d.logger.Debug("register response", "workspace_id", workspaceID, "runtimes", len(resp.Runtimes), "repos", len(resp.Repos), "repos_version", resp.ReposVersion)
+	d.reportExecutionCapabilities(ctx, resp.Runtimes)
 	d.recordBuiltinVersionsSent(workspaceID, runtimes)
 	return resp, profileSig, nil
 }
@@ -3232,6 +3246,9 @@ func (d *Daemon) workspaceRepoAllowed(workspaceID, repoURL string) bool {
 	defer d.mu.Unlock()
 	ws, ok := d.workspaces[workspaceID]
 	if !ok {
+		ws, ok = d.taskWorkspaces[workspaceID]
+	}
+	if !ok {
 		return false
 	}
 	if _, allowed := ws.allowedRepoURLs[repoURL]; allowed {
@@ -3267,6 +3284,13 @@ func (d *Daemon) repoBarePathIsLive(barePath string) bool {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	for workspaceID, ws := range d.taskWorkspaces {
+		for url := range ws.taskRepoURLs {
+			if d.repoCache.BarePath(workspaceID, url) == barePath {
+				return true
+			}
+		}
+	}
 	for workspaceID, ws := range d.workspaces {
 		for url := range ws.allowedRepoURLs {
 			if d.repoCache.BarePath(workspaceID, url) == barePath {
@@ -3344,8 +3368,18 @@ func (d *Daemon) registerTaskRepos(workspaceID, taskID string, repos []RepoData)
 	d.mu.Lock()
 	ws, ok := d.workspaces[workspaceID]
 	if !ok {
-		d.mu.Unlock()
-		return
+		if workspaceID == "" || taskID == "" {
+			d.mu.Unlock()
+			return
+		}
+		if d.taskWorkspaces == nil {
+			d.taskWorkspaces = make(map[string]*workspaceState)
+		}
+		ws = d.taskWorkspaces[workspaceID]
+		if ws == nil {
+			ws = newWorkspaceState(workspaceID, nil, "", nil, nil)
+			d.taskWorkspaces[workspaceID] = ws
+		}
 	}
 	if ws.taskRepoURLs == nil {
 		ws.taskRepoURLs = make(map[string]struct{}, len(repos))
@@ -3409,6 +3443,9 @@ func (d *Daemon) taskRepoDefaultRef(workspaceID, taskID, repoURL string) string 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	ws, ok := d.workspaces[workspaceID]
+	if !ok {
+		ws, ok = d.taskWorkspaces[workspaceID]
+	}
 	if !ok || ws.taskRepoRefs == nil {
 		return ""
 	}
@@ -3424,6 +3461,18 @@ func (d *Daemon) clearTaskRepoRefs(workspaceID, taskID string) {
 	defer d.mu.Unlock()
 	if ws, ok := d.workspaces[workspaceID]; ok && ws.taskRepoRefs != nil {
 		delete(ws.taskRepoRefs, taskID)
+	}
+	if ws := d.taskWorkspaces[workspaceID]; ws != nil {
+		delete(ws.taskRepoRefs, taskID)
+		ws.taskRepoURLs = make(map[string]struct{})
+		for _, refs := range ws.taskRepoRefs {
+			for url := range refs {
+				ws.taskRepoURLs[url] = struct{}{}
+			}
+		}
+		if len(ws.taskRepoRefs) == 0 {
+			delete(d.taskWorkspaces, workspaceID)
+		}
 	}
 }
 
@@ -5021,8 +5070,16 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 	d.logger.Info("CLI update requested", "runtime_id", runtimeID, "update_id", update.ID, "target_version", update.TargetVersion)
 
 	// Report running status.
+	progress := func(message string) {
+		d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
+			"status": "running", "output": time.Now().UTC().Format(time.RFC3339) + " " + message,
+		})
+	}
+	d.updateProgress.Store(&progress)
+	defer d.updateProgress.Store(nil)
 	d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
 		"status": "running",
+		"output": "Update accepted. Task claims paused; computer is idle.",
 	})
 
 	output, err := d.runUpdateFn(update.TargetVersion)
@@ -5038,7 +5095,7 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 	d.logger.Info("CLI update completed successfully", "output", output)
 	d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
 		"status": "completed",
-		"output": fmt.Sprintf("Updated to %s", update.TargetVersion),
+		"output": fmt.Sprintf("Installed %s. Restart requested; waiting for the new daemon to connect.", update.TargetVersion),
 	})
 
 	// Trigger daemon restart with the new binary.
@@ -5105,6 +5162,9 @@ func (d *Daemon) tryBeginServerUpdate(ctx context.Context) serverUpdateAcquireRe
 // the restart — extracted so the server-triggered path (handleUpdate) and the
 // auto-update poller (autoUpdateLoop) share the exact same execution body.
 func (d *Daemon) runUpdate(targetVersion string) (string, error) {
+	if strings.Contains(d.cfg.CLIVersion, "-foresight.") {
+		return d.runInstanceUpdate(targetVersion)
+	}
 	if cli.IsBrewInstall() {
 		d.logger.Info("updating CLI via Homebrew...")
 		out, err := cli.UpdateViaBrew()
@@ -5718,6 +5778,10 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		return
 	}
 	provider := rt.Provider
+	if task.Execution != nil && task.Execution.State == "selecting" {
+		d.routeExecutionTask(ctx, task, provider)
+		return
+	}
 
 	// Task-scoped logger. The task id goes in whole: it is the key every
 	// other surface prints (task JSON, env-root ownership manifest, server
@@ -6375,13 +6439,20 @@ func gcMetaForTask(task Task) (execenv.GCMeta, bool) {
 	return meta, true
 }
 
+func taskBranchIdentifier(task Task) string {
+	if task.JiraTicketID != "" {
+		return task.JiraTicketID
+	}
+	return task.IssueIdentifier
+}
+
 func taskRootDirParams(workspacesRoot string, task Task) execenv.RootDirParams {
 	return execenv.RootDirParams{
 		WorkspacesRoot:  workspacesRoot,
 		WorkspaceID:     task.WorkspaceID,
 		WorkspaceSlug:   task.WorkspaceSlug,
 		TaskID:          task.ID,
-		IssueIdentifier: task.IssueIdentifier,
+		IssueIdentifier: taskBranchIdentifier(task),
 	}
 }
 
@@ -7360,7 +7431,19 @@ func (d *Daemon) prepareExecutionEnvironment(ctx context.Context, params execenv
 	if err != nil {
 		return nil, err
 	}
-	return execenv.PrepareIsolated(ctx, command, params, d.logger)
+	deadline := time.Now().Add(d.envRootBusyWait)
+	for {
+		env, err := execenv.PrepareIsolated(ctx, command, params, d.logger)
+		if !errors.Is(err, execenv.ErrEnvRootBusy) || !time.Now().Before(deadline) {
+			return env, err
+		}
+		d.logger.Info("Preparation waiting for active checkout", "task", params.TaskID, "reason", "lock_contention")
+		select {
+		case <-ctx.Done():
+			return nil, context.Cause(ctx)
+		case <-time.After(envRootBusyRetryInterval):
+		}
+	}
 }
 
 func (d *Daemon) reuseExecutionEnvironment(ctx context.Context, params execenv.ReuseParams) (*execenv.Environment, error) {
@@ -7784,7 +7867,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Resolve any local_directory assignment again here so runTask can plumb
 	// LocalWorkDir into execenv. handleTask already validated + locked the
 	// path for worker tasks; leader tasks intentionally skip the assignment.
-	localAssignment, _ := localDirectoryAssignmentForTask(task, d.cfg.DaemonID)
+	localAssignment, repositoryErr := localDirectoryAssignmentForTask(task, d.cfg.DaemonID)
+	if repositoryErr != nil {
+		return TaskResult{}, repositoryErr
+	}
 	// Reuse intentionally skipped for local_directory tasks: the prior
 	// WorkDir is the user's own path (always present) but the reuse path
 	// loses the envRoot association the GC loop needs, and re-running
@@ -8055,7 +8141,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			WorkspaceID:     task.WorkspaceID,
 			WorkspaceSlug:   task.WorkspaceSlug,
 			TaskID:          task.ID,
-			IssueIdentifier: task.IssueIdentifier,
+			IssueIdentifier: taskBranchIdentifier(task),
 			AgentName:       agentName,
 			// This run already holds the claim (envClaim above) and the reset
 			// it implies; preparation must not try to take it again.
@@ -8403,7 +8489,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// multica binary so that `multica` commands in the agent always resolve.
 	if selfBin, err := resolveSelfExecutable(); err == nil {
 		binDir := filepath.Dir(selfBin)
-		agentEnv["PATH"] = binDir + string(os.PathListSeparator) + os.Getenv("PATH")
+		agentEnv["PATH"] = binDir + string(os.PathListSeparator) + workflow.ToolPath()
 	}
 	// Point Codex to the per-task CODEX_HOME so it discovers skills natively
 	// without polluting the system ~/.codex/skills/.
@@ -8562,15 +8648,35 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		thinkingLevel = task.Agent.ThinkingLevel
 		serviceTier = task.Agent.ServiceTier
 	}
+	if task.Execution != nil && task.Execution.State == "selected" {
+		catalog, e := listModels(ctx, provider, agent.NewCommand(entry.Path, profileFixedArgs))
+		if e != nil {
+			return TaskResult{}, fmt.Errorf("verify approved execution model: %w", e)
+		}
+		found := false
+		for _, m := range catalog.Models {
+			if m.ID == model {
+				found = true
+			}
+		}
+		if !found {
+			return TaskResult{}, fmt.Errorf("approved model %q is unavailable on this runtime", model)
+		}
+	}
 	selection := resolveTaskModelSelection(ctx, provider, agent.NewCommand(entry.Path, profileFixedArgs),
 		taskModelSelection{Model: model, ThinkingLevel: thinkingLevel, ServiceTier: serviceTier}, taskLog)
+	if task.Execution != nil && task.Execution.State == "selected" && (selection.Model != model || selection.ThinkingLevel != thinkingLevel || selection.ServiceTier != serviceTier) {
+		return TaskResult{}, fmt.Errorf("approved execution model settings are no longer supported; update the profile")
+	}
 	model, thinkingLevel, serviceTier = selection.Model, selection.ThinkingLevel, selection.ServiceTier
 
 	var idleWatchdogTimeout time.Duration
 	if provider == "opencode" || provider == "codearts" {
 		idleWatchdogTimeout = d.cfg.OpenCodeIdleWatchdog
 	}
+	quotaRuntime := d.findRuntime(task.RuntimeID)
 	execOpts := agent.ExecOptions{
+		ReportQuota:                quotaRuntime != nil && quotaRuntime.ProfileID == "" && task.Agent != nil && len(task.Agent.CustomEnv) == 0 && len(task.Agent.CustomArgs) == 0 && len(defaultArgsForProvider(d.cfg, provider)) == 0,
 		Cwd:                        env.WorkDir,
 		Model:                      model,
 		ThreadName:                 deriveTaskThreadName(task),
@@ -9381,6 +9487,13 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 				observedAt := time.Now().UTC()
 				lastActivityAt.Store(observedAt.UnixNano())
 				switch msg.Type {
+				case agent.MessageQuota:
+					if msg.Quota != nil && opts.ReportQuota {
+						select {
+						case d.subscriptionQuotaReports <- *msg.Quota:
+						default:
+						}
+					}
 				case agent.MessageStatus:
 					// Persist the session/work_dir as soon as the backend
 					// reveals them. Without this, a daemon crash mid-run

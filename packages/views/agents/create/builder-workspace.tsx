@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
+import { Button } from "@multica/ui/components/ui/button";
 import { useDefaultLayout } from "react-resizable-panels";
 import {
   AlertDialog,
@@ -20,6 +21,8 @@ import {
 } from "@multica/ui/components/ui/resizable";
 import {
   applyDraftRuntimeChange,
+  validateBuilderConfiguration,
+  type BuilderConfigurationContext,
   decodeBuilderInput,
   encodeBuilderInput,
   mergeBuilderDraft,
@@ -28,8 +31,10 @@ import {
 } from "@multica/core/agents";
 import {
   runtimeDisplayLabel,
+  isRuntimeUsableForUser,
   runtimeModelsOptions,
 } from "@multica/core/runtimes";
+import { useAuthStore } from "@multica/core/auth";
 import type { AgentBuilderSessionSummary } from "@multica/core/types";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
 import { BuilderConversation } from "./builder-conversation";
@@ -127,6 +132,45 @@ export function BuilderWorkspace({
     [builderModelCatalog],
   );
 
+  const permissions = useAuthStore((state) => state.user?.permissions);
+  const [configurationError, setConfigurationError] = useState<string | null>(
+    null,
+  );
+  const [proposalRetry, setProposalRetry] = useState(0);
+  const [refreshingProposal, setRefreshingProposal] = useState(false);
+  const accessibleRuntimes = useMemo(
+    () =>
+      form.currentUserId
+        ? form.runtimes.filter((r) =>
+            isRuntimeUsableForUser(r, form.currentUserId),
+          )
+        : [],
+    [form.runtimes, form.currentUserId],
+  );
+  const onlineRuntimes = accessibleRuntimes.filter(
+    (r) => r.status === "online",
+  );
+  const runtimeCatalogs = useQueries({
+    queries: onlineRuntimes.map((r) => runtimeModelsOptions(r.id)),
+  });
+  const configuration: BuilderConfigurationContext = {
+    canCreateAgents: permissions?.create_agents === true,
+    canCreateInstanceAgents: permissions?.create_instance_agents === true,
+    runtimes: accessibleRuntimes.map((runtime) => {
+      const q =
+        runtimeCatalogs[onlineRuntimes.findIndex((r) => r.id === runtime.id)];
+      return {
+        runtime,
+        models: q?.data ? (q.data.supported ? q.data.models : []) : null,
+      };
+    }),
+  };
+  const catalogsPending =
+    form.runtimesLoading ||
+    !form.currentUserId ||
+    !permissions ||
+    runtimeCatalogs.some((q) => q.isPending || (q.isFetching && !q.data));
+  const catalogVersion = JSON.stringify(configuration);
   // Read through a ref so the encoder handed to the session hook stays current
   // without making the hook depend on every catalog query.
   const encodeContext = useRef({
@@ -135,6 +179,7 @@ export function BuilderWorkspace({
     members: form.members,
     selectedRuntime,
     builderModelCatalog,
+    configuration,
   });
   encodeContext.current = {
     draft,
@@ -142,6 +187,7 @@ export function BuilderWorkspace({
     members: form.members,
     selectedRuntime,
     builderModelCatalog,
+    configuration,
   };
 
   const builder = useBuilderSession({
@@ -155,6 +201,7 @@ export function BuilderWorkspace({
         context.members,
         context.selectedRuntime,
         context.builderModelCatalog,
+        context.configuration,
       );
     },
   });
@@ -198,7 +245,7 @@ export function BuilderWorkspace({
     // Gated on the restore: merging a reply into the form before the stored
     // configuration lands would be overwritten a tick later, and the merge
     // would have been computed against an empty draft.
-    if (!restored) return;
+    if (!restored || catalogsPending || refreshingProposal) return;
     if (
       !latestDraftMessageId ||
       !latestDraftMessageContent ||
@@ -208,6 +255,15 @@ export function BuilderWorkspace({
     }
     const payload = parseBuilderDraft(latestDraftMessageContent);
     if (!payload) return;
+    const context = encodeContext.current;
+    const invalid = validateBuilderConfiguration(
+      context.draft,
+      payload,
+      context.configuration,
+    );
+    setConfigurationError(invalid);
+    if (invalid) return;
+    appliedRef.current = latestDraftMessageId;
     markApplied(latestDraftMessageId);
     setDraft((current) =>
       mergeBuilderDraft(
@@ -216,9 +272,14 @@ export function BuilderWorkspace({
         skillIdSet,
         memberIdSet,
         validBuilderModelIds,
+        context.configuration,
       ),
     );
   }, [
+    catalogsPending,
+    catalogVersion,
+    proposalRetry,
+    refreshingProposal,
     latestDraftMessageContent,
     latestDraftMessageId,
     markApplied,
@@ -250,7 +311,9 @@ export function BuilderWorkspace({
   const runtimeKnown = sessionSettled && draft.runtimeId.length > 0;
 
   useEffect(() => {
-    onRuntimeLabel(selectedRuntime ? runtimeDisplayLabel(selectedRuntime) : null);
+    onRuntimeLabel(
+      selectedRuntime ? runtimeDisplayLabel(selectedRuntime) : null,
+    );
   }, [onRuntimeLabel, selectedRuntime]);
 
   const handleRuntimeSelect = async (runtimeId: string) => {
@@ -265,6 +328,7 @@ export function BuilderWorkspace({
   };
 
   const canCreate =
+    submit.allowed &&
     draft.name.trim().length > 0 &&
     form.draftReady &&
     !submit.creating &&
@@ -333,6 +397,40 @@ export function BuilderWorkspace({
                     {t(($) => $.creation_studio.live_draft_hint)}
                   </p>
                 </div>
+                {latestDraftMessageId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mb-3"
+                    disabled={
+                      !restored || refreshingProposal || catalogsPending
+                    }
+                    onClick={async () => {
+                      setRefreshingProposal(true);
+                      try {
+                        await Promise.all(
+                          runtimeCatalogs.map((q) => q.refetch()),
+                        );
+                        markApplied("");
+                        appliedRef.current = null;
+                        setProposalRetry((n) => n + 1);
+                      } finally {
+                        setRefreshingProposal(false);
+                      }
+                    }}
+                  >
+                    {t(($) => $.creation_studio.builder.reapply_proposal)}
+                  </Button>
+                )}
+                {configurationError && (
+                  <p
+                    role="alert"
+                    className="mb-4 rounded-md border border-destructive/30 p-3 text-body text-destructive"
+                  >
+                    {t(($) => $.creation_studio.builder.invalid_configuration)}{" "}
+                    {configurationError}
+                  </p>
+                )}
                 <AgentConfigurationPanel
                   compact
                   draft={draft}

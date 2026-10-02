@@ -638,6 +638,13 @@ func (h *Handler) cloneSourceContext(ctx context.Context, workspaceID, userID, c
 }
 
 func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Request, workspaceID, userID pgtype.UUID, input CreateIssueRequest, capture service.SourceContextCapture, limits service.SourceContextLimitUsage) error {
+	if input.JiraTicketID != "" {
+		key, err := normalizeJiraKey(input.JiraTicketID)
+		if err != nil {
+			return sourceContextBadRequest(err.Error())
+		}
+		input.JiraTicketID = key
+	}
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		return sourceContextBadRequest("title is required")
@@ -716,7 +723,7 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 		stage = pgtype.Int4{Int32: *input.Stage, Valid: true}
 	}
 	prefix := h.getIssuePrefix(r.Context(), workspaceID)
-	result, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
+	result, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{JiraTicketID: input.JiraTicketID,
 		WorkspaceID: workspaceID, Title: title, Description: ptrToText(input.Description), Status: status, Priority: priority,
 		AssigneeType: assigneeType, AssigneeID: assigneeID, CreatorType: "member", CreatorID: userID,
 		ParentIssueID: capture.SourceIssueID, ProjectID: projectID, StartDate: startDate, DueDate: dueDate,
@@ -799,15 +806,18 @@ func (h *Handler) prepareAgentCommentSubIssue(w http.ResponseWriter, r *http.Req
 		writeAgentUnavailable(w, verdict.Detail, verdict.Reason)
 		return nil, errSourceContextResponseWritten
 	}
-	if status, payload := h.checkQuickCreateDaemonVersion(r.Context(), obsmetrics.RuntimeLookupSourceSourceContext, agent.RuntimeID); status != 0 {
-		writeJSON(w, status, payload)
-		return nil, errSourceContextResponseWritten
+	if !service.HasExecutionProfiles(agent) {
+		if status, payload := h.checkQuickCreateDaemonVersion(r.Context(), obsmetrics.RuntimeLookupSourceSourceContext, agent.RuntimeID); status != 0 {
+			writeJSON(w, status, payload)
+			return nil, errSourceContextResponseWritten
+		}
+		runtime, err := h.getAgentRuntime(r.Context(), obsmetrics.RuntimeLookupSourceSourceContext, agent.RuntimeID)
+		if err != nil || !runtimeHasCapability(runtime.Metadata, protocol.DaemonCapabilitySourceContextQuickCreateV1) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"code": "source_context_quick_create_unsupported", "error": "selected agent runtime must be updated before using captured context"})
+			return nil, errSourceContextResponseWritten
+		}
 	}
-	runtime, err := h.getAgentRuntime(r.Context(), obsmetrics.RuntimeLookupSourceSourceContext, agent.RuntimeID)
-	if err != nil || !runtimeHasCapability(runtime.Metadata, protocol.DaemonCapabilitySourceContextQuickCreateV1) {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"code": "source_context_quick_create_unsupported", "error": "selected agent runtime must be updated before using captured context"})
-		return nil, errSourceContextResponseWritten
-	}
+
 	dueDate := strings.TrimSpace(input.DueDate)
 	if dueDate != "" {
 		parsed, err := util.ParseCalendarDate(dueDate)
@@ -816,12 +826,19 @@ func (h *Handler) prepareAgentCommentSubIssue(w http.ResponseWriter, r *http.Req
 		}
 		dueDate = parsed.Time.Format("2006-01-02")
 	}
-	if priority != "" || dueDate != "" {
+	if !service.HasExecutionProfiles(agent) && (priority != "" || dueDate != "") {
 		if status, payload := h.checkQuickCreateDaemonVersionAtLeast(r.Context(), obsmetrics.RuntimeLookupSourceSourceContext, agent.RuntimeID, agentpkg.MinQuickCreateFieldsCLIVersion); status != 0 {
 			writeJSON(w, status, payload)
 			return nil, errSourceContextResponseWritten
 		}
 	}
+	if service.HasExecutionProfiles(agent) {
+		if status, payload := h.checkPortableQuickCreate(r.Context(), agent, priority != "" || dueDate != "", true); status != 0 {
+			writeJSON(w, status, payload)
+			return nil, errSourceContextResponseWritten
+		}
+	}
+
 	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, input.AttachmentIDs, "attachment_ids")
 	if !ok {
 		return nil, errSourceContextResponseWritten

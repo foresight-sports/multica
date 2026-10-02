@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/quota"
 	"log/slog"
 	"strings"
 	"time"
@@ -24,8 +25,10 @@ type Backend interface {
 
 // ExecOptions configures a single execution.
 type ExecOptions struct {
-	Cwd   string
-	Model string
+	ReportQuota bool // Same-login built-in runtime; excludes custom authentication.
+	RoutingOnly bool // Isolated classification: disable tools and approval escalation.
+	Cwd         string
+	Model       string
 	// SystemPrompt carries the Multica runtime brief for the few providers
 	// that cannot pick it up from disk. The daemon leaves it empty for every
 	// other provider (see daemon.providerNeedsInlineSystemPrompt), because the
@@ -192,11 +195,13 @@ const (
 	MessageToolResult MessageType = "tool-result"
 	MessageStatus     MessageType = "status"
 	MessageError      MessageType = "error"
+	MessageQuota      MessageType = "quota"
 	MessageLog        MessageType = "log"
 )
 
 // Message is a unified event emitted by an agent during execution.
 type Message struct {
+	Quota     *quota.Report
 	Type      MessageType
 	Content   string         // text content (Text, Error, Log)
 	Tool      string         // tool name (ToolUse, ToolResult)

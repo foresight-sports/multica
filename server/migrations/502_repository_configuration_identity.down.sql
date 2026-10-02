@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY repository_configuration_identity;

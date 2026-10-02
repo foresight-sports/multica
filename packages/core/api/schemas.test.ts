@@ -2296,3 +2296,12 @@ describe("RuntimePermissionPolicySchema", () => {
     expect(UserSchema.parse({ id: "user", permissions: { manage_permission_access: "true" } }).permissions.manage_permission_access).toBe(false);
   });
 });
+describe("agent action permissions", () => {
+ it.each(["create_instance_agents", "create_agents", "edit_agents"] as const)("fails closed for %s", (action) => {
+  for (const value of [undefined, null, "true", 1, false]) expect(UserSchema.parse({ id: "user", permissions: { [action]: value } }).permissions[action]).toBe(false);
+  expect(UserSchema.parse({ id: "user", permissions: { [action]: true } }).permissions[action]).toBe(true);
+ });
+ it.each(["instance-agent.create", "agent.create", "agent.edit"])("accepts the %s policy", (action) => {
+ expect(RuntimePermissionPolicySchema.parse({ action, allowed_emails: [], restricted: true, revision: 1 }).action).toBe(action);
+ });
+});

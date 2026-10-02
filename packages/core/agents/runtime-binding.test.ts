@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isAgentRuntimeBound } from "./runtime-binding";
 
 describe("isAgentRuntimeBound", () => {
+  it("accepts portable agents without a bound machine", () => { expect(isAgentRuntimeBound({runtime_id:"",runtime_bound:true,portable_execution:true})).toBe(true); });
   it("accepts a bound response from new and old servers", () => {
     expect(
       isAgentRuntimeBound({ runtime_id: "runtime-1", runtime_bound: true }),

@@ -298,14 +298,14 @@ ORDER BY created_at DESC;
 -- that passes no id still inserts — it just gets a random v4, exactly as before.
 -- The same pattern is used by every INSERT listed in pkg/dbid's write table.
 INSERT INTO agent_task_queue (
-    agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
+    execution_request, agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
     squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
     id
 )
 SELECT
-    $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
+    COALESCE(sqlc.narg(execution_request)::jsonb,'{}'), $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
     COALESCE(sqlc.narg(coalesced_comment_ids)::uuid[], '{}'),
     sqlc.narg(trigger_summary),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
@@ -340,7 +340,7 @@ RETURNING *;
 -- issue task up front for crash safety, but keep it inert until attachment
 -- binding settles or the fire_at fallback is promoted by the normal sweeper.
 INSERT INTO agent_task_queue (
-    agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
+    execution_request, agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
     squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id,
@@ -348,7 +348,7 @@ INSERT INTO agent_task_queue (
     id
 )
 SELECT
-    $1, $2, $3, 'deferred', $4, sqlc.narg(trigger_comment_id),
+    COALESCE(sqlc.narg(execution_request)::jsonb,'{}'), $1, $2, $3, 'deferred', $4, sqlc.narg(trigger_comment_id),
     COALESCE(sqlc.narg(coalesced_comment_ids)::uuid[], '{}'),
     sqlc.narg(trigger_summary),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
@@ -738,13 +738,16 @@ WHERE id = (
     WHERE atq.agent_id = @agent_id
       AND atq.runtime_id = @runtime_id
       AND atq.status = 'queued'
+      AND task_jira_allowed(atq.issue_id,atq.agent_id,atq.context)
+      AND task_workflow_allowed(atq.agent_id,atq.issue_id,atq.runtime_id)
       AND EXISTS (
           SELECT 1
           FROM agent a
           JOIN agent_runtime r ON r.id = atq.runtime_id
           WHERE a.id = atq.agent_id
             -- A task's persisted runtime is not authority after an agent rebind.
-            AND a.runtime_id = atq.runtime_id
+            AND agent_allows_runtime(a.id,atq.runtime_id)
+ AND ((COALESCE(jsonb_array_length(execution_policy_for_agent(a.id)->'profiles'),0)=0 AND atq.execution_selection='{}'::jsonb) OR (atq.execution_selection->>'state' IN ('selected','selecting') AND EXISTS (SELECT 1 FROM jsonb_array_elements(execution_policy_for_agent(a.id)->'profiles') ep WHERE ep->>'id'=atq.execution_selection->'profile'->>'id' AND ep->>'provider'=(SELECT provider FROM agent_runtime WHERE id=atq.runtime_id) AND ep->>'model'=atq.execution_selection->'profile'->>'model')))
             -- Private runtimes only execute their owner's agents. Ownerless
             -- runtime/agent rows remain claimable only so the handler can
             -- settle them explicitly before daemon delivery; filtering them
@@ -853,7 +856,8 @@ WHERE id = (
           FROM agent a
           JOIN agent_runtime r ON r.id = atq.runtime_id
           WHERE a.id = atq.agent_id
-            AND a.runtime_id = atq.runtime_id
+            AND agent_allows_runtime(a.id,atq.runtime_id)
+ AND ((COALESCE(jsonb_array_length(execution_policy_for_agent(a.id)->'profiles'),0)=0 AND atq.execution_selection='{}'::jsonb) OR (atq.execution_selection->>'state' IN ('selected','selecting') AND EXISTS (SELECT 1 FROM jsonb_array_elements(execution_policy_for_agent(a.id)->'profiles') ep WHERE ep->>'id'=atq.execution_selection->'profile'->>'id' AND ep->>'provider'=(SELECT provider FROM agent_runtime WHERE id=atq.runtime_id) AND ep->>'model'=atq.execution_selection->'profile'->>'model')))
             AND (
                 r.visibility = 'public'
                 OR (
@@ -899,7 +903,8 @@ WHERE id IN (
           FROM agent a
           JOIN agent_runtime r ON r.id = atq.runtime_id
           WHERE a.id = atq.agent_id
-            AND a.runtime_id = atq.runtime_id
+            AND agent_allows_runtime(a.id,atq.runtime_id)
+ AND ((COALESCE(jsonb_array_length(execution_policy_for_agent(a.id)->'profiles'),0)=0 AND atq.execution_selection='{}'::jsonb) OR (atq.execution_selection->>'state' IN ('selected','selecting') AND EXISTS (SELECT 1 FROM jsonb_array_elements(execution_policy_for_agent(a.id)->'profiles') ep WHERE ep->>'id'=atq.execution_selection->'profile'->>'id' AND ep->>'provider'=(SELECT provider FROM agent_runtime WHERE id=atq.runtime_id) AND ep->>'model'=atq.execution_selection->'profile'->>'model')))
             AND (
                 r.visibility = 'public'
                 OR (
@@ -946,7 +951,16 @@ SET status = 'running',
     started_at = now(),
     wait_reason = NULL,
     prepare_lease_expires_at = NULL
-WHERE id = $1 AND status IN ('dispatched', 'waiting_local_directory')
+WHERE agent_task_queue.id = $1 AND status IN ('dispatched', 'waiting_local_directory')
+AND task_jira_allowed(issue_id,agent_id,context)
+AND task_workflow_allowed(agent_id,issue_id,runtime_id)
+AND (execution_selection='{}'::jsonb OR (execution_selection->>'state'='selected'
+ AND agent_allows_runtime(agent_id,runtime_id)
+ AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(execution_policy_for_agent(agent_id)->'profiles','[]')) p
+ WHERE p->>'id'=execution_selection->'profile'->>'id' AND p->>'provider'=(SELECT provider FROM agent_runtime WHERE agent_runtime.id=agent_task_queue.runtime_id)
+ AND p->>'model'=execution_selection->'profile'->>'model'
+ AND p->>'thinking_level'=execution_selection->'profile'->>'thinking_level'
+ AND p->>'service_tier'=execution_selection->'profile'->>'service_tier')))
 RETURNING *;
 
 -- name: MarkAgentTaskWaitingLocalDirectory :one
@@ -1428,6 +1442,8 @@ RETURNING *;
 WITH victims AS (
     SELECT id FROM agent_task_queue
     WHERE status = 'queued'
+      AND NOT EXISTS (SELECT 1 FROM work_record w WHERE w.issue_id=agent_task_queue.issue_id AND w.agent_id=agent_task_queue.agent_id AND w.kind='installation' AND w.state IN ('pending','approved','installed'))
+      AND execution_selection='{}'::jsonb
       AND created_at < now() - make_interval(secs => @reconnect_grace_secs::double precision)
       AND (
           runtime_id IS NULL
@@ -1459,6 +1475,7 @@ SET status = 'failed',
 FROM victims v
 WHERE t.id = v.id
   AND t.status = 'queued'
+  AND NOT EXISTS (SELECT 1 FROM work_record w WHERE w.issue_id=t.issue_id AND w.agent_id=t.agent_id AND w.kind='installation' AND w.state IN ('pending','approved','installed'))
   AND t.created_at < now() - make_interval(secs => @reconnect_grace_secs::double precision)
   AND (
       t.runtime_id IS NULL
@@ -1490,6 +1507,7 @@ WITH victims AS (
     FROM agent_task_queue retry
     JOIN agent_task_queue parent ON parent.id = retry.parent_task_id
     WHERE retry.status = 'deferred'
+      AND NOT EXISTS (SELECT 1 FROM work_record w WHERE w.issue_id=retry.issue_id AND w.agent_id=retry.agent_id AND w.kind='installation' AND w.state IN ('pending','approved','installed'))
       AND retry.fire_at < now() - make_interval(secs => @reconnect_grace_secs::double precision)
       AND parent.failure_reason = 'runtime_offline'
       AND NOT EXISTS (
@@ -1513,7 +1531,8 @@ SET status = 'failed',
 FROM victims
 WHERE retry.id = victims.id
   AND retry.status = 'deferred'
-  AND retry.fire_at < now() - make_interval(secs => @reconnect_grace_secs::double precision)
+  AND NOT EXISTS (SELECT 1 FROM work_record w WHERE w.issue_id=retry.issue_id AND w.agent_id=retry.agent_id AND w.kind='installation' AND w.state IN ('pending','approved','installed'))
+      AND retry.fire_at < now() - make_interval(secs => @reconnect_grace_secs::double precision)
   AND EXISTS (
       SELECT 1 FROM agent_task_queue parent
       WHERE parent.id = retry.parent_task_id
@@ -2159,7 +2178,7 @@ WHERE recovery.author_type = 'system'
       ELSE issue_status_category(source_status.category)
   END IN ('unstarted', 'started')
   AND source_agent.archived_at IS NULL
-  AND source_agent.runtime_id IS NOT NULL
+  AND (source_agent.runtime_id IS NOT NULL OR COALESCE(jsonb_array_length(source_agent.execution_policy->'profiles'),0)>0)
   AND source_agent.workspace_id = source_issue.workspace_id
   AND NOT EXISTS (
       SELECT 1
@@ -2247,13 +2266,16 @@ ORDER BY priority DESC, created_at ASC;
 SELECT atq.* FROM agent_task_queue atq
 WHERE atq.runtime_id = $1
   AND atq.status = 'queued'
+      AND task_jira_allowed(atq.issue_id,atq.agent_id,atq.context)
+      AND task_workflow_allowed(atq.agent_id,atq.issue_id,atq.runtime_id)
   AND EXISTS (
       -- Keep this authorization fence in sync with ClaimAgentTask.
       SELECT 1
       FROM agent a
       JOIN agent_runtime r ON r.id = atq.runtime_id
       WHERE a.id = atq.agent_id
-        AND a.runtime_id = atq.runtime_id
+        AND agent_allows_runtime(a.id,atq.runtime_id)
+ AND ((COALESCE(jsonb_array_length(execution_policy_for_agent(a.id)->'profiles'),0)=0 AND atq.execution_selection='{}'::jsonb) OR (atq.execution_selection->>'state' IN ('selected','selecting') AND EXISTS (SELECT 1 FROM jsonb_array_elements(execution_policy_for_agent(a.id)->'profiles') ep WHERE ep->>'id'=atq.execution_selection->'profile'->>'id' AND ep->>'provider'=(SELECT provider FROM agent_runtime WHERE id=atq.runtime_id) AND ep->>'model'=atq.execution_selection->'profile'->>'model')))
         AND (
             r.visibility = 'public'
             OR (
@@ -2374,13 +2396,16 @@ RETURNING *;
 SELECT atq.* FROM agent_task_queue atq
 WHERE atq.runtime_id = ANY(@runtime_ids::uuid[])
   AND atq.status = 'queued'
+      AND task_jira_allowed(atq.issue_id,atq.agent_id,atq.context)
+      AND task_workflow_allowed(atq.agent_id,atq.issue_id,atq.runtime_id)
   AND EXISTS (
       -- Keep this authorization fence in sync with ClaimAgentTask.
       SELECT 1
       FROM agent a
       JOIN agent_runtime r ON r.id = atq.runtime_id
       WHERE a.id = atq.agent_id
-        AND a.runtime_id = atq.runtime_id
+        AND agent_allows_runtime(a.id,atq.runtime_id)
+ AND ((COALESCE(jsonb_array_length(execution_policy_for_agent(a.id)->'profiles'),0)=0 AND atq.execution_selection='{}'::jsonb) OR (atq.execution_selection->>'state' IN ('selected','selecting') AND EXISTS (SELECT 1 FROM jsonb_array_elements(execution_policy_for_agent(a.id)->'profiles') ep WHERE ep->>'id'=atq.execution_selection->'profile'->>'id' AND ep->>'provider'=(SELECT provider FROM agent_runtime WHERE id=atq.runtime_id) AND ep->>'model'=atq.execution_selection->'profile'->>'model')))
         AND (
             r.visibility = 'public'
             OR (

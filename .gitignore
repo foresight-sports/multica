@@ -82,3 +82,5 @@ perf-report/
 
 # Operator-built client package staged for the self-host web image.
 /apps/web/public/download/multica-cloudflare-windows-amd64.zip
+
+/daemon-releases/

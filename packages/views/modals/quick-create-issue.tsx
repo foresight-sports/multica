@@ -1,4 +1,6 @@
 "use client";
+import { IssueRepositoryNotice, useIssueRepositoryGate } from "./issue-repository-notice";
+import { issueIntakeOptions, useJiraSettings } from "@multica/core/workspace";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -125,6 +127,9 @@ export function AgentCreatePanel({
   const workspaceName = useCurrentWorkspace()?.name;
   const workspacePaths = useWorkspacePaths();
   const wsId = useWorkspaceId();
+  const repositoryGate=useIssueRepositoryGate();
+  const jira = useJiraSettings(wsId);
+  const jiraBlocked = !jira.query.data || jira.query.isError || jira.query.data.required;
   const anchorCommentId = typeof data?.anchor_comment_id === "string" ? data.anchor_comment_id : null;
   const sourcePreview = data?.source_context_preview as SourceContextPreview | undefined;
   const sourceContextLoading = data?.source_context_loading === true;
@@ -243,13 +248,24 @@ export function AgentCreatePanel({
     visibleAgents,
   ]);
 
-  const [actor, setActor] = useState<ActorSelection | null>(() => seedActor());
+  const [projectId, setProjectId] = useState<string | null>(() => {
+    const seed = (data?.project_id as string | undefined) ?? draft.shared.projectId;
+    return seed ?? null;
+  });
+
+  const parentIssueId = (data?.parent_issue_id as string | undefined) ?? undefined;
+  const intake = useQuery({ ...issueIntakeOptions(wsId), enabled: !parentIssueId, retry: false });
+  const intakeSquadId = intake.data?.projects[projectId ?? ""] ?? intake.data?.defaultSquadId;
+  const usesIntake = !parentIssueId && !!intakeSquadId;
+  const intakeUnavailable = !parentIssueId && (intake.isPending || intake.isError);
+  const [selectedActor, setActor] = useState<ActorSelection | null>(() => seedActor());
+  const actor = useMemo<ActorSelection | null>(() => usesIntake ? { type: "squad", id: intakeSquadId } : selectedActor, [usesIntake, intakeSquadId, selectedActor]);
 
   // Re-seed once visible lists resolve (queries may be empty on first render).
   useEffect(() => {
-    if (actor && resolveActor(actor.type, actor.id)) return;
+    if (selectedActor && resolveActor(selectedActor.type, selectedActor.id)) return;
     setActor(seedActor());
-  }, [actor, resolveActor, seedActor]);
+  }, [selectedActor, resolveActor, seedActor]);
 
   const selectedAgent = useMemo<Agent | undefined>(() => {
     if (!actor) return undefined;
@@ -272,10 +288,6 @@ export function AgentCreatePanel({
   // project page (or manual panel) the modal was opened from, and the user's
   // own unfinished draft. It is deliberately NOT seeded from the last create
   // — see quick-create-store (MUL-5862).
-  const [projectId, setProjectId] = useState<string | null>(() => {
-    const seed = (data?.project_id as string | undefined) ?? draft.shared.projectId;
-    return seed ?? null;
-  });
   const [priority, setPriority] = useState<IssuePriority>(
     (data?.priority as IssuePriority | undefined) ?? draft.shared.priority,
   );
@@ -296,7 +308,7 @@ export function AgentCreatePanel({
   // the sub-issue intent; the agent panel never exposes this as a picker.
   // Identifier is best-effort display context only — the UUID is the
   // authoritative reference the backend/agent uses for `--parent <uuid>`.
-  const parentIssueId = (data?.parent_issue_id as string | undefined) ?? undefined;
+
   const parentIssueIdentifier =
     (data?.parent_issue_identifier as string | undefined) ?? undefined;
 
@@ -419,6 +431,7 @@ export function AgentCreatePanel({
     editorRef,
     uploadGate: gate,
     onSubmit: async (md): Promise<boolean> => {
+      if (intakeUnavailable || repositoryGate.blocked || jiraBlocked) return false;
       // The button already disables on !actor / versionBlocked, but the
       // ⌘+Enter path bypasses it — re-guard here and keep the draft in place.
       if (!actor || versionBlocked || (anchorCommentId && !sourcePreview)) return false;
@@ -564,6 +577,7 @@ export function AgentCreatePanel({
     },
   });
   const submit = () => {
+    if (intakeUnavailable || repositoryGate.blocked || jiraBlocked) return;
     void composer.submit();
   };
   const submitting = composer.submitting;
@@ -647,12 +661,18 @@ export function AgentCreatePanel({
           </div>
         </div>
 
+        <IssueRepositoryNotice onConfigure={()=>{const pending=editorRef.current?.flushPendingUpdate?.();if(pending!=null)setAgent({prompt:pending});onClose();}} />
+        {jiraBlocked && <p role="status" className="px-4 py-2 text-caption text-muted-foreground">{jira.query.isError ? t(($) => $.jira.load_error) : jira.query.data?.required ? t(($) => $.jira.manual_required) : t(($) => $.jira.loading)}</p>}
         {/* Actor picker — agents and squads in one searchable list. Squads
             route to their leader agent on the backend; the leader runs the
             quick-create flow with the squad's Operating Protocol layered
             on top, so a squad pick is "ask this squad to file the issue". */}
         <div className="px-5 pt-1 pb-2 shrink-0">
-          <ActorPicker
+          {usesIntake || intakeUnavailable ? (
+            <div className="text-caption text-muted-foreground" role="status">
+              {intake.isError ? <button type="button" className="underline" onClick={() => void intake.refetch()}>{t(($) => $.create_issue.intake_retry)}</button> : intake.isPending ? t(($) => $.create_issue.intake_loading) : t(($) => $.create_issue.intake_routing)}
+            </div>
+          ) : <ActorPicker
             actor={actor}
             visibleAgents={visibleAgents}
             visibleSquads={visibleSquads}
@@ -664,7 +684,7 @@ export function AgentCreatePanel({
               setError(null);
             }}
             t={t}
-          />
+          />}
         </div>
 
         {selectedAgent && versionBlocked && (
@@ -894,7 +914,7 @@ export function AgentCreatePanel({
           <Button
             size="sm"
             onClick={submit}
-            disabled={!hasContent || !actor || submitting || versionBlocked || gate.uploading || (!!anchorCommentId && !sourcePreview)}
+            disabled={jiraBlocked || repositoryGate.blocked || intakeUnavailable || !hasContent || !actor || submitting || versionBlocked || gate.uploading || (!!anchorCommentId && !sourcePreview)}
             aria-disabled={gate.uploading || undefined}
             // Sending is a busy state too, not just uploading.
             aria-busy={gate.uploading || submitting || undefined}

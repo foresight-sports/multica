@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/execution"
 	"io"
 	"log/slog"
 	"net/http"
@@ -49,8 +50,11 @@ type AgentConversationStarter struct {
 }
 
 type AgentResponse struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
+	PortableExecution     bool   `json:"portable_execution"`
+	InstanceSourceAgentID string `json:"instance_source_agent_id,omitempty"`
+	InstanceAgentID       string `json:"instance_agent_id,omitempty"`
+	ID                    string `json:"id"`
+	WorkspaceID           string `json:"workspace_id"`
 	// RuntimeID is the empty string when the agent is unbound — it kept its
 	// configuration and history when its runtime was deleted, and needs a new
 	// runtime before it can run again (MUL-5559). The wire type stays a string
@@ -206,10 +210,13 @@ func (h *Handler) agentToResponse(a db.Agent) AgentResponse {
 	composioAllowlist := a.ComposioToolkitAllowlist
 
 	return AgentResponse{
+		InstanceAgentID:          uuidToString(a.InstanceAgentID),
+		InstanceSourceAgentID:    uuidToString(a.InstanceSourceAgentID),
 		ID:                       uuidToString(a.ID),
 		WorkspaceID:              uuidToString(a.WorkspaceID),
 		RuntimeID:                uuidToString(a.RuntimeID),
-		RuntimeBound:             a.RuntimeID.Valid,
+		RuntimeBound:             a.RuntimeID.Valid || service.HasExecutionProfiles(a),
+		PortableExecution:        service.HasExecutionProfiles(a),
 		Name:                     a.Name,
 		Description:              a.Description,
 		Instructions:             a.Instructions,
@@ -357,6 +364,8 @@ type TaskCancellationActor struct {
 }
 
 type AgentTaskResponse struct {
+	Execution                json.RawMessage        `json:"execution,omitempty"`
+	ExecutionRequest         json.RawMessage        `json:"execution_request,omitempty"`
 	CancelledByCommentChange bool                   `json:"cancelled_by_comment_change,omitempty"`
 	CancelledBy              *TaskCancellationActor `json:"cancelled_by,omitempty"`
 
@@ -367,6 +376,8 @@ type AgentTaskResponse struct {
 	WorkspaceID          string                 `json:"workspace_id"`
 	WorkspaceSlug        string                 `json:"workspace_slug,omitempty"`
 	IssueIdentifier      string                 `json:"issue_identifier,omitempty"`
+	WorkflowContext      string                 `json:"workflow_context,omitempty"`
+	JiraTicketID         string                 `json:"jira_ticket_id,omitempty"`
 	RemoteMCPConnections []remotemcp.Connection `json:"remote_mcp_connections,omitempty"`
 	// PluginHookTools are the workspace's agent-trigger plugin hooks, which the
 	// daemon renders as MCP tools for this task. Resolved at claim time so
@@ -809,6 +820,7 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 		handoffNote = t.HandoffNote.String
 	}
 	return AgentTaskResponse{
+		Execution: json.RawMessage(t.ExecutionSelection), ExecutionRequest: json.RawMessage(t.ExecutionRequest),
 		// Task-scoped provenance must not transfer through copied retry context.
 		CancelledByCommentChange: t.Status == "cancelled" && cancellation.TaskID != "" && cancellation.TaskID == uuidToString(t.ID),
 		CancelledBy:              taskCancellationActorToResponse(t),
@@ -1039,7 +1051,7 @@ func computeTaskKind(t db.AgentTaskQueue) string {
 func (h *Handler) loadAgentRuntimeAvailability(ctx context.Context, agents []db.Agent, workspaceID, viewerID, viewerRole string, now time.Time) (map[string]string, error) {
 	// Owner/admin runtime lists already contain every row, so their normal
 	// client-side derivation is authoritative and no projection query is needed.
-	if roleAllowed(viewerRole, "owner", "admin") {
+	if roleAllowed(viewerRole, "owner", "admin") && !slices.ContainsFunc(agents, func(a db.Agent) bool { return a.InstanceAgentID.Valid }) {
 		return map[string]string{}, nil
 	}
 
@@ -1068,6 +1080,11 @@ func (h *Handler) loadAgentRuntimeAvailability(ctx context.Context, agents []db.
 		// Agent/runtime workspace consistency is normally enforced at bind time;
 		// keep the projection fail-closed if a legacy row violates it.
 		if uuidToString(runtime.WorkspaceID) != workspaceID {
+			for _, a := range agents {
+				if a.InstanceAgentID.Valid && a.RuntimeID == runtime.ID {
+					result[uuidToString(runtime.ID)] = deriveAgentRuntimeAvailability(runtime, now)
+				}
+			}
 			continue
 		}
 		// ListAgentRuntimes exposes every row to workspace owner/admin and only
@@ -1094,6 +1111,10 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := requestUserID(r)
+	if err := h.ensureInstanceAgents(r.Context(), parseUUID(workspaceID)); err != nil {
+		instanceWriteError(w, err)
+		return
+	}
 
 	var agents []db.Agent
 	var err error
@@ -1162,6 +1183,7 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		resp := h.agentToResponse(a)
+		h.applyPortableAvailability(r.Context(), a, &resp)
 		// The map is keyed by runtime, and active + archived agents may share one.
 		// Keep the archived guard here as well as in the loader so an active sibling
 		// cannot leak its projection onto an archived response.
@@ -1218,6 +1240,7 @@ func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := h.agentToResponse(agent)
+	h.applyPortableAvailability(r.Context(), agent, &resp)
 	viewerRole := ""
 	if member, ok := ctxMember(r.Context()); ok {
 		viewerRole = member.Role
@@ -1271,6 +1294,8 @@ func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateAgentRequest struct {
+	ExecutionPolicy      *execution.Policy          `json:"execution_policy,omitempty"`
+	InstanceAgent        bool                       `json:"instance_agent"`
 	Name                 string                     `json:"name"`
 	Description          string                     `json:"description"`
 	Instructions         string                     `json:"instructions"`
@@ -1375,9 +1400,50 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	action := permissionCreateAgent
+	if req.InstanceAgent {
+		action = permissionCreateInstanceAgent
+	}
+	if !h.requireAgentAction(w, r, action) {
+		return
+	}
+	if req.InstanceAgent {
+		actorType, _ := h.resolveActor(r, ownerID, workspaceID)
+		if actorType != "member" {
+			writeError(w, http.StatusForbidden, "only human administrators can create instance agents")
+			return
+		}
+
+		req.Name = strings.TrimSpace(req.Name)
+		if req.Name == "" || utf8.RuneCountInString(req.Name) > 100 || utf8.RuneCountInString(req.Instructions) > maxInstanceInstructions {
+			writeError(w, http.StatusBadRequest, "instance agent name must be 1–100 characters and instructions up to 100000")
+			return
+		}
+	}
 	if utf8.RuneCountInString(req.Description) > maxAgentDescriptionLength {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("description must be %d characters or fewer", maxAgentDescriptionLength))
 		return
+	}
+	if req.ExecutionPolicy != nil && len(req.ExecutionPolicy.Profiles) > 0 {
+		// Choose a catalog source for creation-time validation only. Saving the
+		// policy clears the legacy binding in the same transaction.
+		catalogRuntimes, e := h.Queries.ListAgentRuntimes(r.Context(), parseUUID(workspaceID))
+		if e != nil {
+			writeError(w, 500, "could not load model inventory")
+			return
+		}
+		provider := req.ExecutionPolicy.Profiles[0].Provider
+		primary := req.ExecutionPolicy.Profiles[0]
+		req.Model, req.ThinkingLevel, req.ServiceTier = primary.Model, primary.ThinkingLevel, primary.ServiceTier
+		if provider != "" {
+			req.RuntimeID = ""
+			for _, rt := range catalogRuntimes {
+				if rt.Provider == provider && (rt.Visibility == "public" || uuidToString(rt.OwnerID) == requestUserID(r)) {
+					req.RuntimeID = uuidToString(rt.ID)
+					break
+				}
+			}
+		}
 	}
 	if req.RuntimeID == "" {
 		writeError(w, http.StatusBadRequest, "runtime_id is required")
@@ -1522,6 +1588,12 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.ExecutionPolicy != nil {
+		if !h.validateExecutionPolicy(w, r, db.Agent{WorkspaceID: wsUUID, OwnerID: parseUUID(ownerID)}, req.ExecutionPolicy) {
+			return
+		}
+		req.ExecutionPolicy.Revision = 1
+	}
 	avatarURL, ok := h.newAgentAvatar(w, r, req.AvatarURL)
 	if !ok {
 		return
@@ -1535,6 +1607,13 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
 
+	// Use the same lock order as central edits and workspace provisioning.
+	if req.InstanceAgent {
+		if _, err := tx.Exec(r.Context(), "SELECT pg_advisory_xact_lock(71490231)"); err != nil {
+			instanceWriteError(w, err)
+			return
+		}
+	}
 	created, err := qtx.CreateAgent(r.Context(), db.CreateAgentParams{
 		WorkspaceID:              wsUUID,
 		Name:                     req.Name,
@@ -1569,6 +1648,14 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create agent: "+err.Error())
 		return
 	}
+	if req.ExecutionPolicy != nil {
+		raw, _ := json.Marshal(req.ExecutionPolicy)
+		created, err = qtx.SaveExecutionPolicy(r.Context(), db.SaveExecutionPolicyParams{ID: created.ID, Policy: raw, ExpectedRevision: 0})
+		if err != nil {
+			writeError(w, 500, "failed to save execution policy")
+			return
+		}
+	}
 	if err := replaceInvocationTargetsWithQueries(r.Context(), qtx, created.ID, parseUUID(ownerID), perm.targets); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save agent access")
 		return
@@ -1579,6 +1666,28 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 			SkillID: skillID,
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to attach agent skill")
+			return
+		}
+	}
+	var instanceBindings []db.Agent
+	if req.InstanceAgent {
+		definition, err := qtx.CreateInstanceAgent(r.Context(), db.CreateInstanceAgentParams{
+			Name: req.Name, Description: req.Description, Instructions: req.Instructions, CreatedBy: parseUUID(ownerID),
+		})
+		if err != nil {
+			instanceWriteError(w, err)
+			return
+		}
+		created, err = qtx.LinkInstanceAgent(r.Context(), db.LinkInstanceAgentParams{
+			ID: created.ID, WorkspaceID: wsUUID, InstanceAgentID: definition.ID,
+		})
+		if err != nil {
+			instanceWriteError(w, err)
+			return
+		}
+		instanceBindings, err = provisionInstanceAgents(r.Context(), qtx, pgtype.UUID{})
+		if err != nil {
+			instanceWriteError(w, err)
 			return
 		}
 	}
@@ -1602,6 +1711,9 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	actorType, actorID := h.resolveActor(r, ownerID, workspaceID)
 	h.publish(protocol.EventAgentCreated, workspaceID, actorType, actorID, map[string]any{"agent": broadcastAgentResponse(resp)})
+	for _, binding := range instanceBindings {
+		h.publish(protocol.EventAgentCreated, uuidToString(binding.WorkspaceID), actorType, actorID, map[string]any{"agent": broadcastAgentResponse(h.agentToResponse(binding))})
+	}
 
 	obsmetrics.RecordEvent(h.Analytics, h.Metrics, analytics.AgentCreated(
 		ownerID,
@@ -1704,6 +1816,9 @@ func workspaceAlwaysRedactSecrets(settings []byte) bool {
 // resource response (see MUL-2600), so this predicate is shared only by
 // the remaining mcp_config redaction path.
 func canViewAgentSecrets(agent db.Agent, userID string, memberRole string) bool {
+	if agent.InstanceAgentID.Valid && agent.InstanceSourceAgentID != agent.ID {
+		return false
+	}
 	if roleAllowed(memberRole, "owner", "admin") {
 		return true
 	}
@@ -1822,7 +1937,7 @@ func normaliseComposioToolkitAllowlist(in []string) []string {
 // runs with its host owner's PAT, so a mutation against a sibling agent
 // could otherwise return the sibling owner's allowlist in the response.
 func redactAgentResponseForActor(resp *AgentResponse, actorType string) {
-	if actorType == "agent" {
+	if actorType == "agent" || (resp.InstanceAgentID != "" && resp.InstanceSourceAgentID != resp.ID) {
 		redactMcpConfig(resp)
 		redactComposioToolkitAllowlist(resp)
 	}
@@ -1832,6 +1947,9 @@ func redactAgentResponseForActor(resp *AgentResponse, actorType string) {
 // Only the agent owner or workspace owner/admin can manage any agent,
 // regardless of whether it is public or private.
 func (h *Handler) canManageAgent(w http.ResponseWriter, r *http.Request, agent db.Agent) bool {
+	if !h.requireAgentAction(w, r, permissionEditAgent) {
+		return false
+	}
 	wsID := uuidToString(agent.WorkspaceID)
 	member, ok := h.requireWorkspaceRole(w, r, wsID, "agent not found", "owner", "admin", "member")
 	if !ok {
@@ -1855,12 +1973,23 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	if !h.canManageAgent(w, r, existing) {
 		return
 	}
+	if !h.canConfigureInstanceAgent(w, r, existing) {
+		return
+	}
 
 	var req UpdateAgentRequest
 	rawFields, err := decodeJSONBodyWithRawFields(r.Body, &req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if existing.InstanceAgentID.Valid {
+		for _, field := range []string{"name", "description", "instructions"} {
+			if _, supplied := rawFields[field]; supplied {
+				writeError(w, http.StatusForbidden, "this agent's name, description and instructions are managed in Instance settings")
+				return
+			}
+		}
 	}
 
 	// Hard-reject any attempt to write custom_env through the generic
@@ -1932,6 +2061,10 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	// request doesn't move the agent, we still need to load the *current*
 	// runtime to validate a thinking_level change. Resolve once and reuse.
 	targetRuntimeID := existing.RuntimeID
+	if service.HasExecutionProfiles(existing) && (req.RuntimeID != nil || req.Model != nil || req.ThinkingLevel != nil || req.ServiceTier != nil) {
+		writeError(w, http.StatusConflict, "Edit execution profiles to change model requirements; machine placement is automatic")
+		return
+	}
 	targetProvider := ""
 	if req.RuntimeID != nil {
 		runtimeUUID, ok := parseUUIDOrBadRequest(w, *req.RuntimeID, "runtime_id")
@@ -2265,6 +2398,7 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	slog.Info("agent updated", append(logger.RequestAttrs(r), "agent_id", id, "workspace_id", uuidToString(updated.WorkspaceID))...)
 	userID := requestUserID(r)
 	actorType, actorID := h.resolveActor(r, userID, uuidToString(updated.WorkspaceID))
+	h.publishInstanceSetup(r.Context(), updated, actorType, actorID)
 	h.publish(protocol.EventAgentStatus, uuidToString(updated.WorkspaceID), actorType, actorID, map[string]any{"agent": broadcastAgentResponse(resp)})
 	redactAgentResponseForActor(&resp, actorType)
 	// Workspace admins / non-owner members pass canManageAgent for legitimate

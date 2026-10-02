@@ -116,10 +116,12 @@ type IssueTriggerPreviewRequest struct {
 	// or a batch). Empty with IsCreate=true evaluates a candidate new issue.
 	IssueIDs []string `json:"issue_ids"`
 	// IsCreate previews a not-yet-persisted issue from AssigneeType/ID/Status.
-	IsCreate     bool    `json:"is_create"`
-	AssigneeType *string `json:"assignee_type"`
-	AssigneeID   *string `json:"assignee_id"`
-	Status       *string `json:"status"`
+	ProjectID     string  `json:"project_id"`
+	ParentIssueID string  `json:"parent_issue_id"`
+	IsCreate      bool    `json:"is_create"`
+	AssigneeType  *string `json:"assignee_type"`
+	AssigneeID    *string `json:"assignee_id"`
+	Status        *string `json:"status"`
 }
 
 // IssueTriggerPreviewItem is one issue that WILL start a run under the
@@ -205,11 +207,39 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 		if req.Status != nil && *req.Status != "" {
 			status = *req.Status
 		}
+
+		p := service.IssueCreateParams{WorkspaceID: wsUUID, Status: status, CreatorType: actorType, CreatorID: parseUUID(actorID), AssigneeType: newAssigneeType, AssigneeID: newAssigneeID}
+		if req.ProjectID != "" {
+			id, ok := parseUUIDOrBadRequest(w, req.ProjectID, "project_id")
+			if !ok {
+				return
+			}
+			if _, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{ID: id, WorkspaceID: wsUUID}); err != nil {
+				writeError(w, http.StatusBadRequest, "project not found")
+				return
+			}
+			p.ProjectID = id
+		}
+		if req.ParentIssueID != "" {
+			id, ok := parseUUIDOrBadRequest(w, req.ParentIssueID, "parent_issue_id")
+			if !ok {
+				return
+			}
+			if _, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: id, WorkspaceID: wsUUID}); err != nil {
+				writeError(w, http.StatusBadRequest, "parent issue not found")
+				return
+			}
+			p.ParentIssueID = id
+		}
+		if err := h.IssueService.ResolveIssueIntake(r.Context(), h.Queries, &p, p.ProjectID); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		candidate := db.Issue{
 			WorkspaceID:  wsUUID,
 			Status:       status,
-			AssigneeType: newAssigneeType,
-			AssigneeID:   newAssigneeID,
+			AssigneeType: p.AssigneeType,
+			AssigneeID:   p.AssigneeID,
 		}
 		appendTrigger(candidate, service.IssueTriggerInput{Issue: candidate, IsCreate: true})
 		resp.TotalCount = len(resp.Triggers)

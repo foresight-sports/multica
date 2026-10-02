@@ -258,7 +258,7 @@ export function PropertiesTab() {
                   <span className="text-caption text-muted-foreground">
                     {new Date(property.updated_at).toLocaleDateString(locale)}
                   </span>
-                  {canManage ? (
+                  {canManage && property.config.system_key !== "jira_ticket_id" ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={

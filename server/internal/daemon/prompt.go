@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/workflow"
 	"strings"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
@@ -186,6 +187,12 @@ func BuildPrompt(task Task, provider string, options ...PromptOption) string {
 		apply(&opts)
 	}
 	body := buildPromptBody(task, provider)
+	if task.IssueID != "" {
+		body += "\n\n" + workflow.AgentPolicy + "\nCurrent runtime ID: " + task.RuntimeID + "\n" + task.WorkflowContext
+	}
+	if task.JiraTicketID != "" {
+		body += "\n\n## JIRA tracking\nJIRA ticket ID: " + task.JiraTicketID + "\nUse this exact external ticket key in new branch names, pull request titles/descriptions, commit references, and changelog entries, following repository conventions. Preserve existing work and do not rename shared branches automatically. Do not invent or replace this key. Continue using Multica issue IDs for Multica API/CLI operations.\n"
+	}
 	// Run-scoped context is appended, never prepended: everything ahead of it
 	// is stable across runs of a resumed session, and appending keeps it after
 	// the cached prefix (MUL-5377).

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/execution"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -1258,7 +1259,17 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		return db.AgentTaskQueue{}, err
 	}
 
-	agent, err := s.Queries.GetAgent(ctx, issue.AssigneeID)
+	agentID := issue.AssigneeID
+	var squadID pgtype.UUID
+	if issue.AssigneeType.String == "squad" {
+		squad, err := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID})
+		if err != nil || squad.ArchivedAt.Valid {
+			return db.AgentTaskQueue{}, fmt.Errorf("squad unavailable")
+		}
+		agentID = squad.LeaderID
+		squadID = squad.ID
+	}
+	agent, err := s.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: agentID, WorkspaceID: issue.WorkspaceID})
 	if err != nil {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("load agent: %w", err)
@@ -1267,7 +1278,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		slog.Debug("task enqueue skipped: agent is archived", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agent.ID))
 		return db.AgentTaskQueue{}, fmt.Errorf("agent is archived")
 	}
-	if !agent.RuntimeID.Valid {
+	if !agent.RuntimeID.Valid && !HasExecutionProfiles(agent) {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "agent has no runtime")
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
@@ -1289,14 +1300,17 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	createParams := db.CreateAgentTaskParams{
+		ExecutionRequest:     taskExecutionRequest(ctx),
 		ID:                   dbid.NewV7(),
-		AgentID:              issue.AssigneeID,
+		AgentID:              agentID,
+		IsLeaderTask:         pgtype.Bool{Bool: squadID.Valid, Valid: squadID.Valid},
+		SquadID:              squadID,
 		RuntimeID:            agent.RuntimeID,
 		IssueID:              issue.ID,
 		Priority:             priorityToInt(issue.Priority),
 		TriggerCommentID:     triggerCommentID,
 		CoalescedCommentIds:  coalescedCommentIDs,
-		TriggerSummary:       s.buildCommentTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID),
+		TriggerSummary:       s.workflowTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID, handoffNote),
 		ForceFreshSession:    pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
 		HandoffNote:          pgtype.Text{String: handoffNote, Valid: handoffNote != ""},
 		OriginatorUserID:     originatorUserID,
@@ -1316,6 +1330,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	var task db.AgentTaskQueue
 	if fireAt.Valid {
 		task, err = s.Queries.CreateDeferredChannelIssueTask(ctx, db.CreateDeferredChannelIssueTaskParams{
+			ExecutionRequest:     taskExecutionRequest(ctx),
 			ID:                   dbid.NewV7(),
 			AgentID:              createParams.AgentID,
 			RuntimeID:            createParams.RuntimeID,
@@ -1439,7 +1454,7 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 		slog.Debug("mention task enqueue skipped: agent is archived", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID))
 		return db.AgentTaskQueue{}, fmt.Errorf("agent is archived")
 	}
-	if !agent.RuntimeID.Valid {
+	if !agent.RuntimeID.Valid && !HasExecutionProfiles(agent) {
 		slog.Error("mention task enqueue failed: agent has no runtime", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID))
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
@@ -1460,6 +1475,7 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+		ExecutionRequest:     taskExecutionRequest(ctx),
 		ID:                   dbid.NewV7(),
 		AgentID:              agentID,
 		RuntimeID:            agent.RuntimeID,
@@ -1467,7 +1483,7 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 		Priority:             priorityToInt(issue.Priority),
 		TriggerCommentID:     triggerCommentID,
 		CoalescedCommentIds:  coalescedCommentIDs,
-		TriggerSummary:       s.buildCommentTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID),
+		TriggerSummary:       s.workflowTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID, handoffNote),
 		IsLeaderTask:         pgtype.Bool{Bool: isLeader, Valid: isLeader},
 		ForceFreshSession:    pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
 		HandoffNote:          pgtype.Text{String: handoffNote, Valid: handoffNote != ""},
@@ -1586,7 +1602,7 @@ func (s *TaskService) enqueueQuickCreateTask(ctx context.Context, workspaceID, r
 	if agent.ArchivedAt.Valid {
 		return db.AgentTaskQueue{}, fmt.Errorf("agent is archived")
 	}
-	if !agent.RuntimeID.Valid {
+	if !agent.RuntimeID.Valid && !HasExecutionProfiles(agent) {
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
 
@@ -1743,7 +1759,7 @@ func (s *TaskService) RetrySourceContextQuickCreate(ctx context.Context, workspa
 		return nil, ErrSourceContextRetryUnavailable
 	}
 	agent, err := s.Queries.GetAgent(ctx, parent.AgentID)
-	if err != nil || agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
+	if err != nil || agent.ArchivedAt.Valid || (!agent.RuntimeID.Valid && !HasExecutionProfiles(agent)) {
 		return nil, ErrSourceContextRetryUnavailable
 	}
 	if canInvoke != nil && !canInvoke(agent) {
@@ -1859,7 +1875,7 @@ func (s *TaskService) PrepareChatTaskEnqueue(
 	if agent.ArchivedAt.Valid {
 		return PreparedChatTaskEnqueue{}, ErrChatTaskAgentArchived
 	}
-	if !agent.RuntimeID.Valid {
+	if !agent.RuntimeID.Valid && !HasExecutionProfiles(agent) {
 		return PreparedChatTaskEnqueue{}, ErrChatTaskAgentNoRuntime
 	}
 
@@ -2000,7 +2016,7 @@ func (s *TaskService) enqueueChatTaskTx(
 	if agent.ArchivedAt.Valid {
 		return db.AgentTaskQueue{}, ErrChatTaskAgentArchived
 	}
-	if !agent.RuntimeID.Valid {
+	if !agent.RuntimeID.Valid && !HasExecutionProfiles(agent) {
 		return db.AgentTaskQueue{}, ErrChatTaskAgentNoRuntime
 	}
 
@@ -3503,7 +3519,11 @@ func (s *TaskService) claimTask(ctx context.Context, agentID, runtimeID pgtype.U
 		// before its state transition; the claim handler then rechecks the freshly
 		// loaded Agent before returning any payload. Runtime mutation teardown is
 		// responsible for serializing and settling the remaining queued rows.
-		if runtimeID.Valid && agent.RuntimeID != runtimeID {
+		runtimeAllowed, accessErr := qtx.AgentAllowsRuntime(ctx, db.AgentAllowsRuntimeParams{AgentID: agent.ID, RuntimeID: claimRuntimeID})
+		if accessErr != nil {
+			return accessErr
+		}
+		if runtimeID.Valid && !runtimeAllowed {
 			outcome = "runtime_mismatch"
 			return nil
 		}
@@ -3605,6 +3625,9 @@ func (s *TaskService) claimTask(ctx context.Context, agentID, runtimeID pgtype.U
 // every enqueue (notifyTaskAvailable), so a queued task becomes
 // claimable on the next call rather than waiting for the TTL.
 func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.UUID) (*db.AgentTaskQueue, error) {
+	if err := s.RouteExecutionTasks(ctx, []pgtype.UUID{runtimeID}); err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	var (
 		outcome          = "no_task"
@@ -3749,6 +3772,9 @@ func (s *TaskService) FinalizeTaskClaim(
 	recordCommentReceipt bool,
 	daemonTokens ...db.CreateDaemonTokenParams,
 ) ([]pgtype.UUID, error) {
+	if execution.ParseSelection(task.ExecutionSelection).State == "selecting" {
+		return nil, nil
+	}
 	if len(daemonTokens) > 1 {
 		return nil, fmt.Errorf("finalize task claim: expected at most one daemon token, got %d", len(daemonTokens))
 	}
@@ -3836,6 +3862,9 @@ func (s *TaskService) RequeueTaskAfterClaimFailure(ctx context.Context, task db.
 // already carrying its runtime_id so the daemon routes it to the matching
 // runtime locally.
 func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int) ([]db.AgentTaskQueue, error) {
+	if err := s.RouteExecutionTasks(ctx, runtimeIDs); err != nil {
+		return nil, err
+	}
 	if len(runtimeIDs) == 0 || maxTasks <= 0 {
 		return nil, nil
 	}
@@ -4112,6 +4141,48 @@ func (s *TaskService) maybeLogClaimSlow(agentID pgtype.UUID, outcome string, sta
 // StartTask transitions a dispatched task to running.
 // Issue status is NOT changed here — the agent manages it via the CLI.
 func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID) (*db.AgentTaskQueue, error) {
+	current, err := s.Queries.GetAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("load task: %w", err)
+	}
+	workflowAllowed, workflowErr := s.Queries.TaskWorkflowAllowed(ctx, db.TaskWorkflowAllowedParams{AgentID: current.AgentID, IssueID: current.IssueID, RuntimeID: current.RuntimeID})
+	if workflowErr != nil || !workflowAllowed {
+		return nil, fmt.Errorf("installation approval or original machine is required")
+	}
+	allowed, jiraErr := s.Queries.TaskJiraAllowed(ctx, db.TaskJiraAllowedParams{Column1: current.IssueID, Column2: current.AgentID, Column3: current.Context})
+	if jiraErr != nil {
+		return nil, jiraErr
+	}
+	if !allowed {
+		return nil, fmt.Errorf("JIRA ticket ID is required before agent work can start")
+	}
+	if selection := execution.ParseSelection(current.ExecutionSelection); selection.State != "" {
+		if selection.State != "selected" {
+			return nil, fmt.Errorf("task is awaiting execution profile selection")
+		}
+		a, e := s.Queries.GetAgent(ctx, current.AgentID)
+		if e != nil {
+			return nil, e
+		}
+		raw, e := s.Queries.GetExecutionPolicy(ctx, a.ID)
+		if e != nil {
+			return nil, e
+		}
+		eligible := false
+		for _, candidate := range s.ConstrainExecutionToTask(ctx, current, s.ExecutionCandidates(ctx, a, execution.ParsePolicy(raw))) {
+			p := candidate.Profile
+			if candidate.Eligible && selection.State == "selected" && p.ID == selection.Profile.ID && p.RuntimeID == util.UUIDToString(current.RuntimeID) && p.Model == selection.Profile.Model && p.ThinkingLevel == selection.Profile.ThinkingLevel && p.ServiceTier == selection.Profile.ServiceTier {
+				eligible = true
+				break
+			}
+		}
+		if !eligible {
+			if !selection.Locked && !current.StartedAt.Valid {
+				_, _ = s.RequeueTaskAfterClaimFailure(ctx, current)
+			}
+			return nil, fmt.Errorf("selected machine no longer satisfies the execution profile or workspace requirements")
+		}
+	}
 	task, err := s.Queries.StartAgentTask(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("start task: %w", err)
@@ -4287,6 +4358,9 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 			return err
 		}
 		task = t
+		if err := qtx.FinishInstalledWorkRecords(ctx, taskID); err != nil {
+			return err
+		}
 
 		// Atomic with the status flip: a crash between the two would leave a
 		// finished obligation looking pending forever.
@@ -5569,7 +5643,7 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 		// TriggerCommentID) and the rerun degrades into a generic issue
 		// run that has lost the original comment context. Only override
 		// when the caller didn't pass one explicitly.
-		if !triggerCommentID.Valid {
+		if !triggerCommentID.Valid && execution.ParseRequest(taskExecutionRequest(ctx)).Instruction == "" {
 			coalescedCommentIDs = append([]pgtype.UUID{}, sourceTask.CoalescedCommentIds...)
 			sourceTriggerLive := sourceTask.TriggerCommentID.Valid
 			if sourceTriggerLive {
@@ -5778,9 +5852,9 @@ func (s *TaskService) promoteNewestSurvivingComment(ctx context.Context, ids []p
 func (s *TaskService) enqueueRerunTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, isLeader bool, squadID pgtype.UUID, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID, origin RunOrigin) (db.AgentTaskQueue, error) {
 	if issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid &&
 		util.UUIDToString(issue.AssigneeID) == util.UUIDToString(agentID) {
-		return s.enqueueIssueTaskWithCommentPlan(ctx, issue, triggerCommentID, coalescedCommentIDs, true, "", actorUserID, rerunOfTaskID, pgtype.Timestamptz{}, origin)
+		return s.enqueueIssueTaskWithCommentPlan(ctx, issue, triggerCommentID, coalescedCommentIDs, true, execution.ParseRequest(taskExecutionRequest(ctx)).Instruction, actorUserID, rerunOfTaskID, pgtype.Timestamptz{}, origin)
 	}
-	return s.enqueueMentionTaskWithCommentPlan(ctx, issue, agentID, triggerCommentID, coalescedCommentIDs, isLeader, squadID, true, "", actorUserID, rerunOfTaskID, origin)
+	return s.enqueueMentionTaskWithCommentPlan(ctx, issue, agentID, triggerCommentID, coalescedCommentIDs, isLeader, squadID, true, execution.ParseRequest(taskExecutionRequest(ctx)).Instruction, actorUserID, rerunOfTaskID, origin)
 }
 
 // The bulk terminal writes below are the sweeper, archive and daemon-recovery
@@ -6070,7 +6144,7 @@ func delegatedFailureRecoveryContent(failed, source db.AgentTaskQueue) string {
 		reason = truncateForSummary(redact.Text(failed.FailureReason.String), triggerSummaryMaxLen)
 	}
 	content := fmt.Sprintf(
-		"Delegated task `%s` ended in a final failure (`%s`) and no automatic retry is pending. Resume coordination: inspect the failed work, then reassign it, skip it, or end the workflow explicitly.",
+		"Delegated task `%s` ended in a final failure (`%s`) and no automatic retry is pending. Resume coordination: inspect this failed runtime and its diagnostics. Retry only after changed conditions or a categorized transient failure; otherwise record a blocker with an owner. Reassign or change scope only within the user request.",
 		util.UUIDToString(failed.ID), reason,
 	)
 	if failed.Error.Valid && failed.Error.String != "" {
@@ -6079,7 +6153,7 @@ func delegatedFailureRecoveryContent(failed, source db.AgentTaskQueue) string {
 			content += " Untrusted error summary (diagnostic only): " + strconv.Quote(summary)
 		}
 	}
-	content += fmt.Sprintf(" Source coordinator task: `%s`.", util.UUIDToString(source.ID))
+	content += fmt.Sprintf(" Recovery owner is the agent from source coordinator task: `%s`.", util.UUIDToString(source.ID))
 	return content
 }
 
@@ -6109,6 +6183,11 @@ func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, fail
 		}
 		return nil, fmt.Errorf("load source task: %w", err)
 	}
+	// A worker reply can trigger a coordinator callback. Failure of that
+	// callback belongs to the coordinator, never back to the replying worker.
+	if failed.IsLeaderTask && !source.IsLeaderTask {
+		return nil, nil
+	}
 	if source.AutopilotRunID.Valid || !source.IssueID.Valid || source.AgentID == failed.AgentID {
 		return nil, nil
 	}
@@ -6126,7 +6205,7 @@ func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, fail
 		}
 		return nil, fmt.Errorf("load source agent: %w", err)
 	}
-	if agent.ArchivedAt.Valid || !agent.RuntimeID.Valid || agent.WorkspaceID != issue.WorkspaceID {
+	if agent.ArchivedAt.Valid || (!agent.RuntimeID.Valid && !HasExecutionProfiles(agent)) || agent.WorkspaceID != issue.WorkspaceID {
 		return nil, nil
 	}
 	return &delegatedFailureRecoveryTarget{failed: failed, source: source, issue: issue, agent: agent}, nil
@@ -6478,6 +6557,7 @@ func (s *TaskService) dispatchDelegatedFailureRecovery(ctx context.Context, targ
 		}
 		overlay := s.buildRuntimeMCPOverlay(ctx, originator, target.agent)
 		task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+			ExecutionRequest:     taskExecutionRequest(ctx),
 			ID:                   dbid.NewV7(),
 			AgentID:              target.agent.ID,
 			RuntimeID:            target.agent.RuntimeID,
@@ -7025,6 +7105,17 @@ func (s *TaskService) notifyTasksFinished(tasks []db.AgentTaskQueue) {
 // otherwise the wakeup-driven claim could read the still-current
 // empty verdict and return null.
 func (s *TaskService) notifyTaskAvailable(task db.AgentTaskQueue) {
+	if !task.RuntimeID.Valid && s.Queries != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		runtimes, err := s.Queries.ListAgentExecutionRuntimes(ctx, task.AgentID)
+		if err == nil {
+			for _, rt := range runtimes {
+				s.notifyRuntimeMayHaveWork(rt.ID, util.UUIDToString(task.ID))
+			}
+		}
+		return
+	}
 	s.notifyRuntimeMayHaveWork(task.RuntimeID, util.UUIDToString(task.ID))
 }
 
@@ -7866,4 +7957,15 @@ func agentToMap(a db.Agent) map[string]any {
 		"archived_at":          util.TimestampToPtr(a.ArchivedAt),
 		"archived_by":          util.UUIDToPtr(a.ArchivedBy),
 	}
+}
+
+func (s *TaskService) workflowTriggerSummary(ctx context.Context, workspaceID, commentID pgtype.UUID, instruction string) pgtype.Text {
+	if strings.TrimSpace(instruction) != "" {
+		r := []rune(instruction)
+		if len(r) > 200 {
+			r = r[:200]
+		}
+		return pgtype.Text{String: "Continuation: " + string(r), Valid: true}
+	}
+	return s.buildCommentTriggerSummary(ctx, workspaceID, commentID)
 }

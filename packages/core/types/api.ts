@@ -5,6 +5,7 @@ import type { Project } from "./project";
 
 // Issue API
 export interface CreateIssueRequest {
+  jira_ticket_id?: string;
   title: string;
   description?: string;
   status?: IssueStatus;
@@ -102,6 +103,8 @@ export interface MoveIssueRequest
 export interface IssueTriggerPreviewParams {
   issueIds?: string[];
   isCreate?: boolean;
+  projectId?: string;
+  parentIssueId?: string;
   assigneeType?: IssueAssigneeType | null;
   assigneeId?: string | null;
   status?: IssueStatus;

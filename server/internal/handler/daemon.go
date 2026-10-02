@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/workspacerepo"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -32,6 +33,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/dbid"
+	"github.com/multica-ai/multica/server/pkg/execution"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/redact"
 	"github.com/multica-ai/multica/server/pkg/skillbundle"
@@ -158,6 +160,13 @@ func (h *Handler) requireDaemonTaskAccessWithWorkspace(w http.ResponseWriter, r 
 		return db.AgentTaskQueue{}, "", false
 	}
 
+	// Centrally configured instance runtimes may serve their linked bindings.
+	// Grant only this task; ordinary workspace endpoints remain scoped normally.
+	if grant, err := h.Queries.InstanceAgentWorkspaces(r.Context(), task.AgentID); err == nil && uuidToString(grant.WorkspaceID) == wsID {
+		if h.verifyDaemonWorkspaceAccess(r, uuidToString(grant.SourceWorkspaceID)) {
+			return task, wsID, true
+		}
+	}
 	if !h.requireDaemonWorkspaceAccess(w, r, wsID) {
 		return db.AgentTaskQueue{}, "", false
 	}
@@ -1653,6 +1662,9 @@ func parseRuntimeConnectedAppsForClaim(raw []byte, taskID pgtype.UUID) []runtime
 // proceed with a normal claim. Shared by the per-runtime and batch claim
 // handlers so the batch path can't silently drop surviving comments (MUL-4257).
 func (h *Handler) repairStaleCommentPlanIfNeeded(ctx context.Context, task *db.AgentTaskQueue, runtimeWorkspaceID string) (handled bool, failure *claimBuildFailure) {
+	if sharedWS := h.instanceTaskWorkspace(ctx, *task); sharedWS != "" {
+		runtimeWorkspaceID = sharedWS
+	}
 	if len(task.CoalescedCommentIds) == 0 {
 		return false, nil
 	}
@@ -2087,6 +2099,9 @@ func remoteMCPDaemonTokenForClaim(resp AgentTaskResponse, runtime db.AgentRuntim
 	if !runtime.DaemonID.Valid || strings.TrimSpace(runtime.DaemonID.String) == "" {
 		return "", nil, errors.New("runtime daemon_id is required for Remote MCP")
 	}
+	if ws, err := util.ParseUUID(resp.WorkspaceID); err == nil {
+		runtime.WorkspaceID = ws
+	}
 	raw, err := auth.GenerateDaemonToken()
 	if err != nil {
 		return "", nil, fmt.Errorf("generate Remote MCP daemon token: %w", err)
@@ -2207,8 +2222,35 @@ func claimResponseAgentIdentityMatches(resp AgentTaskResponse) bool {
 // means the task must not be dispatched; the builder has already cancelled it
 // where the failure semantics require it.
 func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQueue, runtime db.AgentRuntime, runtimeID, runtimeWorkspaceID string) (resp AgentTaskResponse, deliveredCommentIDs []pgtype.UUID, agentSkillCount, builtinSkillCount int, failure *claimBuildFailure) {
+	if sharedWS := h.instanceTaskWorkspace(r.Context(), *task); sharedWS != "" {
+		runtimeWorkspaceID = sharedWS
+		runtime.WorkspaceID = parseUUID(sharedWS)
+	}
+	if execution.ParseSelection(task.ExecutionSelection).State == "selecting" && !requestHasClientCapability(r, "execution-profiles-v1") {
+		_, _ = h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task)
+		return resp, nil, 0, 0, &claimBuildFailure{status: 409, message: "update the daemon to use automatic execution routing"}
+	}
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp = taskToResponse(*task, runtimeWorkspaceID)
+	workflowAllowed, workflowErr := h.Queries.TaskWorkflowAllowed(r.Context(), db.TaskWorkflowAllowedParams{AgentID: task.AgentID, IssueID: task.IssueID, RuntimeID: task.RuntimeID})
+	if workflowErr != nil || !workflowAllowed {
+		_, _ = h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task)
+		return resp, nil, 0, 0, &claimBuildFailure{status: 409, message: "Waiting for installation approval or original machine"}
+	}
+	allowed, jiraErr := h.Queries.TaskJiraAllowed(r.Context(), db.TaskJiraAllowedParams{Column1: task.IssueID, Column2: task.AgentID, Column3: task.Context})
+	if jiraErr != nil || !allowed {
+		return resp, nil, 0, 0, &claimBuildFailure{outcome: "jira_ticket_required", status: http.StatusConflict, message: "JIRA ticket ID is required before agent work can start"}
+	}
+	if task.IssueID.Valid {
+		key, err := h.Queries.GetIssueJiraKey(r.Context(), task.IssueID)
+		if err != nil {
+			return resp, nil, 0, 0, &claimBuildFailure{outcome: "jira_context_unavailable", status: 500, message: "could not load JIRA ticket ID"}
+		}
+		resp.JiraTicketID = key
+		if key != "" && !requestHasClientCapability(r, "jira-ticket-v1") {
+			return resp, nil, 0, 0, &claimBuildFailure{outcome: "jira_daemon_upgrade", status: 409, message: "Update this machine to support JIRA ticket context"}
+		}
+	}
 	var issueNumber int32
 	// Claim-only capability: this server resolves the squad-leader role on the
 	// wire (is_leader_task / squad_id), so the daemon must not re-derive it
@@ -2277,19 +2319,21 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// changing task state, but Agent mutations do not stay locked through HTTP
 	// response assembly. Recheck the freshly loaded Agent here so a rebind or
 	// owner change that committed after the claim cannot reach the daemon.
-	if agent.RuntimeID != task.RuntimeID {
-		slog.Warn("daemon claim: agent runtime changed before delivery; refusing dispatch",
-			"task_id", uuidToString(task.ID),
-			"agent_id", uuidToString(task.AgentID),
-			"task_runtime_id", uuidToString(task.RuntimeID),
-			"agent_runtime_id", uuidToString(agent.RuntimeID),
-		)
-		return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(
-			r.Context(), task,
-			"The agent moved to another runtime before this task could start. Retry the task to run it on the agent's current runtime.",
-			taskfailure.ReasonInvalidTaskIdentity,
-			"error_agent_runtime_changed", http.StatusConflict, "agent runtime changed before task delivery",
-		)
+	runtimeAllowed, runtimeAccessErr := h.Queries.AgentAllowsRuntime(r.Context(), db.AgentAllowsRuntimeParams{AgentID: agent.ID, RuntimeID: task.RuntimeID})
+	selectedExecution := execution.ParseSelection(task.ExecutionSelection)
+	if selectedExecution.State != "" {
+		raw, e := h.Queries.GetExecutionPolicy(r.Context(), agent.ID)
+		if e != nil {
+			runtimeAllowed = false
+		} else {
+			found := false
+			for _, p := range execution.ParsePolicy(raw).Profiles {
+				if p.ID == selectedExecution.Profile.ID && p.Provider == runtime.Provider && p.Model == selectedExecution.Profile.Model && p.ThinkingLevel == selectedExecution.Profile.ThinkingLevel && p.ServiceTier == selectedExecution.Profile.ServiceTier {
+					found = true
+				}
+			}
+			runtimeAllowed = runtimeAllowed && found
+		}
 	}
 	if runtime.Visibility == "private" && runtime.OwnerID.Valid &&
 		(!agent.OwnerID.Valid || agent.OwnerID != runtime.OwnerID) {
@@ -2308,6 +2352,20 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			userMessage,
 			taskfailure.ReasonInvalidTaskIdentity,
 			"error_runtime_access_denied", http.StatusForbidden, "private runtime does not permit task agent",
+		)
+	}
+	if runtimeAccessErr != nil || !runtimeAllowed {
+		slog.Warn("daemon claim: agent runtime changed before delivery; refusing dispatch",
+			"task_id", uuidToString(task.ID),
+			"agent_id", uuidToString(task.AgentID),
+			"task_runtime_id", uuidToString(task.RuntimeID),
+			"agent_runtime_id", uuidToString(agent.RuntimeID),
+		)
+		return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(
+			r.Context(), task,
+			"The agent moved to another runtime before this task could start. Retry the task to run it on the agent's current runtime.",
+			taskfailure.ReasonInvalidTaskIdentity,
+			"error_agent_runtime_changed", http.StatusConflict, "agent runtime changed before task delivery",
 		)
 	}
 	useSkillRefs := requestHasClientCapability(r, protocol.DaemonCapabilitySkillBundlesV1)
@@ -2390,6 +2448,11 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		RuntimeConfig:         runtimeConfig,
 		DisabledRuntimeSkills: disabledRuntimeSkillsFor(agent.DisabledRuntimeSkills, runtimeID, runtime.Provider),
 	}
+	if selected := execution.ParseSelection(task.ExecutionSelection); selected.State == "selected" || selected.State == "selecting" {
+		resp.Agent.Model = selected.Profile.Model
+		resp.Agent.ThinkingLevel = selected.Profile.ThinkingLevel
+		resp.Agent.ServiceTier = selected.Profile.ServiceTier
+	}
 	// System agents carry a product-owned instruction layer that ships with
 	// this binary instead of being copied into their row at creation. That
 	// is what makes it hot-updatable: editing the embedded file and
@@ -2399,6 +2462,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	//
 	// Composing here covers every task kind, because this is the single
 	// place a claimed task's agent payload is assembled.
+	if isAgentBuilderCarrier(agent) {
+		resp.Agent.Instructions = agentBuilderInstructions
+	}
 	if agent.SystemKey.String == service.MikaSystemKey {
 		resp.Agent.Instructions = service.ComposeMikaInstructions(agent.Name, agent.Instructions)
 	}
@@ -3094,6 +3160,13 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if strings.TrimSpace(resp.ThreadName) == "" && resp.ChatMessage != "" {
 			resp.ThreadName = resp.ChatMessage
 		}
+		if isAgentBuilderCarrier(agent) && resp.ChatMessage != "" {
+			// Repository instructions can exhaust a CLI's AGENTS.md byte
+			// budget before it reaches the appended agent persona. Deliver the
+			// builder protocol in the turn itself, including resumed sessions.
+			// Keep stored user messages and the empty-input guard unchanged.
+			resp.ChatMessage = agentBuilderInstructions + "\n\nBuilder request and configuration:\n" + resp.ChatMessage
+		}
 	}
 
 	// Autopilot run_only task: resolve workspace from autopilot_run →
@@ -3365,6 +3438,21 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
+	readiness, readinessErr := workspacerepo.Status(r.Context(), h.Queries, runtime, resp.WorkspaceID)
+	if readinessErr != nil || !readiness.Usable {
+		if _, err := h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task); err != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{outcome: "repository_requeue_failed", status: 500, message: "could not requeue unready workspace task"}
+		}
+		return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{outcome: "workspace_preparing", status: 409, message: "Workspace repository is not ready on this machine"}
+	}
+	if err := h.applyWorkspaceRepository(r.Context(), &resp, runtime, requestHasClientCapability(r, "workspace-repository-v1")); err != nil {
+		reason := "Workspace repository: " + err.Error()
+		if _, cancelErr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID, reason, "local_directory_error"); cancelErr != nil {
+			_, _ = h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task)
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{outcome: "error_repository_cancel", status: 500, message: "could not stop task after repository configuration failure"}
+		}
+		return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{outcome: "error_workspace_repository", status: 422, message: reason}
+	}
 	// Last gate before dispatch: refuse to hand a worktree-mode local_directory
 	// task to a daemon that cannot implement the mode.
 	//
@@ -3427,6 +3515,25 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
+	// Read at claim time so edits cover every trigger and already-installed
+	// daemons. Use the existing provider-neutral instruction delivery path.
+	instance, err := h.Queries.GetInstanceConfiguration(r.Context())
+	if err != nil {
+		if _, requeueErr := h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task); requeueErr != nil {
+			slog.Error("requeue after instance instruction load failed", "task_id", uuidToString(task.ID), "error", requeueErr)
+		}
+		return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{
+			outcome: "error_instance_instructions", status: http.StatusServiceUnavailable,
+			message: "could not load instance instructions; task will be retried",
+		}
+	}
+	if resp.Agent != nil {
+		resp.Agent.Instructions = composeInstanceInstructions(instance.Instructions, resp.Agent.Instructions)
+	}
+	if err := h.populateWorkContext(r, *task, &resp); err != nil {
+		_, _ = h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task)
+		return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{status: 409, message: err.Error()}
+	}
 	return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, nil
 }
 
@@ -3668,7 +3775,7 @@ func (h *Handler) ResolveTaskSkillBundles(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if taskWorkspaceID != uuidToString(runtime.WorkspaceID) || uuidToString(task.RuntimeID) != runtimeID {
+	if (taskWorkspaceID != uuidToString(runtime.WorkspaceID) && h.instanceTaskWorkspace(r.Context(), task) != taskWorkspaceID) || uuidToString(task.RuntimeID) != runtimeID {
 		writeError(w, http.StatusNotFound, "task not found")
 		return
 	}
@@ -3779,7 +3886,11 @@ func (h *Handler) ListPendingTasksByRuntime(w http.ResponseWriter, r *http.Reque
 
 	resp := make([]AgentTaskResponse, len(tasks))
 	for i, t := range tasks {
-		resp[i] = taskToResponse(t, workspaceID)
+		taskWS := workspaceID
+		if sharedWS := h.instanceTaskWorkspace(r.Context(), t); sharedWS != "" {
+			taskWS = sharedWS
+		}
+		resp[i] = taskToResponse(t, taskWS)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -3803,7 +3914,7 @@ func (h *Handler) ExtendTaskPrepareLease(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if taskWorkspaceID != uuidToString(runtime.WorkspaceID) || uuidToString(task.RuntimeID) != runtimeID {
+	if (taskWorkspaceID != uuidToString(runtime.WorkspaceID) && h.instanceTaskWorkspace(r.Context(), task) != taskWorkspaceID) || uuidToString(task.RuntimeID) != runtimeID {
 		writeError(w, http.StatusNotFound, "task not found")
 		return
 	}
@@ -5080,7 +5191,24 @@ func (h *Handler) ListTaskMessages(w http.ResponseWriter, r *http.Request) {
 		messages []db.TaskMessage
 		err      error
 	)
-	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+	if tailStr := r.URL.Query().Get("tail"); tailStr != "" {
+		limit, e := strconv.Atoi(tailStr)
+		since, sinceErr := strconv.Atoi(r.URL.Query().Get("since"))
+		kind := r.URL.Query().Get("type")
+		if (r.URL.Query().Get("since") != "" && sinceErr != nil) || e != nil || limit < 1 || limit > 500 || since < 0 || since > 2147483647 || (kind != "" && kind != "text" && kind != "tool_use" && kind != "tool_result" && kind != "error") {
+			writeError(w, 400, "invalid bounded message query")
+			return
+		}
+		messages, err = h.Queries.ListTaskMessagesBounded(r.Context(), db.ListTaskMessagesBoundedParams{TaskID: task.ID, SinceSeq: int32(since), MessageType: kind, Forward: r.URL.Query().Has("since"), MaxMessages: int32(limit + 1)})
+		if len(messages) > limit {
+			w.Header().Set("X-Messages-Truncated", "true")
+			if r.URL.Query().Has("since") {
+				messages = messages[:limit]
+			} else {
+				messages = messages[1:]
+			}
+		}
+	} else if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
 		sinceSeq, parseErr := strconv.Atoi(sinceStr)
 		if parseErr != nil {
 			writeError(w, http.StatusBadRequest, "invalid since parameter")
@@ -5125,7 +5253,11 @@ func (h *Handler) GetActiveTaskForIssue(w http.ResponseWriter, r *http.Request) 
 	workspaceID := uuidToString(issue.WorkspaceID)
 	resp := make([]AgentTaskResponse, len(tasks))
 	for i, t := range tasks {
-		resp[i] = taskToResponse(t, workspaceID)
+		taskWS := workspaceID
+		if sharedWS := h.instanceTaskWorkspace(r.Context(), t); sharedWS != "" {
+			taskWS = sharedWS
+		}
+		resp[i] = taskToResponse(t, taskWS)
 	}
 	// Same issue-facing attribution surface as ListTasksByIssue — hydrate names.
 	h.hydrateTaskAttributions(r.Context(), attributionsOf(resp))
@@ -5327,7 +5459,11 @@ func (h *Handler) ListTasksByIssue(w http.ResponseWriter, r *http.Request) {
 	tasks = visibleTaskHistory(tasks)
 	resp := make([]AgentTaskResponse, len(tasks))
 	for i, t := range tasks {
-		resp[i] = taskToResponse(t, workspaceID)
+		taskWS := workspaceID
+		if sharedWS := h.instanceTaskWorkspace(r.Context(), t); sharedWS != "" {
+			taskWS = sharedWS
+		}
+		resp[i] = taskToResponse(t, taskWS)
 	}
 	// Execution-log rows render the "on behalf of <member>" badge, so this
 	// issue-facing surface must resolve initiator/originator names (departed-safe,
@@ -5479,7 +5615,24 @@ func (h *Handler) ListTaskMessagesByUser(w http.ResponseWriter, r *http.Request)
 		messages []db.TaskMessage
 		queryErr error
 	)
-	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+	if tailStr := r.URL.Query().Get("tail"); tailStr != "" {
+		limit, e := strconv.Atoi(tailStr)
+		since, sinceErr := strconv.Atoi(r.URL.Query().Get("since"))
+		kind := r.URL.Query().Get("type")
+		if (r.URL.Query().Get("since") != "" && sinceErr != nil) || e != nil || limit < 1 || limit > 500 || since < 0 || since > 2147483647 || (kind != "" && kind != "text" && kind != "tool_use" && kind != "tool_result" && kind != "error") {
+			writeError(w, 400, "invalid bounded message query")
+			return
+		}
+		messages, queryErr = h.Queries.ListTaskMessagesBounded(r.Context(), db.ListTaskMessagesBoundedParams{TaskID: taskUUID, SinceSeq: int32(since), MessageType: kind, Forward: r.URL.Query().Has("since"), MaxMessages: int32(limit + 1)})
+		if len(messages) > limit {
+			w.Header().Set("X-Messages-Truncated", "true")
+			if r.URL.Query().Has("since") {
+				messages = messages[:limit]
+			} else {
+				messages = messages[1:]
+			}
+		}
+	} else if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
 		sinceSeq, parseErr := strconv.Atoi(sinceStr)
 		if parseErr != nil {
 			writeError(w, http.StatusBadRequest, "invalid since parameter")

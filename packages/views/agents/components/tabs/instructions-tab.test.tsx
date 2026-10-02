@@ -8,6 +8,7 @@ import { I18nProvider } from "@multica/core/i18n/react";
 import type { Agent } from "@multica/core/types";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
+import enSettings from "../../../locales/en/settings.json";
 // The conversation-starter editor previews the chat empty state, so it reads the
 // chat namespace for the built-in defaults it renders when nothing is set.
 import enChat from "../../../locales/en/chat.json";
@@ -16,7 +17,7 @@ import type { NavigationAdapter } from "../../../navigation";
 import { InstructionsTab } from "./instructions-tab";
 
 const TEST_RESOURCES = {
-  en: { common: enCommon, agents: enAgents, chat: enChat },
+  en: { common: enCommon, agents: enAgents, chat: enChat, settings: enSettings },
 };
 const persistedPrompt = {
   label: "Review a PR",
@@ -57,6 +58,17 @@ function tab(agent: Agent, onSave = vi.fn().mockResolvedValue(undefined)) {
 }
 
 describe("InstructionsTab persisted-state synchronization", () => {
+  it("keeps instance instructions read-only while saving workspace conversation starters", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(tab({ ...baseAgent, instance_agent_id: "instance-reviewer" }, onSave));
+    expect(screen.getByDisplayValue("Review carefully.")).toHaveAttribute("readonly");
+    const label = screen.getByLabelText("Suggestion 1 label");
+    await user.clear(label);
+    await user.type(label, "Review this workspace");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith({ conversation_starters: [{ ...persistedPrompt, label: "Review this workspace" }] });
+  });
   beforeEach(() => {
     configStore.getState().setAgentConversationStartersSupported(true);
   });

@@ -66,6 +66,7 @@ type dbExecutor interface {
 }
 
 type Config struct {
+	DaemonReleaseDir        string
 	PermissionManagerEmails []string
 	CloudflareClientID      string
 	CloudflareClientSecret  string
@@ -953,6 +954,9 @@ func countOwners(members []db.Member) int {
 }
 
 func (h *Handler) getWorkspaceMember(ctx context.Context, userID, workspaceID string) (db.Member, error) {
+	if m, ok := ctxMember(ctx); ok && uuidToString(m.UserID) == userID && uuidToString(m.WorkspaceID) == workspaceID {
+		return m, nil
+	}
 	userUUID, err := util.ParseUUID(userID)
 	if err != nil {
 		return db.Member{}, err
@@ -968,6 +972,9 @@ func (h *Handler) getWorkspaceMember(ctx context.Context, userID, workspaceID st
 }
 
 func (h *Handler) requireWorkspaceMember(w http.ResponseWriter, r *http.Request, workspaceID, notFoundMsg string) (db.Member, bool) {
+	if member, ok := middleware.InstanceTaskMember(r, h.Queries, workspaceID); ok {
+		return member, true
+	}
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return db.Member{}, false

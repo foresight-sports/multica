@@ -87,7 +87,7 @@ func (h *Handler) SetAgentRuntimeSkillEnabled(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if !h.canManageAgent(w, r, agent) {
+	if !h.canManageAgent(w, r, agent) || !h.canConfigureInstanceAgent(w, r, agent) {
 		return
 	}
 
@@ -107,7 +107,8 @@ func (h *Handler) SetAgentRuntimeSkillEnabled(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if !agent.RuntimeID.Valid || agent.RuntimeID != runtimeID {
+	allowed, accessErr := h.Queries.AgentAllowsRuntime(r.Context(), db.AgentAllowsRuntimeParams{AgentID: agent.ID, RuntimeID: runtimeID})
+	if accessErr != nil || !allowed {
 		writeError(w, http.StatusConflict, "agent is no longer assigned to this runtime")
 		return
 	}
@@ -204,6 +205,7 @@ func (h *Handler) SetAgentRuntimeSkillEnabled(w http.ResponseWriter, r *http.Req
 			append(logger.RequestAttrs(r), "error", err, "agent_id", agentID)...)
 	}
 	actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(locked.WorkspaceID))
+	h.publishInstanceSetup(r.Context(), locked, actorType, actorID)
 	h.publish(protocol.EventAgentStatus, uuidToString(locked.WorkspaceID), actorType, actorID,
 		map[string]any{"agent": broadcastAgentResponse(resp)})
 

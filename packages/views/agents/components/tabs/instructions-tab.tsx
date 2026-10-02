@@ -23,12 +23,14 @@ export function InstructionsTab({
 }: {
   agent: Agent;
   onSave: (updates: {
-    instructions: string;
+    instructions?: string;
     conversation_starters?: AgentConversationStarter[];
   }) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { t } = useT("agents");
+  const { t: ts } = useT("settings");
+  const instanceManaged = !!agent.instance_agent_id;
   // Optional read: this tab is a leaf that tests mount in isolation, and its
   // only navigation-dependent behaviour (the deep-link focus below) degrades
   // to "no highlight" when there is no adapter.
@@ -63,7 +65,7 @@ export function InstructionsTab({
     conversationStartersKey: JSON.stringify(conversationStarters),
   };
   const isDirty =
-    value !== (agent.instructions ?? "") ||
+    (!instanceManaged && value !== (agent.instructions ?? "")) ||
     (conversationStartersSupported &&
       JSON.stringify(conversationStarters) !== persistedConversationStartersKey);
   const conversationStartersValid =
@@ -175,7 +177,7 @@ export function InstructionsTab({
     setSaving(true);
     try {
       await onSave({
-        instructions: value,
+        ...(!instanceManaged ? { instructions: value } : {}),
         ...(conversationStartersSupported
           ? { conversation_starters: conversationStarters }
           : {}),
@@ -190,7 +192,7 @@ export function InstructionsTab({
   return (
     <div className="space-y-5">
       <p className="max-w-2xl text-pretty text-body leading-6 text-muted-foreground">
-        {hasSystemLayer
+        {instanceManaged ? ts(($) => $.instance.managed) : hasSystemLayer
           ? t(($) => $.tab_body.instructions.workspace_notes_intro)
           : t(($) => $.tab_body.instructions.intro)}
       </p>
@@ -238,6 +240,7 @@ export function InstructionsTab({
           name="agent-system-prompt"
           autoComplete="off"
           value={value}
+          readOnly={instanceManaged}
           onChange={(event) => setValue(event.target.value)}
           placeholder={
             hasSystemLayer

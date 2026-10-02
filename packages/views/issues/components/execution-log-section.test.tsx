@@ -1,3 +1,4 @@
+vi.mock("@multica/core/hooks",()=>({useWorkspaceId:()=>"workspace"}));
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, screen } from "@testing-library/react";

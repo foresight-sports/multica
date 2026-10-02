@@ -136,6 +136,9 @@ func AgentReadiness(ctx context.Context, lookup RuntimeLookup, agent db.Agent) (
 			Detail:       "agent is archived",
 		}, nil
 	}
+	if HasExecutionProfiles(agent) {
+		return AgentVerdict{Availability: AgentAvailable}, nil
+	}
 	if !agent.RuntimeID.Valid {
 		return AgentVerdict{
 			Availability: AgentBlocked,

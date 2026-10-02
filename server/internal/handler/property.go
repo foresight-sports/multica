@@ -94,7 +94,9 @@ type PropertyOption struct {
 }
 
 type PropertyConfig struct {
-	Options []PropertyOption `json:"options,omitempty"`
+	SystemKey string           `json:"system_key,omitempty"`
+	Required  bool             `json:"required,omitempty"`
+	Options   []PropertyOption `json:"options,omitempty"`
 }
 
 type PropertyResponse struct {
@@ -470,6 +472,17 @@ func validatePropertyValue(def db.IssueProperty, raw json.RawMessage) ([]byte, e
 	}
 
 	cfg := parsePropertyConfig(def.Config)
+	if cfg.SystemKey == "jira_ticket_id" {
+		text, ok := v.(string)
+		if !ok {
+			return nil, errors.New("JIRA ticket ID must be text")
+		}
+		key, err := normalizeJiraKey(text)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(key)
+	}
 	switch def.Type {
 	case "text":
 		s, ok := v.(string)
@@ -808,6 +821,9 @@ func (h *Handler) UpdateProperty(w http.ResponseWriter, r *http.Request) {
 		}
 
 		params := db.UpdateIssuePropertyParams{ID: idUUID, WorkspaceID: wsUUID}
+		if parsePropertyConfig(existing.Config).SystemKey == "jira_ticket_id" {
+			return fail(http.StatusBadRequest, "JIRA ticket ID is a standard property; configure its requirement in workspace settings")
+		}
 		if req.Name != nil {
 			name, err := validatePropertyName(*req.Name)
 			if err != nil {
@@ -976,6 +992,10 @@ func (h *Handler) SetIssueProperty(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		slog.Warn("SetIssueProperty failed", append(logger.RequestAttrs(r), "error", err, "issue_id", issueID)...)
+		if strings.Contains(err.Error(), "Stop the active run before changing its JIRA ticket ID") {
+			writeError(w, 409, "Stop the active run before changing its JIRA ticket ID")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to set property")
 		return
 	}
@@ -1027,6 +1047,10 @@ func (h *Handler) DeleteIssueProperty(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Warn("DeleteIssuePropertyValue failed", append(logger.RequestAttrs(r), "error", err, "issue_id", issueID)...)
+		if strings.Contains(err.Error(), "Stop the active run before changing its JIRA ticket ID") {
+			writeError(w, 409, "Stop the active run before changing its JIRA ticket ID")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to unset property")
 		return
 	}

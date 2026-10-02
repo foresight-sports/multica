@@ -2564,7 +2564,7 @@ func (h *Handler) SetAgentSkills(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.canManageAgent(w, r, agent) {
+	if !h.canManageAgent(w, r, agent) || !h.canConfigureInstanceAgent(w, r, agent) {
 		return
 	}
 
@@ -2619,7 +2619,7 @@ func (h *Handler) AddAgentSkills(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.canManageAgent(w, r, agent) {
+	if !h.canManageAgent(w, r, agent) || !h.canConfigureInstanceAgent(w, r, agent) {
 		return
 	}
 
@@ -2668,7 +2668,7 @@ func (h *Handler) SetAgentSkillEnabled(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.canManageAgent(w, r, agent) {
+	if !h.canManageAgent(w, r, agent) || !h.canConfigureInstanceAgent(w, r, agent) {
 		return
 	}
 
@@ -2706,7 +2706,7 @@ func (h *Handler) RemoveAgentSkill(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.canManageAgent(w, r, agent) {
+	if !h.canManageAgent(w, r, agent) || !h.canConfigureInstanceAgent(w, r, agent) {
 		return
 	}
 	skillID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "skillId"), "skill_id")
@@ -2759,5 +2759,6 @@ func (h *Handler) writeUpdatedAgentSkills(w http.ResponseWriter, r *http.Request
 	}
 	actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(agent.WorkspaceID))
 	h.publish(protocol.EventAgentStatus, uuidToString(agent.WorkspaceID), actorType, actorID, map[string]any{"agent_id": uuidToString(agent.ID), "skills": resp})
+	h.publishInstanceSetup(r.Context(), agent, actorType, actorID)
 	writeJSON(w, http.StatusOK, resp)
 }

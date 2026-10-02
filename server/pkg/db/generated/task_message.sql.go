@@ -251,6 +251,59 @@ func (q *Queries) ListTaskMessages(ctx context.Context, taskID pgtype.UUID) ([]T
 	return items, nil
 }
 
+const listTaskMessagesBounded = `-- name: ListTaskMessagesBounded :many
+SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated FROM (
+ SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated FROM task_message WHERE task_id= $1 AND seq > $2::int
+ AND ($3::text = '' OR type= $3)
+ ORDER BY CASE WHEN $4::boolean THEN seq ELSE -seq END LIMIT $5::int
+) bounded ORDER BY seq
+`
+
+type ListTaskMessagesBoundedParams struct {
+	TaskID      pgtype.UUID `json:"task_id"`
+	SinceSeq    int32       `json:"since_seq"`
+	MessageType string      `json:"message_type"`
+	Forward     bool        `json:"forward"`
+	MaxMessages int32       `json:"max_messages"`
+}
+
+func (q *Queries) ListTaskMessagesBounded(ctx context.Context, arg ListTaskMessagesBoundedParams) ([]TaskMessage, error) {
+	rows, err := q.db.Query(ctx, listTaskMessagesBounded,
+		arg.TaskID,
+		arg.SinceSeq,
+		arg.MessageType,
+		arg.Forward,
+		arg.MaxMessages,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskMessage{}
+	for rows.Next() {
+		var i TaskMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Seq,
+			&i.Type,
+			&i.Tool,
+			&i.Content,
+			&i.Input,
+			&i.Output,
+			&i.CreatedAt,
+			&i.OutputTruncated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskMessagesSince = `-- name: ListTaskMessagesSince :many
 SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated FROM task_message
 WHERE task_id = $1 AND seq > $2

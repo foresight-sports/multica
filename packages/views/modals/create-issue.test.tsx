@@ -31,6 +31,7 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 }
 
 const mockPush = vi.hoisted(() => vi.fn());
+const mockGetIssueIntake = vi.hoisted(() => vi.fn());
 const mockCreateIssue = vi.hoisted(() => vi.fn());
 const mockCreateCommentSubIssue = vi.hoisted(() => vi.fn());
 const mockAttachLabel = vi.hoisted(() => vi.fn());
@@ -324,6 +325,8 @@ vi.mock("@multica/core/api", async () => {
   >("@multica/core/api/schemas");
   return {
     api: {
+      getIssueIntake: mockGetIssueIntake,
+ getRepositorySettings: vi.fn(async()=>({repository:"org/repo",folder:"repo",revision:1,can_edit:true})),
       createCommentSubIssue: mockCreateCommentSubIssue,
       listProperties: mockListProperties,
       setIssueProperty: mockSetIssueProperty,
@@ -623,8 +626,33 @@ function renderModal(element: React.ReactElement) {
 }
 
 describe("CreateIssueModal", () => {
+  it("routes through intake even with a prefilled agent", async () => {
+    mockGetIssueIntake.mockResolvedValue({revision:1, defaultSquadId:"intake-squad",projects:{}});
+    renderModal(<CreateIssueModal onClose={vi.fn()} data={{assignee_type:"agent",assignee_id:"old-agent"}} />);
+    await screen.findByText("Intake Coordinator will review this ticket and assign the work.");
+    expect(screen.queryByTestId("assignee-picker")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Issue title"), {target:{value:"Route this ticket"}});
+    await userEvent.click(screen.getByRole("button",{name:"Create Issue"}));
+    await waitFor(()=>expect(mockCreateIssue).toHaveBeenCalledWith(expect.objectContaining({assignee_type:undefined,assignee_id:undefined})));
+  });
+  it("keeps manual assignment for a project with intake disabled", async () => {
+    mockGetIssueIntake.mockResolvedValue({revision:1, defaultSquadId:"intake-squad",projects:{"manual-project":""}});
+    renderModal(<CreateIssueModal onClose={vi.fn()} data={{project_id:"manual-project",assignee_type:"agent",assignee_id:"old-agent"}} />);
+    await screen.findByTestId("assignee-picker");
+    fireEvent.change(screen.getByPlaceholderText("Issue title"), {target:{value:"Manual ticket"}});
+    await userEvent.click(screen.getByRole("button",{name:"Create Issue"}));
+    await waitFor(()=>expect(mockCreateIssue).toHaveBeenCalledWith(expect.objectContaining({assignee_type:"agent",assignee_id:"old-agent"})));
+  });
+  it("blocks submission when routing cannot be loaded", async () => {
+    mockGetIssueIntake.mockRejectedValue(new Error("offline"));
+    renderModal(<CreateIssueModal onClose={vi.fn()} />);
+    await screen.findByText("Could not load ticket routing. Retry");
+    expect(screen.getByRole("button",{name:"Create Issue"})).toBeDisabled();
+    expect(mockCreateIssue).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetIssueIntake.mockResolvedValue({revision:0, defaultSquadId:"",projects:{}});
     mockQuickCreateStore.keepOpen = false;
     mockCreateSettingsStore.manualCreateFields = DEFAULT_MANUAL_FIELDS;
     mockSetKeepOpen.mockImplementation((v: boolean) => {
@@ -1817,14 +1845,14 @@ describe("CreateIssueModal", () => {
       expect(document.querySelector("[data-slot='shortcut-keycaps']")).toBeInTheDocument();
     });
 
-    it("keeps Create focusable via aria-disabled while the title is empty", () => {
+    it("keeps Create focusable via aria-disabled while the title is empty", async () => {
       renderManual();
       const createButton = screen.getByRole("button", { name: "Create Issue" });
 
       // Native `disabled` would drop it out of the tab order, hiding the
       // "Enter a title to create" tooltip from keyboard and SR users.
       expect(createButton).toHaveAttribute("aria-disabled", "true");
-      expect(createButton).not.toBeDisabled();
+      await waitFor(() => expect(createButton).not.toBeDisabled());
       createButton.focus();
       expect(createButton).toHaveFocus();
     });

@@ -112,6 +112,7 @@ export function AgentDetailInspector({
     onSave: saveProfile,
     enabled:
       canEdit &&
+      !agent.instance_agent_id &&
       profileDraft.name.length > 0 &&
       profileDraft.description.length <= AGENT_DESCRIPTION_MAX_LENGTH,
     isEqual: profileDraftsEqual,
@@ -154,6 +155,7 @@ export function AgentDetailInspector({
 
   return (
     <div className="space-y-8">
+      {agent.instance_agent_id && <p className="text-body text-muted-foreground">{ts(($) => $.instance.managed)}</p>}
       <SettingsSection
         title={t(($) => $.inspector.section_profile)}
         description={t(($) => $.inspector.section_profile_hint)}
@@ -198,7 +200,7 @@ export function AgentDetailInspector({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onBlur={profileAutoSave.flush}
-                disabled={!canEdit}
+                disabled={!canEdit || !!agent.instance_agent_id}
                 aria-invalid={nameInvalid || undefined}
               />
               {nameInvalid ? (
@@ -222,7 +224,7 @@ export function AgentDetailInspector({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 onBlur={profileAutoSave.flush}
-                disabled={!canEdit}
+                disabled={!canEdit || !!agent.instance_agent_id}
                 rows={5}
                 maxLength={AGENT_DESCRIPTION_MAX_LENGTH}
                 className="resize-y"
@@ -242,6 +244,7 @@ export function AgentDetailInspector({
         description={t(($) => $.inspector.section_execution_hint)}
       >
         <SettingsCard>
+          {agent.portable_execution ? <p className="px-4 py-4 text-caption text-muted-foreground">{t(($) => $.execution.portable_help)}</p> : <>
           <SettingsRow
             label={t(($) => $.inspector.prop_runtime)}
             size="select-wide"
@@ -303,6 +306,7 @@ export function AgentDetailInspector({
             canEdit={canEdit}
             onChange={(serviceTier) => update({ service_tier: serviceTier })}
           />
+          </>}
           <SettingsRow
             label={t(($) => $.inspector.prop_concurrency)}
             size="select-wide"

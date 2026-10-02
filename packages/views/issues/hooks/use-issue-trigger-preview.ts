@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentWorkspace } from "@multica/core/paths";
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
@@ -11,6 +12,8 @@ export interface UseIssueTriggerPreviewParams {
   issueIds?: string[];
   /** Preview a not-yet-persisted issue from assignee/status (create modal). */
   isCreate?: boolean;
+  projectId?: string;
+  parentIssueId?: string;
   assigneeType?: IssueAssigneeType | null;
   assigneeId?: string | null;
   status?: IssueStatus;
@@ -30,6 +33,8 @@ function previewSignature(params: UseIssueTriggerPreviewParams): string {
   return JSON.stringify({
     ids: [...(params.issueIds ?? [])].sort(),
     create: params.isCreate ?? false,
+    project: params.projectId,
+    parent: params.parentIssueId,
     at: params.assigneeType ?? null,
     aid: params.assigneeId ?? null,
     status: params.status ?? null,
@@ -54,6 +59,7 @@ function previewSignature(params: UseIssueTriggerPreviewParams): string {
 export function useIssueTriggerPreview(
   params: UseIssueTriggerPreviewParams,
 ): UseIssueTriggerPreviewResult {
+  const wsId = useCurrentWorkspace()?.id ?? "";
   const hasTarget =
     (!!params.assigneeType && !!params.assigneeId) ||
     !!params.status ||
@@ -63,11 +69,13 @@ export function useIssueTriggerPreview(
   const signature = useMemo(() => previewSignature(params), [params]);
 
   const previewQuery = useQuery({
-    queryKey: issueKeys.issueTriggerPreview(signature),
+    queryKey: [...issueKeys.issueTriggerPreview(signature), wsId],
     queryFn: () =>
       api.previewIssueTrigger({
         issueIds: params.issueIds,
         isCreate: params.isCreate,
+        projectId: params.projectId,
+        parentIssueId: params.parentIssueId,
         assigneeType: params.assigneeType,
         assigneeId: params.assigneeId,
         status: params.status,

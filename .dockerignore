@@ -44,3 +44,5 @@ coverage
 /.github/
 /deploy/
 /scripts/
+
+/daemon-releases/

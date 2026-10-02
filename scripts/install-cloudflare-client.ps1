@@ -29,4 +29,4 @@ if (($userPath -split ';') -notcontains $bin) {
 }
 $env:Path = $bin + ';' + $env:Path
 & (Join-Path $PSScriptRoot 'configure-cloudflare-access.ps1') -ClientId $ClientId -ClientSecret $ClientSecret
-Write-Host 'Client installed. Open a new terminal, run multica login, then use Add computer in Multica.'
+Write-Host 'Client installed. Existing login and workspace settings are preserved. For an existing computer, run multica daemon start. For a new computer, continue with Add computer in Multica.'

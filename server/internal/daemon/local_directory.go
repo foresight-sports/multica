@@ -32,10 +32,12 @@ const (
 // project resources. Defined locally so the daemon does not have to import
 // the server handler package.
 type localDirectoryRef struct {
-	LocalPath     string `json:"local_path"`
-	DaemonID      string `json:"daemon_id"`
-	Label         string `json:"label,omitempty"`
-	ExecutionMode string `json:"execution_mode,omitempty"`
+	ExpectedRepository string `json:"expected_repository,omitempty"`
+	RepositoriesRoot   string `json:"repositories_root,omitempty"`
+	LocalPath          string `json:"local_path"`
+	DaemonID           string `json:"daemon_id"`
+	Label              string `json:"label,omitempty"`
+	ExecutionMode      string `json:"execution_mode,omitempty"`
 }
 
 // localDirectoryAssignment is the resolved view of a task's local_directory
@@ -120,7 +122,16 @@ func (a *localDirectoryAssignment) ValidateExecutionMode() error {
 // user's directory as well.
 func localDirectoryAssignmentForTask(task Task, daemonID string) (*localDirectoryAssignment, error) {
 	if task.IsLeaderTask {
-		return nil, nil
+		hasWorkspaceRepository := false
+		for _, resource := range task.ProjectResources {
+			var ref localDirectoryRef
+			if resource.ResourceType == localDirectoryResourceType && json.Unmarshal(resource.ResourceRef, &ref) == nil && ref.DaemonID == daemonID && ref.RepositoriesRoot != "" {
+				hasWorkspaceRepository = true
+			}
+		}
+		if !hasWorkspaceRepository {
+			return nil, nil
+		}
 	}
 	return findLocalDirectoryAssignment(task.ProjectResources, daemonID)
 }
@@ -149,6 +160,12 @@ func localDirectoryAssignmentForTask(task Task, daemonID string) (*localDirector
 // db.CreateChatTaskParams has no such field), so it is false on every chat
 // turn ever dispatched.
 func localDirectoryLockExempt(task Task) bool {
+	for _, res := range task.ProjectResources {
+		var ref localDirectoryRef
+		if res.ResourceType == localDirectoryResourceType && json.Unmarshal(res.ResourceRef, &ref) == nil && ref.RepositoriesRoot != "" {
+			return false
+		}
+	}
 	return task.ChatSessionID != ""
 }
 
@@ -203,6 +220,11 @@ func findLocalDirectoryAssignment(resources []ProjectResourceData, daemonID stri
 		realPath, err := resolveRealPath(absPath)
 		if err != nil {
 			return nil, err
+		}
+		if ref.RepositoriesRoot != "" {
+			if err := validateWorkspaceRepository(ref); err != nil {
+				return nil, err
+			}
 		}
 		match = &localDirectoryAssignment{
 			Ref:      ref,

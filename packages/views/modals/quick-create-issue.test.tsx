@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+const mockIntake = vi.hoisted(() => ({data:{revision:0,defaultSquadId:"",projects:{} as Record<string,string>},isPending:false,isError:false}));
+vi.mock("@multica/core/workspace", () => ({useJiraSettings:()=>({query:{data:{required:false},isError:false}}),useRepositorySettings:()=>({query:{data:{repository:"org/repo",folder:"repo",revision:1,can_edit:true},isPending:false,isError:false}}),issueIntakeOptions: () => ({queryKey:["intake"]})}));
 const mockQuickCreateIssue = vi.hoisted(() => vi.fn());
 const mockCreateCommentSubIssue = vi.hoisted(() => vi.fn());
 const mockSetLastActor = vi.hoisted(() => vi.fn());
@@ -149,6 +151,7 @@ vi.mock("@tanstack/react-query", () => ({
       return { data: mockSquadsData.list };
     }
     switch (queryKey[0]) {
+      case "intake": return mockIntake;
       case "members":
         return { data: [{ user_id: "user-1", role: "admin" }] };
       case "agents":
@@ -510,6 +513,9 @@ function renderPanel(props: React.ComponentProps<typeof AgentCreatePanel>) {
 describe("AgentCreatePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIntake.data = {revision:0,defaultSquadId:"",projects:{}};
+    mockIntake.isPending = false;
+    mockIntake.isError = false;
     mockQuickCreateStore.lastActorType = null;
     mockQuickCreateStore.lastActorId = null;
     mockQuickCreateStore.lastProjectId = null;
@@ -608,6 +614,17 @@ describe("AgentCreatePanel", () => {
     expect(screen.getByTestId("project-picker")).toHaveTextContent("Project proj-1");
     expect(screen.getByTestId("priority-picker")).toHaveTextContent("Priority high");
     expect(screen.getByTestId("due-date-picker")).toHaveTextContent("Due date 2026-08-01");
+  });
+
+  it("locks the author to intake despite a remembered agent", async () => {
+    mockIntake.data.defaultSquadId = "squad-intake";
+    mockSquadsData.list = [{id:"squad-intake",name:"Intake",leader_id:"agent-1",archived_at:null}];
+    renderPanel({onClose:vi.fn(),isExpanded:false,setIsExpanded:vi.fn()});
+    expect(screen.getByText("Intake Coordinator will review this ticket and assign the work.")).toBeInTheDocument();
+    expect(screen.queryByText("Created by")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", {name:/^Create$/i}));
+    await waitFor(()=>expect(mockQuickCreateIssue).toHaveBeenCalledWith(expect.objectContaining({squad_id:"squad-intake"})));
+    expect(mockQuickCreateIssue.mock.calls[0]?.[0]?.agent_id).toBeUndefined();
   });
 
   it("writes prompt changes back to the draft store and clears them after submit", async () => {

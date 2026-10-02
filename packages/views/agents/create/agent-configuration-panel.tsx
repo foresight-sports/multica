@@ -3,12 +3,15 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
-  applyDraftModelChange,
   applyDraftRuntimeChange,
+  isDraftExecutionReady,
+  getDraftExecutionPolicy,
   type AgentDraft,
   type AgentPermissionScope,
 } from "@multica/core/agents";
 import { useConfigStore } from "@multica/core/config";
+import { ExecutionPolicyEditor } from "../components/tabs/execution-tab";
+import { InstanceAgentScopeField } from "./instance-agent-scope-field";
 import type { MemberWithUser, RuntimeDevice } from "@multica/core/types";
 import { Checkbox } from "@multica/ui/components/ui/checkbox";
 import { Input } from "@multica/ui/components/ui/input";
@@ -24,7 +27,7 @@ import {
 import { CharCounter } from "../components/char-counter";
 import { ServiceTierSettingField } from "../components/inspector/service-tier-setting-field";
 import { ThinkingSettingField } from "../components/inspector/thinking-prop-row";
-import { ModelDropdown } from "../components/model-dropdown";
+
 import { RuntimePicker } from "../components/runtime-picker";
 import { SkillMultiSelect } from "../components/skill-multi-select";
 import { ConversationStartersEditor } from "../components/conversation-starters-editor";
@@ -93,11 +96,31 @@ export function AgentConfigurationPanel({
 
   return (
     <div className={cn("space-y-8", compact && "space-y-6")}>
+      {onRuntimeSelect && (
+        <SettingsSection
+          title={t(($) => $.execution.builder_machine)}
+          description={t(($) => $.execution.builder_machine_help)}
+        >
+          <RuntimePicker
+            runtimes={runtimes}
+            runtimesLoading={runtimesLoading}
+            members={members}
+            currentUserId={currentUserId}
+            selectedRuntimeId={draft.runtimeId}
+            onSelect={handleRuntimeSelect}
+            disabled={runtimeLocked}
+          />
+        </SettingsSection>
+      )}
       <SettingsSection
         title={t(($) => $.creation_studio.sections.identity)}
         description={t(($) => $.creation_studio.sections.identity_hint)}
       >
         <SettingsCard>
+          <InstanceAgentScopeField
+            checked={draft.instanceAgent === true}
+            onChange={(value) => set("instanceAgent", value)}
+          />
           <DraftFieldRow
             compact={compact}
             label={t(($) => $.create_dialog.avatar.change_aria)}
@@ -193,56 +216,43 @@ export function AgentConfigurationPanel({
       </SettingsSection>
 
       <SettingsSection
-        title={t(($) => $.creation_studio.sections.execution)}
-        description={t(($) => $.creation_studio.sections.execution_hint)}
+        title={t(($) => $.execution.profiles)}
+        description={t(($) => $.execution.creation_help)}
       >
-        <SettingsCard>
-          <div
-            className={cn("grid gap-4 px-4 py-4", !compact && "sm:grid-cols-2")}
-          >
-            <div className="min-w-0">
-              <RuntimePicker
-                runtimes={runtimes}
-                runtimesLoading={runtimesLoading}
-                members={members}
-                currentUserId={currentUserId}
-                selectedRuntimeId={draft.runtimeId}
-                onSelect={handleRuntimeSelect}
-                disabled={runtimeLocked}
-              />
-              {/* A silently greyed-out picker is the worst version of this: the
-                  user reaches for it exactly when the current runtime has gone
-                  wrong, so say what unblocks it instead of just refusing. */}
-              {runtimeSwitchPending && (
-                <p className="mt-1.5 text-caption text-muted-foreground">
-                  {t(($) => $.creation_studio.builder.switch_runtime_pending)}
-                </p>
-              )}
-            </div>
-            <ModelDropdown
-              runtimeId={selectedRuntime?.id ?? null}
-              runtimeOnline={selectedRuntime?.status === "online"}
-              value={draft.model}
-              onChange={(value) => onChange(applyDraftModelChange(draft, value))}
-              // A successful switch clears the model, so an edit made while the
-              // rebind is in flight would be silently discarded.
-              disabled={!selectedRuntime || runtimeSwitchInFlight}
-            />
-          </div>
-          {/* Both fields fail closed: they render only when the exact selected
-              model's live catalog advertises the capability (or a value is
-              already set and needs clearing), so an offline runtime, a failed
-              discovery or an empty model shows nothing instead of an input
-              that cannot be honoured. */}
-          <AgentExecutionOverrides
-            draft={draft}
-            runtime={selectedRuntime}
-            disabled={runtimeLocked}
-            onChange={onChange}
-          />
-        </SettingsCard>
+        <ExecutionPolicyEditor
+          policy={getDraftExecutionPolicy(
+            draft,
+            t(($) => $.execution.default_profile),
+            true,
+            selectedRuntime?.provider ?? "",
+          )}
+          runtimeId={draft.runtimeId}
+          seed={{
+            model: draft.model,
+            thinking_level: draft.thinkingLevel,
+            service_tier: draft.serviceTier,
+          }}
+          runtimes={runtimes}
+          members={members}
+          currentUserId={currentUserId}
+          onChange={(policy) => {
+            const primary = policy.profiles[0];
+            onChange({
+              ...draft,
+              executionPolicy: policy,
+              model: primary?.model ?? "",
+              thinkingLevel: primary?.thinking_level ?? "",
+              serviceTier: primary?.service_tier ?? "",
+            });
+          }}
+        />
+        {draft.executionPolicy &&
+          !isDraftExecutionReady(getDraftExecutionPolicy(draft)) && (
+            <p role="status" className="text-caption text-destructive">
+              {t(($) => $.execution.creation_incomplete)}
+            </p>
+          )}
       </SettingsSection>
-
       <SettingsSection
         title={t(($) => $.creation_studio.sections.access)}
         description={t(($) => $.creation_studio.sections.access_hint)}

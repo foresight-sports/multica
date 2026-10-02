@@ -1,4 +1,7 @@
 "use client";
+import { RepositorySettingsSection } from "./repository-settings-section";
+import { JiraSettingsSection } from "./jira-settings-section";
+import { IssueIntakeSection } from "./issue-intake-section";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LogOut } from "lucide-react";
@@ -302,6 +305,9 @@ export function WorkspaceTab() {
 
   return (
     <SettingsTab title={t(($) => $.page.tabs.general)}>
+      <RepositorySettingsSection key={`repository-${workspace.id}`} wsId={workspace.id} />
+      <JiraSettingsSection key={`jira-${workspace.id}`} wsId={workspace.id} />
+      <IssueIntakeSection key={workspace.id} workspaceId={workspace.id} canManage={canManageWorkspace}/>
       <SettingsSection
         title={t(($) => $.workspace.section_general)}
         action={

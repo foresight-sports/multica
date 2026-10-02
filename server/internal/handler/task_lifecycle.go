@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"github.com/multica-ai/multica/server/pkg/execution"
 	"io"
 	"log/slog"
 	"net/http"
@@ -144,6 +145,7 @@ func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 // All fields are optional; an empty body keeps the legacy "rerun the issue's
 // current assignee" behaviour used by the CLI.
 type RerunIssueRequest struct {
+	Execution execution.Request `json:"execution,omitempty"`
 	// TaskID identifies the execution-log row the user clicked retry on.
 	// When set, the rerun targets the agent that ran that specific task
 	// (and reuses its leader/worker role) rather than the issue's current
@@ -204,11 +206,20 @@ func (h *Handler) RerunIssue(w http.ResponseWriter, r *http.Request) {
 	// grant the right to trigger a private agent — a task_id rerun must gate the
 	// historical agent, not the (possibly reassigned) current assignee.
 	originatorUserID := h.invokeOriginatorFromRequest(r, actorType, actorID)
+	var executionErr error
 	canInvoke := func(agent db.Agent) bool {
-		return h.canInvokeAgent(r.Context(), agent, actorType, actorID, originatorUserID, workspaceID)
+		if !h.canInvokeAgent(r.Context(), agent, actorType, actorID, originatorUserID, workspaceID) {
+			return false
+		}
+		executionErr = h.TaskService.ValidateExecutionRequest(r.Context(), agent, req.Execution)
+		return executionErr == nil
 	}
 
-	task, err := h.TaskService.RerunIssue(r.Context(), issue.ID, sourceTaskID, pgtype.UUID{}, actorUserID, canInvoke)
+	task, err := h.TaskService.RerunIssue(service.WithExecutionRequest(r.Context(), req.Execution), issue.ID, sourceTaskID, pgtype.UUID{}, actorUserID, canInvoke)
+	if executionErr != nil {
+		writeError(w, http.StatusBadRequest, executionErr.Error())
+		return
+	}
 	if errors.Is(err, service.ErrRerunInvokeNotAllowed) {
 		h.writeDispatchBlocked(w, http.StatusForbidden, ReasonInvocationNotAllowed)
 		return

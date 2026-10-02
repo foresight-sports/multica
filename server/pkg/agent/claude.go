@@ -238,6 +238,10 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				if b.handleUser(msg, msgCh) {
 					sawAsyncLaunch = true
 				}
+			case "rate_limit_event":
+				if report := ParseClaudeQuota(msg.RateLimitInfo, opts.Model, time.Now().UTC()); report != nil {
+					trySend(msgCh, Message{Type: MessageQuota, Quota: report})
+				}
 			case "system":
 				if msg.SessionID != "" {
 					sessionID = msg.SessionID
@@ -549,6 +553,7 @@ func claudeMapHasAsyncLaunchStatus(value map[string]any) bool {
 // ── Claude SDK JSON types ──
 
 type claudeSDKMessage struct {
+	RateLimitInfo   json.RawMessage `json:"rate_limit_info,omitempty"`
 	Type            string          `json:"type"`
 	Message         json.RawMessage `json:"message,omitempty"`
 	Subtype         string          `json:"subtype,omitempty"`
@@ -781,6 +786,9 @@ func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
 	args = append(args, filterCustomArgs(opts.CustomArgs, blockedArgs, logger)...)
 	if opts.ClaudeSettingsPath != "" {
 		args = append(args, "--settings", opts.ClaudeSettingsPath)
+	}
+	if opts.RoutingOnly {
+		args = append(args, "--tools", "", "--strict-mcp-config", "--settings", `{"disableAllHooks":true}`, "--setting-sources", "")
 	}
 	return args
 }

@@ -1,4 +1,5 @@
 "use client";
+import { WorkspaceReadiness } from "./workspace-readiness";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -13,13 +14,25 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { memberNeedsMikaSetup, useBootstrapMika } from "@multica/core/onboarding";
+import {
+  memberNeedsMikaSetup,
+  useBootstrapMika,
+} from "@multica/core/onboarding";
 import { MIKA_PLACEHOLDER_EMOJI } from "../../onboarding/components/mika-intro";
-import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@multica/core/paths";
+import {
+  useRequiredWorkspaceSlug,
+  useWorkspacePaths,
+} from "@multica/core/paths";
 import { agentTaskSnapshotOptions } from "@multica/core/agents";
 import { chatSessionsOptions } from "@multica/core/chat/queries";
-import { runtimeProfileListOptions } from "@multica/core/runtimes";
-import { runtimeListOptions, runtimeKeys } from "@multica/core/runtimes/queries";
+import {
+  runtimeProfileListOptions,
+  parseMachineCapabilities,
+} from "@multica/core/runtimes";
+import {
+  runtimeListOptions,
+  runtimeKeys,
+} from "@multica/core/runtimes/queries";
 import { useWSEvent } from "@multica/core/realtime";
 import { agentListOptions } from "@multica/core/workspace/queries";
 import type { AgentRuntime } from "@multica/core/types";
@@ -45,10 +58,7 @@ import {
 import { PAGE_GUTTER, PAGE_RAIL, PageHeader } from "../../layout/page-header";
 import { cn } from "@multica/ui/lib/utils";
 import { AppLink, useNavigation } from "../../navigation";
-import {
-  getMikaOnboarding,
-  pickContentLang,
-} from "../../onboarding/templates";
+import { getMikaOnboarding, pickContentLang } from "../../onboarding/templates";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 import { CloudRuntimeDialog } from "./cloud-runtime-dialog";
 import { ProviderLogo } from "./provider-logo";
@@ -171,34 +181,39 @@ export function RuntimesPage({
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeaderBar
         totalCount={machines.length}
-        onConnectRemote={canRegisterRuntimes ? () => setShowConnectDialog(true) : undefined}
+        onConnectRemote={
+          canRegisterRuntimes ? () => setShowConnectDialog(true) : undefined
+        }
         cloudRuntimeEnabled={cloudRuntimeEnabled && canRegisterRuntimes}
         onOpenCloudRuntime={() => setShowCloudRuntimeDialog(true)}
       />
 
       {showEmpty ? (
         <div className="flex flex-1 items-center justify-center p-6">
-          <EmptyState onConnectRemote={canRegisterRuntimes ? () => setShowConnectDialog(true) : undefined} />
+          <EmptyState
+            onConnectRemote={
+              canRegisterRuntimes ? () => setShowConnectDialog(true) : undefined
+            }
+          />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className={cn(PAGE_RAIL, PAGE_GUTTER, "flex flex-col py-4 sm:py-6")}>
+          <div
+            className={cn(PAGE_RAIL, PAGE_GUTTER, "flex flex-col py-4 sm:py-6")}
+          >
             {!agentsLoading &&
               !chatSessionsLoading &&
               memberNeedsMikaSetup(agents, chatSessions) &&
               runtimes.length > 0 && (
-              <MikaSetupCard
-                workspaceId={wsId}
-                runtimes={runtimes}
-                runtimesLoading={runtimesLoading}
-                currentUserId={currentUserId ?? null}
-              />
-            )}
+                <MikaSetupCard
+                  workspaceId={wsId}
+                  runtimes={runtimes}
+                  runtimesLoading={runtimesLoading}
+                  currentUserId={currentUserId ?? null}
+                />
+              )}
             {(machines.length > 0 || bootstrapping) && (
-              <MachineList
-                machines={machines}
-                bootstrapping={bootstrapping}
-              />
+              <MachineList machines={machines} bootstrapping={bootstrapping} />
             )}
             {orphanProfileRuntimes.length > 0 && (
               <OrphanRuntimeProfiles
@@ -408,11 +423,11 @@ function PageHeaderBar({
             />
           )}
           {onConnectRemote && (
-          <CollectionPageHeaderAction
-            icon={Plus}
-            label={t(($) => $.page.connect_remote)}
-            onClick={onConnectRemote}
-          />
+            <CollectionPageHeaderAction
+              icon={Plus}
+              label={t(($) => $.page.connect_remote)}
+              onClick={onConnectRemote}
+            />
           )}
         </>
       }
@@ -465,6 +480,13 @@ function MachineRow({ machine }: { machine: RuntimeMachine }) {
   const Icon = machine.section === "cloud" ? Cloud : Monitor;
   const locator = machine.id;
   const busyCount = machine.runningCount + machine.queuedCount;
+  const inventory = machine.runtimes.map((r) =>
+    parseMachineCapabilities(r.metadata),
+  );
+  const modelCount = new Set(
+    inventory.flatMap((c) => c.execution_models.map((m) => m.id)),
+  ).size;
+  const toolCount = new Set(inventory.flatMap((c) => c.tools)).size;
   const body = (
     <>
       <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-background">
@@ -491,6 +513,17 @@ function MachineRow({ machine }: { machine: RuntimeMachine }) {
             </span>
           )}
         </span>
+        {machine.runtimes[0] && (
+          <WorkspaceReadiness
+            runtimeId={
+              (
+                machine.runtimes.find(
+                  (runtime) => runtime.status === "online",
+                ) ?? machine.runtimes[0]
+              ).id
+            }
+          />
+        )}
       </span>
 
       <span className="hidden w-36 shrink-0 items-center gap-1.5 text-caption md:flex">
@@ -504,6 +537,12 @@ function MachineRow({ machine }: { machine: RuntimeMachine }) {
           })}
         </span>
         <ProviderIconStack providers={machine.providerNames} />
+        <span className="text-caption text-muted-foreground">
+          {t(($) => $.capabilities.summary, {
+            models: modelCount,
+            tools: toolCount,
+          })}
+        </span>
       </span>
       <span className="hidden w-36 shrink-0 text-caption text-muted-foreground xl:block">
         {busyCount > 0
@@ -567,10 +606,10 @@ function EmptyState({ onConnectRemote }: { onConnectRemote?: () => void }) {
       description={onConnectRemote ? t(($) => $.page.empty.hint) : undefined}
       actions={
         onConnectRemote && (
-        <Button type="button" size="sm" onClick={onConnectRemote}>
-          <Plus aria-hidden="true" className="size-3" />
-          {t(($) => $.page.connect_remote)}
-        </Button>
+          <Button type="button" size="sm" onClick={onConnectRemote}>
+            <Plus aria-hidden="true" className="size-3" />
+            {t(($) => $.page.connect_remote)}
+          </Button>
         )
       }
     />
@@ -586,7 +625,10 @@ function RuntimesPageSkeleton() {
       <div className={cn(PAGE_RAIL, PAGE_GUTTER, "py-6")}>
         <div className="overflow-hidden rounded-lg border">
           {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="flex h-[76px] items-center gap-3 border-b px-4 last:border-b-0">
+            <div
+              key={index}
+              className="flex h-[76px] items-center gap-3 border-b px-4 last:border-b-0"
+            >
               <Skeleton className="h-10 w-10 rounded-lg" />
               <div className="flex-1">
                 <Skeleton className="h-4 w-44" />

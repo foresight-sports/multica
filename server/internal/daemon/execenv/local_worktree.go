@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/daemon/gitsubmodule"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -490,6 +491,11 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 	// over the worktree before Finalize, so the sidecars are simply gone by the
 	// time anything is committed. That also preserves a genuine agent edit to a
 	// tracked CLAUDE.md, which a blanket exclude would have swallowed.
+
+	if err := gitsubmodule.Prepare(context.Background(), worktreePath, logger); err != nil {
+		rollback()
+		return nil, err
+	}
 
 	if logger != nil {
 		logger.Info("execenv: local worktree ready",
@@ -1672,7 +1678,7 @@ func runGitEnv(dir string, extraEnv []string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
 
-	full := append([]string{"-C", dir}, args...)
+	full := append([]string{"-c", "core.longpaths=true", "-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	if len(extraEnv) > 0 {
 		cmd.Env = append(os.Environ(), extraEnv...)
@@ -1709,7 +1715,7 @@ func runGitStdout(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
 
-	full := append([]string{"-C", dir}, args...)
+	full := append([]string{"-c", "core.longpaths=true", "-C", dir}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.Output()

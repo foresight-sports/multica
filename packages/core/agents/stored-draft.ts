@@ -1,5 +1,9 @@
 import type { StoredAgentDraft } from "../types";
-import { EMPTY_AGENT_DRAFT, type AgentDraft } from "./draft";
+import {
+  EMPTY_AGENT_DRAFT,
+  getDraftExecutionPolicy,
+  type AgentDraft,
+} from "./draft";
 
 export type { StoredAgentDraft };
 
@@ -8,6 +12,12 @@ export function toStoredAgentDraft(
   appliedMessageId: string | null,
 ): StoredAgentDraft {
   return {
+    ...(draft.executionPolicy
+      ? { execution_policy: getDraftExecutionPolicy(draft) }
+      : {}),
+    ...(draft.instanceAgent !== undefined
+      ? { instance_agent: draft.instanceAgent }
+      : {}),
     name: draft.name,
     description: draft.description,
     instructions: draft.instructions,
@@ -34,6 +44,12 @@ export function fromStoredAgentDraft(
 ): AgentDraft {
   return {
     ...EMPTY_AGENT_DRAFT,
+    ...(stored.execution_policy
+      ? { executionPolicy: stored.execution_policy }
+      : {}),
+    ...(stored.instance_agent !== undefined
+      ? { instanceAgent: stored.instance_agent === true }
+      : {}),
     name: stored.name,
     description: stored.description,
     instructions: stored.instructions,

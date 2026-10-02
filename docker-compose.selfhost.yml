@@ -61,7 +61,9 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-${API_PORT:-${SERVER_PORT:-${PORT:-8080}}}}:8080"
     volumes:
       - backend_uploads:/app/data/uploads
+      - ./daemon-releases:/app/daemon-releases:ro
     environment:
+      MULTICA_DAEMON_RELEASE_DIR: ${MULTICA_DAEMON_RELEASE_DIR:-}
       DATABASE_URL: postgres://${POSTGRES_USER:-multica}:${POSTGRES_PASSWORD:-multica}@postgres:5432/${POSTGRES_DB:-multica}?sslmode=disable
       DATABASE_SEARCH_WORK_MEM_MB: ${DATABASE_SEARCH_WORK_MEM_MB:-64}
       DATABASE_REPLICA_URL: ${DATABASE_REPLICA_URL:-}

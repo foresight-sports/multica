@@ -1,3 +1,6 @@
+vi.mock("./repository-settings-section",()=>({RepositorySettingsSection:()=>null}));
+vi.mock("./jira-settings-section",()=>({JiraSettingsSection:()=>null}));
+vi.mock("./issue-intake-section",()=>({IssueIntakeSection:()=>null}));
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";

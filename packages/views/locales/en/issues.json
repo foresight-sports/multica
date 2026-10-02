@@ -1,4 +1,7 @@
 {
+  "jira": {
+    "required_notice": "Agent work is waiting for a JIRA ticket ID. Set a key such as FS-123."
+  },
   "inline_run": {
     "label": "{{name}} run",
     "stop": "Stop",
@@ -931,5 +934,25 @@
     "surface_loading": "Loading {{name}}…",
     "surface_unavailable": "{{name}} could not load its interface. The installed version may not include it.",
     "surface_navigated": "{{name}} tried to replace its panel with a page loaded from elsewhere. It has been stopped and disconnected — tell your workspace admin."
+  },
+  "work": {
+    "title": "Work and approvals",
+    "machine": "Machine",
+    "source": "Installation source",
+    "approval_help": "The machine owner must approve this exact installation before the agent can continue.",
+    "same_machine": "Continuation stays on this machine, including while it is offline.",
+    "approve": "Approve and continue",
+    "decline": "Decline",
+    "no_checkpoint": "Branch claimed; no pushed checkpoint saved yet.",
+    "pull_request": "Open pull request",
+    "owner": "Owner",
+    "next_step": "Next step",
+    "history": "Resolved work",
+    "truncated": "Older records are omitted. Active work is shown first.",
+    "reload": "Reload",
+    "decision": "Decision",
+    "blocker": "Blocker",
+    "human_record": "Recorded by a human",
+    "agent_record": "Recorded by an agent"
   }
 }

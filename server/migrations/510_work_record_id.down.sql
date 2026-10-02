@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS work_record_id_idx;
