@@ -158,7 +158,6 @@ export function AgentDetailInspector({
       {agent.instance_agent_id && <p className="text-body text-muted-foreground">{ts(($) => $.instance.managed)}</p>}
       <SettingsSection
         title={t(($) => $.inspector.section_profile)}
-        description={t(($) => $.inspector.section_profile_hint)}
         action={
           <SettingsSaveState
             status={profileAutoSave.status}
@@ -171,7 +170,6 @@ export function AgentDetailInspector({
         <SettingsCard>
           <SettingsRow
             label={t(($) => $.inspector.avatar_label)}
-            description={t(($) => $.inspector.avatar_hint)}
             size="none"
           >
             <div className="flex justify-start sm:justify-end">
@@ -241,7 +239,6 @@ export function AgentDetailInspector({
 
       <SettingsSection
         title={t(($) => $.inspector.section_execution)}
-        description={t(($) => $.inspector.section_execution_hint)}
       >
         <SettingsCard>
           {agent.portable_execution ? <p className="px-4 py-4 text-caption text-muted-foreground">{t(($) => $.execution.portable_help)}</p> : <>

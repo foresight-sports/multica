@@ -40,7 +40,6 @@ import { Button } from "@multica/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -326,9 +325,6 @@ function MikaSetupCard({
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>{t(($) => $.mika_setup.dialog_title)}</DialogTitle>
-            <DialogDescription>
-              {t(($) => $.mika_setup.dialog_description)}
-            </DialogDescription>
           </DialogHeader>
 
           <MikaRuntimeChoice

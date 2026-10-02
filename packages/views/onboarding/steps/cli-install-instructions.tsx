@@ -1,17 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
 import { Card, CardContent } from "@multica/ui/components/ui/card";
 import { CODE_LIGATURE_CLASS } from "@multica/ui/lib/code-style";
 import { cn } from "@multica/ui/lib/utils";
 import { copyText } from "@multica/ui/lib/clipboard";
+import { CliInstallCommand } from "../../common/cli-install-command";
 import { useT } from "../../i18n";
 
 import { HostedClientInstall, HOSTED_SETUP_COMMAND, useHostedClient } from "../../runtimes/components/hosted-client-install";
-
-const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
 const SETUP_CMD = "multica setup";
 
 function CopyButton({ text }: { text: string }) {
@@ -42,24 +40,38 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function Step({ n, label, cmd }: { n: number; label: string; cmd: string }) {
+function CommandRow({ cmd }: { cmd: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 font-mono text-body">
+      <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <code
+        className={cn(
+          "min-w-0 flex-1 whitespace-pre-wrap break-all",
+          CODE_LIGATURE_CLASS,
+        )}
+      >
+        {cmd}
+      </code>
+      <CopyButton text={cmd} />
+    </div>
+  );
+}
+
+function Step({
+  n,
+  label,
+  children,
+}: {
+  n: number;
+  label: string;
+  children: ReactNode;
+}) {
   return (
     <div>
       <p className="mb-1.5 text-caption font-medium text-foreground">
         {n}. {label}
       </p>
-      <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 font-mono text-body">
-        <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <code
-          className={cn(
-            "min-w-0 flex-1 whitespace-pre-wrap break-all",
-            CODE_LIGATURE_CLASS,
-          )}
-        >
-          {cmd}
-        </code>
-        <CopyButton text={cmd} />
-      </div>
+      {children}
     </div>
   );
 }
@@ -74,9 +86,20 @@ export function CliInstallInstructions() {
         <p className="text-caption leading-[1.55] text-muted-foreground">
           {t(($) => $.cli_install.intro)}
         </p>
-
-        {hostedClient ? <HostedClientInstall /> : <Step n={1} label={t(($) => $.cli_install.step1_label)} cmd={INSTALL_CMD} />}
-        <Step n={2} label={t(($) => $.cli_install.step2_label)} cmd={hostedClient ? HOSTED_SETUP_COMMAND : SETUP_CMD} />
+        {hostedClient ? <HostedClientInstall /> : <Step n={1} label={t(($) => $.cli_install.step1_label)}>
+          <CliInstallCommand
+            labels={{
+              group: t(($) => $.cli_install.platform_group),
+              macosLinux: t(($) => $.cli_install.platform_macos_linux),
+              windows: t(($) => $.cli_install.platform_windows),
+            }}
+          >
+            {(cmd) => <CommandRow cmd={cmd} />}
+          </CliInstallCommand>
+        </Step>}
+        <Step n={2} label={t(($) => $.cli_install.step2_label)}>
+          <CommandRow cmd={hostedClient ? HOSTED_SETUP_COMMAND : SETUP_CMD} />
+        </Step>
       </CardContent>
     </Card>
   );

@@ -73,7 +73,7 @@ func TestJiraRequirementBlocksAndReleasesWork(t *testing.T) {
 	task, _ = q.GetAgentTask(ctx, parseUUID(taskID))
 	req := newRequest("POST", "/claim", nil)
 	req.Header.Set("X-Client-Capabilities", "workspace-repository-v1,jira-ticket-v1")
-	resp, _, _, _, failure := testHandler.buildClaimedTaskResponse(req, &task, runtime, rt, testWorkspaceID)
+	resp, _, _, _, _, failure := testHandler.buildClaimedTaskResponse(req, &task, runtime, rt, testWorkspaceID)
 	if failure != nil || resp.JiraTicketID != "FS-123" {
 		t.Fatalf("claim context: %s %+v", resp.JiraTicketID, failure)
 	}

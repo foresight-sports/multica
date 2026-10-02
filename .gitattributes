@@ -11,3 +11,6 @@ scripts/agent-cli-command-names.txt text eol=lf
 # Embedded skill frontmatter parsers require LF when building on Windows.
 server/internal/service/builtin_skills/** text eol=lf
 server/internal/service/builtin_skills_legacy/** text eol=lf
+
+# SQL source is parsed by migration and query regression tests on every OS.
+server/pkg/db/queries/*.sql text eol=lf

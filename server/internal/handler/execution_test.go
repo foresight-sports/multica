@@ -230,7 +230,7 @@ func TestExistingBuilderClaimUsesCurrentConfigurationInstructions(t *testing.T) 
 	}
 	request := newRequest("POST", "/claim", nil)
 	request.Header.Set("X-Client-Capabilities", "workspace-repository-v1")
-	resp, _, _, _, failure := testHandler.buildClaimedTaskResponse(request, &task, runtime, rt, testWorkspaceID)
+	resp, _, _, _, _, failure := testHandler.buildClaimedTaskResponse(request, &task, runtime, rt, testWorkspaceID)
 	if failure != nil {
 		t.Fatalf("claim failed: %+v", failure)
 	}
@@ -241,14 +241,23 @@ func TestExistingBuilderClaimUsesCurrentConfigurationInstructions(t *testing.T) 
 
 func readyExecutionMachine(t *testing.T, runtimeID, ws string) {
 	t.Helper()
+	if _, err := testPool.Exec(t.Context(), `UPDATE agent_runtime SET metadata=COALESCE(metadata,'{}') || '{"workspace_repository_version":2}'::jsonb, daemon_id=COALESCE(NULLIF(daemon_id,''),id::text) WHERE id=$1`, runtimeID); err != nil {
+		t.Fatal(err)
+	}
 	q := testHandler.Queries
 	rt, e := q.GetAgentRuntime(t.Context(), parseUUID(runtimeID))
 	if e != nil {
 		t.Fatal(e)
 	}
 	for _, config := range []struct{ scope, subject, value string }{{"workspace", ws, `{"folder":"portable-tests","mode":"in_place"}`}, {"machine", workspacerepo.MachineKey(rt), `{"root":"/tmp/repos"}`}} {
-		if _, e = testPool.Exec(t.Context(), `INSERT INTO repository_configuration(scope,subject,config,revision) VALUES($1,$2,$3,1) ON CONFLICT(scope,subject) DO NOTHING`, config.scope, config.subject, config.value); e != nil {
-			t.Fatal(e)
+		tag, err := testPool.Exec(t.Context(), `INSERT INTO repository_configuration(scope,subject,config,revision) VALUES($1,$2,$3,1) ON CONFLICT(scope,subject) DO NOTHING`, config.scope, config.subject, config.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tag.RowsAffected() == 1 {
+			t.Cleanup(func() {
+				testPool.Exec(context.Background(), "DELETE FROM repository_configuration WHERE scope=$1 AND subject=$2", config.scope, config.subject)
+			})
 		}
 	}
 	plan, e := workspacerepo.BuildPlan(t.Context(), q, rt, ws)

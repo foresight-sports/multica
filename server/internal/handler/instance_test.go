@@ -21,6 +21,7 @@ func TestInstanceSharedRuntimeClaimAndTaskScope(t *testing.T) {
 	otherUser := dbfx.User(t, "Target owner", "instance-target-owner@example.test")
 	dbfx.Member(t, other, otherUser, "owner")
 	runtimeID := createClaimReclaimRuntime(t, t.Context(), "Shared instance runtime")
+	readyExecutionMachine(t, runtimeID, other)
 	var created AgentResponse
 	testutil.Call(t, h.CreateAgent, newRequest("POST", "/api/agents", CreateAgentRequest{InstanceAgent: true, Name: "Shared runtime agent", RuntimeID: runtimeID, Visibility: "workspace", MaxConcurrentTasks: 2})).Want(201).JSON(&created)
 	t.Cleanup(func() {
@@ -35,6 +36,7 @@ func TestInstanceSharedRuntimeClaimAndTaskScope(t *testing.T) {
 	issueID := dbfx.Issue(t, "Target workspace issue", testutil.Cols{"workspace_id": other, "creator_id": otherUser})
 	taskID := dbfx.Task(t, uuidToString(binding.ID), testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID})
 	claim := withURLParam(newDaemonTokenRequest("POST", "/claim", nil, testWorkspaceID, "instance-runtime"), "runtimeId", runtimeID)
+	claim.Header.Set("X-Client-Capabilities", "workspace-repository-v1")
 	var response struct {
 		Task *AgentTaskResponse `json:"task"`
 	}
@@ -288,9 +290,11 @@ func TestInstanceInstructionsReachClaim(t *testing.T) {
 		}
 		old.Revision++
 		runtimeID := createClaimReclaimRuntime(t, t.Context(), "Instance claim runtime")
+		readyExecutionMachine(t, runtimeID, testWorkspaceID)
 		agentID, issueID := createClaimReclaimAgentAndIssue(t, t.Context(), runtimeID, fmt.Sprintf("Instance claim agent %d", index))
 		createDispatchedClaimFixtureTask(t, t.Context(), agentID, runtimeID, issueID, "120 seconds", false)
 		req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil, testWorkspaceID, "instance-claim")
+		req.Header.Set("X-Client-Capabilities", "workspace-repository-v1")
 		req = withURLParam(req, "runtimeId", runtimeID)
 		var response struct {
 			Task *AgentTaskResponse `json:"task"`
@@ -311,6 +315,7 @@ func TestInstanceInstructionsMissingPreventLaunch(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeID := createClaimReclaimRuntime(t, t.Context(), "Instance missing runtime")
+	readyExecutionMachine(t, runtimeID, testWorkspaceID)
 	agentID, issueID := createClaimReclaimAgentAndIssue(t, t.Context(), runtimeID, "Instance missing agent")
 	taskID := createDispatchedClaimFixtureTask(t, t.Context(), agentID, runtimeID, issueID, "120 seconds", false)
 	dbfx.Exec(t, "DELETE FROM instance_configuration WHERE singleton")
@@ -318,6 +323,7 @@ func TestInstanceInstructionsMissingPreventLaunch(t *testing.T) {
 		testPool.Exec(context.Background(), "INSERT INTO instance_configuration (singleton, instructions, revision) VALUES (true,$1,$2)", old.Instructions, old.Revision)
 	})
 	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil, testWorkspaceID, "instance-missing")
+	req.Header.Set("X-Client-Capabilities", "workspace-repository-v1")
 	testutil.Call(t, testHandler.ClaimTaskByRuntime, withURLParam(req, "runtimeId", runtimeID)).Want(http.StatusServiceUnavailable)
 	var status string
 	dbfx.QueryRow(t, "SELECT status FROM agent_task_queue WHERE id=$1", taskID).Scan(&status)
