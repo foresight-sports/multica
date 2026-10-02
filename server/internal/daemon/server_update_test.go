@@ -65,6 +65,33 @@ func TestHandleUpdateReportsWhyItWasDeferred(t *testing.T) {
 	}
 }
 
+func TestServerUpdateDrainCancellationPreservesPreparation(t *testing.T) {
+	d := &Daemon{}
+	if !d.tryEnterClaim() {
+		t.Fatal("preparation could not enter")
+	}
+	defer d.exitClaim()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan serverUpdateAcquireResult, 1)
+	go func() { result <- d.tryBeginServerUpdate(ctx) }()
+	waitForServerUpdateBarrier(t, d)
+	cancel()
+	select {
+	case got := <-result:
+		if got != serverUpdateDrainTimedOut {
+			t.Fatalf("result = %v, want drain timeout", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled update kept waiting")
+	}
+	d.claimMu.Lock()
+	defer d.claimMu.Unlock()
+	if d.pauseClaims || d.updating.Load() || d.claimsInFlight != 1 {
+		t.Fatal("cancelled update must release its barrier and preserve ongoing preparation")
+	}
+}
+
 func TestHandleUpdateWaitsForEmptyClaimInsteadOfStarving(t *testing.T) {
 	originalResolveSelfExecutable := resolveSelfExecutable
 	originalIsBrewInstall := isBrewInstall

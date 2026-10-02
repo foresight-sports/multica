@@ -3,16 +3,76 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/multica-ai/multica/server/pkg/workspacerepo"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
+
+func TestServerUpdateDrainsBackgroundWorkspacePreparation(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "local"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	plan := workspacerepo.Plan{WorkspaceID: "workspace", Configuration: workspacerepo.Configuration{Root: root, Folder: "local", Mode: "in_place"}}
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	d, _ := updateReportDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode([]workspacerepo.Plan{plan})
+			return
+		}
+		once.Do(func() { close(started); <-release })
+		w.WriteHeader(http.StatusOK)
+	})
+	d.workspaces = map[string]*workspaceState{"workspace": {runtimeIDs: []string{"runtime"}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	var releaseOnce sync.Once
+	finishPreparation := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(finishPreparation)
+	go d.workspaceRepositoryLoop(ctx)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("background preparation did not start")
+	}
+	if got := d.activeTasks.Load(); got != 0 {
+		t.Fatalf("background preparation reported %d active agent tasks", got)
+	}
+	if d.trySetClaimBarrier() {
+		t.Fatal("automatic update must not bypass active preparation")
+	}
+	result := make(chan serverUpdateAcquireResult, 1)
+	go func() { result <- d.tryBeginServerUpdate(ctx) }()
+	waitForServerUpdateBarrier(t, d)
+	if d.tryEnterClaim() {
+		t.Fatal("new work entered while an update was draining preparation")
+	}
+	select {
+	case <-result:
+		t.Fatal("update did not wait for preparation")
+	default:
+	}
+	finishPreparation()
+	select {
+	case got := <-result:
+		if got != serverUpdateAcquired {
+			t.Fatalf("update result = %v, want acquired", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("update did not proceed after preparation finished")
+	}
+}
 
 func TestPrepareWorkspaceFolderOnly(t *testing.T) {
 	root := t.TempDir()

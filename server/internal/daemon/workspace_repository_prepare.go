@@ -53,9 +53,9 @@ func (d *Daemon) workspaceRepositoryLoop(ctx context.Context) {
 					if !d.tryEnterClaim() {
 						return
 					}
-					d.activeTasks.Add(1)
-					d.exitClaim()
-					defer d.activeTasks.Add(-1)
+					// Keep background checks in the drainable claim barrier, not the
+					// agent-task count. Updates can pause new checks and await this one.
+					defer d.exitClaim()
 					jobCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 					defer cancel()
 					report := func(state, message string) {

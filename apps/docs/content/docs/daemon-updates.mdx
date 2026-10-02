@@ -29,6 +29,8 @@ If a download or checksum fails, the installed executable is not replaced. If re
 
 ## Update diagnostics
 
+Background workspace checks are not agent tasks. A requested update pauses new claims and repository checks, then waits up to 30 seconds for checks already in progress. Actual agent work still prevents an update. If preparation takes longer, the request reports that wait and leaves the preparation running; retry after it finishes.
+
 The computer page shows a live update log refreshed every two seconds while the request runs. Daemons from `0.4.44-foresight.16` report manifest lookup, download byte counts, checksum verification, installation, and restart intent. Earlier clients provide only their existing status messages until upgraded. Logs are bounded to 32 KiB and remain attached to failed requests; raw task logs, credentials and environment variables are not collected. Reconnection with the requested version is still required for success. If startup fails after replacement, inspect `~/.multica/daemon.log` and `daemon.err.log` on that computer.
 
 **Manual update instructions** remain available offline and after an unsuccessful remote update. On Windows, extract the instance ZIP and replace the stopped daemon executable while preserving configuration. Codex Desktop CLI installations under `%LOCALAPPDATA%/OpenAI/Codex/bin` are discovered even when the terminal PATH does not contain Codex.

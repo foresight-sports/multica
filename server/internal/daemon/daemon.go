@@ -626,7 +626,7 @@ type Daemon struct {
 	// would be cancelled by triggerRestart's root-ctx cancel.
 	claimMu        sync.Mutex
 	pauseClaims    bool // when true, the batch poller skips claiming
-	claimsInFlight int  // pollers that have decided to claim but haven't yet handed the task off to handleTask
+	claimsInFlight int  // task claims awaiting handoff, plus background repository preparations
 
 	activeEnvRootsMu   sync.Mutex
 	activeEnvRootsCond *sync.Cond      // signalled when an in-flight env-root GC mutation finishes
@@ -5058,6 +5058,13 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 			"error":  "runtime update deferred because agent work is starting or still active; retry when the machine is idle",
 		})
 		return
+	case serverUpdateDrainTimedOut:
+		d.logger.Info("update deferred: task claim or workspace preparation did not finish", "runtime_id", runtimeID, "update_id", update.ID)
+		d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
+			"status": "failed",
+			"error":  "runtime update waited for task claims or background workspace preparation to finish; retry after preparation completes",
+		})
+		return
 	}
 	restarting := false
 	defer func() {
@@ -5109,6 +5116,7 @@ const (
 	serverUpdateAcquired serverUpdateAcquireResult = iota
 	serverUpdateAlreadyRunning
 	serverUpdateRuntimeBusy
+	serverUpdateDrainTimedOut
 )
 
 // tryBeginServerUpdate atomically claims update ownership, pauses new claims,
@@ -5116,6 +5124,10 @@ const (
 // therefore never starve an update; a claim that returns work increments
 // activeTasks before exitClaim, so the final check still defers safely.
 func (d *Daemon) tryBeginServerUpdate(ctx context.Context) serverUpdateAcquireResult {
+	// A clone may take minutes. Bound the drain so the request cannot remain
+	// pending indefinitely, without cancelling preparation or replacing its binary.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	if !d.updating.CompareAndSwap(false, true) {
 		return serverUpdateAlreadyRunning
 	}
@@ -5149,7 +5161,7 @@ func (d *Daemon) tryBeginServerUpdate(ctx context.Context) serverUpdateAcquireRe
 		case <-ctx.Done():
 			d.releaseClaimBarrier()
 			d.updating.Store(false)
-			return serverUpdateRuntimeBusy
+			return serverUpdateDrainTimedOut
 		case <-ticker.C:
 		}
 	}
