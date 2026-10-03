@@ -764,7 +764,9 @@
     "more_runs_other": "{{count}} de plus",
     "strip_aria": "Coût cumulé dans le temps — ouvrir la chronologie",
     "strip_no_usage": "Aucune consommation enregistrée",
-    "sparkline_now": "Maintenant"
+    "sparkline_now": "Maintenant",
+    "show_past": "Show past runs ({{count}})",
+    "hide_past": "Hide past runs ({{count}})"
   },
   "runs_timeline": {
     "title": "Exécutions",
@@ -1439,5 +1441,28 @@
     "overview_close": "Fermer",
     "overview_empty": "Aucun livrable de ce type.",
     "group_comment_by": "Commentaire de {{name}}"
+  },
+  "jira": {
+    "required_notice": "Agent work is waiting for a JIRA ticket ID. Set a key such as FS-123."
+  },
+  "work": {
+    "title": "Work and approvals",
+    "machine": "Machine",
+    "source": "Installation source",
+    "approval_help": "The machine owner must approve this exact installation before the agent can continue.",
+    "same_machine": "Continuation stays on this machine, including while it is offline.",
+    "approve": "Approve and continue",
+    "decline": "Decline",
+    "no_checkpoint": "Branch claimed; no pushed checkpoint saved yet.",
+    "pull_request": "Open pull request",
+    "owner": "Owner",
+    "next_step": "Next step",
+    "history": "Resolved work",
+    "truncated": "Older records are omitted. Active work is shown first.",
+    "reload": "Reload",
+    "decision": "Decision",
+    "blocker": "Blocker",
+    "human_record": "Recorded by a human",
+    "agent_record": "Recorded by an agent"
   }
 }

@@ -257,5 +257,10 @@
     "toast_failed": "重複としてマークできませんでした",
     "error_target_is_duplicate": "{{identifier}} 自体が重複です。元のタスクを選択してください",
     "error_has_duplicates": "他のタスクがこのタスクの重複としてマークされています。先にそのマークを解除してください"
+  },
+  "jira": {
+    "manual_required": "This workspace requires a JIRA ticket ID before AI-assisted work. Switch to manual creation and fill in the ticket's JIRA ticket ID.",
+    "loading": "Checking the workspace JIRA requirement…",
+    "load_error": "Could not check the JIRA requirement. Reload to retry."
   }
 }

@@ -537,5 +537,18 @@
   "repository_readiness": {
     "error": "Workspace readiness unavailable",
     "checking": "Checking workspace readiness…"
+  },
+  "plugin_capabilities": {
+    "title": "플러그인 및 기능",
+    "help": "사용자 범위 목록입니다. 사용 전에 워크스페이스 가용성과 인증을 확인하세요.",
+    "unknown": "목록을 사용할 수 없음",
+    "stale": "목록이 오래되었습니다. 런타임을 다시 연결하세요",
+    "enabled": "활성화됨",
+    "disabled": "비활성화됨",
+    "configured": "활성화 상태 알 수 없음",
+    "callable": "확인 당시 호출 가능",
+    "unavailable": "확인 당시 호출 불가",
+    "auth": "인증 확인 안 됨",
+    "truncated": "일부 목록만 표시"
   }
 }

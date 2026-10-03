@@ -257,5 +257,10 @@
     "toast_failed": "无法标记为重复",
     "error_target_is_duplicate": "{{identifier}} 本身是重复任务，请选择它的原始任务",
     "error_has_duplicates": "已有任务被标记为此任务的重复，请先解除这些标记"
+  },
+  "jira": {
+    "manual_required": "This workspace requires a JIRA ticket ID before AI-assisted work. Switch to manual creation and fill in the ticket's JIRA ticket ID.",
+    "loading": "Checking the workspace JIRA requirement…",
+    "load_error": "Could not check the JIRA requirement. Reload to retry."
   }
 }

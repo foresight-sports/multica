@@ -553,5 +553,18 @@
   "repository_readiness": {
     "error": "Workspace readiness unavailable",
     "checking": "Checking workspace readiness…"
+  },
+  "plugin_capabilities": {
+    "title": "Plugins and capabilities",
+    "help": "User-scope inventory. Verify workspace availability and authentication before use.",
+    "unknown": "Inventory unavailable",
+    "stale": "Inventory is stale; reconnect this runtime",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "configured": "Enablement unknown",
+    "callable": "Callable when observed",
+    "unavailable": "Not callable when observed",
+    "auth": "Authentication not verified",
+    "truncated": "Showing a bounded inventory"
   }
 }

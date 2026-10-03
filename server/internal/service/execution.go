@@ -15,6 +15,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/execution"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/quota"
+	"github.com/multica-ai/multica/server/pkg/runtimecap"
 )
 
 type executionRequestKey struct{}
@@ -101,6 +102,9 @@ func (s *TaskService) executionCandidates(ctx context.Context, a db.Agent, p exe
 			var args []string
 			_ = json.Unmarshal(a.CustomEnv, &env)
 			_ = json.Unmarshal(a.CustomArgs, &args)
+			if !rt.ProfileID.Valid && len(env) == 0 && len(args) == 0 {
+				c.Capabilities = runtimecap.FromMetadata(rt.Metadata, rt.Provider, time.Now())
+			}
 			if !rt.ProfileID.Valid && len(env) == 0 && len(args) == 0 && metadata.Quota.Blocks(profile.Model, time.Now()) {
 				c.Eligible = false
 				c.Reason = "Subscription capacity exhausted"
@@ -283,11 +287,14 @@ func (s *TaskService) RouteExecutionTasks(ctx context.Context, runtimeIDs []pgty
 			}
 			if !machineSetup && selected.Reason != "Pinned to the existing conversation" && selectionRequest.ProfileID == "" && !selected.Explicit && req.Mode != "default" && (req.Mode == "automatic" || p.Mode == "automatic") && p.RouterProfile != "" && old.State != "selecting" {
 				seen := map[string]bool{}
+				selected.RuntimeCapabilities = map[string]*runtimecap.Report{}
 				for _, c := range candidates {
-					if c.Eligible && !seen[c.Profile.ID] {
-						seen[c.Profile.ID] = true
+					if c.Eligible && len(selected.Candidates) < 64 && !seen[c.Profile.ID+":"+c.Profile.RuntimeID] {
+						seen[c.Profile.ID+":"+c.Profile.RuntimeID] = true
 						requirement := c.Profile
-						requirement.RuntimeID = ""
+						if c.Capabilities != nil && len(selected.RuntimeCapabilities) < 8 {
+							selected.RuntimeCapabilities[c.Profile.RuntimeID] = c.Capabilities.ForTriage()
+						}
 						selected.Candidates = append(selected.Candidates, requirement)
 					}
 				}

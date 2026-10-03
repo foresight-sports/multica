@@ -800,7 +800,10 @@
     "tool_kind_write": "편집",
     "tool_kind_read": "읽기",
     "tool_kind_misc": "기타",
-    "trigger_wakeup": "깨우기"
+    "trigger_wakeup": "깨우기",
+    "execution_machine": "Machine",
+    "execution_model": "Execution model",
+    "execution_not_recorded": "Not recorded"
   },
   "task_failure": {
     "cancelled_by_system": "시스템에서 취소함",

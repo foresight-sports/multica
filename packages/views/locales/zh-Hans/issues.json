@@ -1414,5 +1414,8 @@
     "blocker": "Blocker",
     "human_record": "Recorded by a human",
     "agent_record": "Recorded by an agent"
+  },
+  "jira": {
+    "required_notice": "Agent work is waiting for a JIRA ticket ID. Set a key such as FS-123."
   }
 }

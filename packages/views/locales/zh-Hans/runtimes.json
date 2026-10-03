@@ -537,5 +537,18 @@
   "repository_readiness": {
     "error": "Workspace readiness unavailable",
     "checking": "Checking workspace readiness…"
+  },
+  "plugin_capabilities": {
+    "title": "插件与能力",
+    "help": "用户范围的清单。使用前请确认工作区可用性和身份验证。",
+    "unknown": "清单不可用",
+    "stale": "清单已过期，请重新连接运行时",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "configured": "启用状态未知",
+    "callable": "采集时可调用",
+    "unavailable": "采集时不可调用",
+    "auth": "身份验证未确认",
+    "truncated": "仅显示部分清单"
   }
 }

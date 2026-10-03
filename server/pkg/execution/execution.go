@@ -3,6 +3,7 @@ package execution
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/runtimecap"
 	"regexp"
 	"slices"
 	"sort"
@@ -50,21 +51,23 @@ type Decision struct {
 	At        string `json:"at"`
 }
 type Selection struct {
-	Locked         bool       `json:"locked,omitempty"`
-	RoutingFailed  bool       `json:"routing_failed,omitempty"`
-	State          string     `json:"state"`
-	Profile        Profile    `json:"profile"`
-	PolicyRevision int64      `json:"policy_revision"`
-	Reason         string     `json:"reason"`
-	Explicit       bool       `json:"explicit"`
-	History        []Decision `json:"history"`
-	Candidates     []Profile  `json:"candidates,omitempty"`
-	Prompt         string     `json:"prompt,omitempty"`
+	RuntimeCapabilities map[string]*runtimecap.Report `json:"runtime_capabilities,omitempty"`
+	Locked              bool                          `json:"locked,omitempty"`
+	RoutingFailed       bool                          `json:"routing_failed,omitempty"`
+	State               string                        `json:"state"`
+	Profile             Profile                       `json:"profile"`
+	PolicyRevision      int64                         `json:"policy_revision"`
+	Reason              string                        `json:"reason"`
+	Explicit            bool                          `json:"explicit"`
+	History             []Decision                    `json:"history"`
+	Candidates          []Profile                     `json:"candidates,omitempty"`
+	Prompt              string                        `json:"prompt,omitempty"`
 }
 type Candidate struct {
-	Profile  Profile `json:"profile"`
-	Eligible bool    `json:"eligible"`
-	Reason   string  `json:"reason,omitempty"`
+	Capabilities *runtimecap.Report `json:"capabilities,omitempty"`
+	Profile      Profile            `json:"profile"`
+	Eligible     bool               `json:"eligible"`
+	Reason       string             `json:"reason,omitempty"`
 }
 
 var toolName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.+-]{0,99}$`)

@@ -896,7 +896,10 @@
     "tool_kind_write": "编辑",
     "tool_kind_read": "读取",
     "tool_kind_misc": "其他",
-    "trigger_wakeup": "唤醒触发"
+    "trigger_wakeup": "唤醒触发",
+    "execution_machine": "Machine",
+    "execution_model": "Execution model",
+    "execution_not_recorded": "Not recorded"
   },
   "task_failure": {
     "cancelled_by_system": "已由系统取消",

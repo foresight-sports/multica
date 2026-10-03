@@ -537,5 +537,18 @@
   "repository_readiness": {
     "error": "Workspace readiness unavailable",
     "checking": "Checking workspace readiness…"
+  },
+  "plugin_capabilities": {
+    "title": "プラグインと機能",
+    "help": "ユーザー範囲の一覧です。使用前にワークスペースでの利用可否と認証を確認してください。",
+    "unknown": "一覧を取得できません",
+    "stale": "一覧が古いため、ランタイムを再接続してください",
+    "enabled": "有効",
+    "disabled": "無効",
+    "configured": "有効状態不明",
+    "callable": "取得時に呼び出し可能",
+    "unavailable": "取得時に呼び出し不可",
+    "auth": "認証未確認",
+    "truncated": "一部の項目を表示"
   }
 }

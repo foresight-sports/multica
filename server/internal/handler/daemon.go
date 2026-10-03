@@ -37,6 +37,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/execution"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/redact"
+	"github.com/multica-ai/multica/server/pkg/runtimecap"
 	"github.com/multica-ai/multica/server/pkg/skillbundle"
 	"github.com/multica-ai/multica/server/pkg/taskfailure"
 )
@@ -3744,6 +3745,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	}
 	if resp.Agent != nil {
 		resp.Agent.Instructions = composeInstanceInstructions(instance.Instructions, resp.Agent.Instructions)
+		resp.Agent.Instructions += "\n\n" + runtimecap.Guidance
 	}
 	if err := h.populateWorkContext(r, *task, &resp); err != nil {
 		_, _ = h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task)

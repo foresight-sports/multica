@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/execution"
+	"github.com/multica-ai/multica/server/pkg/runtimecap"
 )
 
 func (h *Handler) applyPortableAvailability(ctx context.Context, a db.Agent, response *AgentResponse) {
@@ -129,7 +130,7 @@ func (h *Handler) UpdateTaskExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req execution.Request
-	r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	r.Body = http.MaxBytesReader(w, r.Body, 128*1024)
 	if json.NewDecoder(r.Body).Decode(&req) != nil {
 		writeError(w, 400, "invalid execution request")
 		return
@@ -166,11 +167,12 @@ func (h *Handler) ResolveTaskExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		RuntimeID    string    `json:"runtime_id"`
-		DispatchedAt time.Time `json:"dispatched_at"`
-		ProfileID    string    `json:"profile_id"`
-		Reason       string    `json:"reason"`
-		Error        string    `json:"error"`
+		RuntimeID         string    `json:"runtime_id"`
+		DispatchedAt      time.Time `json:"dispatched_at"`
+		ProfileID         string    `json:"profile_id"`
+		SelectedRuntimeID string    `json:"selected_runtime_id"`
+		Reason            string    `json:"reason"`
+		Error             string    `json:"error"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16384)
 	if json.NewDecoder(r.Body).Decode(&req) != nil {
@@ -202,9 +204,9 @@ func (h *Handler) ResolveTaskExecution(w http.ResponseWriter, r *http.Request) {
 	}
 	p := execution.ParsePolicy(raw)
 	candidates := h.TaskService.ConstrainExecutionToTask(r.Context(), task, h.TaskService.ExecutionCandidates(r.Context(), a, p))
-	profile, reason, chooseErr := execution.Select(p, execution.Request{ProfileID: req.ProfileID}, candidates, selection.Prompt)
+	profile, reason, chooseErr := execution.Select(p, execution.Request{ProfileID: req.ProfileID, RuntimeID: req.SelectedRuntimeID}, candidates, selection.Prompt)
 	proposalValid := slices.ContainsFunc(selection.Candidates, func(c execution.Profile) bool {
-		return c.ID == req.ProfileID && c.Model == profile.Model && c.Provider == profile.Provider
+		return c.ID == req.ProfileID && c.Model == profile.Model && c.Provider == profile.Provider && (c.RuntimeID == "" || c.RuntimeID == profile.RuntimeID)
 	})
 	if !proposalValid || req.ProfileID == "" || req.Error != "" {
 		chooseErr = http.ErrAbortHandler
@@ -232,6 +234,7 @@ func (h *Handler) ResolveTaskExecution(w http.ResponseWriter, r *http.Request) {
 	selection.Profile = profile
 	selection.Reason = reason
 	selection.Candidates = nil
+	selection.RuntimeCapabilities = nil
 	selection.Prompt = ""
 	selection.PolicyRevision = p.Revision
 	selection.History = append(selection.History, execution.Decision{ProfileID: profile.ID, RuntimeID: profile.RuntimeID, Model: profile.Model, Reason: reason, At: time.Now().UTC().Format(time.RFC3339)})
@@ -257,23 +260,38 @@ func (h *Handler) ReportExecutionCapabilities(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var req struct {
-		ObservedAt                 time.Time `json:"execution_observed_at"`
-		OS                         string    `json:"os"`
-		Tools                      []string  `json:"tools"`
-		Version                    int       `json:"execution_version"`
-		Arch                       string    `json:"arch,omitempty"`
-		MachineLogsVersion         int       `json:"machine_logs_version"`
-		WorkspaceRepositoryVersion int       `json:"workspace_repository_version"`
-		WorkHandoffVersion         int       `json:"work_handoff_version"`
-		JiraTicketVersion          int       `json:"jira_ticket_version"`
-		InstanceUpdateVersion      int       `json:"instance_update_version,omitempty"`
+		Inventory                  *runtimecap.Report `json:"runtime_capabilities,omitempty"`
+		ObservedAt                 time.Time          `json:"execution_observed_at"`
+		OS                         string             `json:"os"`
+		Tools                      []string           `json:"tools"`
+		Version                    int                `json:"execution_version"`
+		Arch                       string             `json:"arch,omitempty"`
+		MachineLogsVersion         int                `json:"machine_logs_version"`
+		WorkspaceRepositoryVersion int                `json:"workspace_repository_version"`
+		WorkHandoffVersion         int                `json:"work_handoff_version"`
+		JiraTicketVersion          int                `json:"jira_ticket_version"`
+		InstanceUpdateVersion      int                `json:"instance_update_version,omitempty"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	r.Body = http.MaxBytesReader(w, r.Body, 128*1024)
 	if json.NewDecoder(r.Body).Decode(&req) != nil || !slices.Contains([]string{"windows", "linux", "darwin"}, req.OS) || len(req.Tools) > 100 || req.Version != 1 || len(req.Arch) > 32 || req.InstanceUpdateVersion < 0 || req.InstanceUpdateVersion > 1 {
 		writeError(w, 400, "invalid runtime capabilities")
 		return
 	}
 	req.ObservedAt = time.Now().UTC()
+	if req.Inventory != nil {
+		if req.Inventory.Validate(rt.Provider) != nil {
+			writeError(w, 400, "invalid runtime capability inventory")
+			return
+		}
+		clean := runtimecap.New(rt.Provider)
+		clean.Status = req.Inventory.Status
+		clean.Truncated = req.Inventory.Truncated
+		for _, e := range req.Inventory.Entries {
+			clean.Add(e)
+		}
+		clean.ObservedAt = req.ObservedAt
+		req.Inventory = &clean
+	}
 	data, _ := json.Marshal(req)
 	if err := h.Queries.SetExecutionCapabilities(r.Context(), db.SetExecutionCapabilitiesParams{ID: rt.ID, Capabilities: data}); err != nil {
 		writeError(w, 500, "could not store runtime capabilities")

@@ -2,7 +2,10 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/multica-ai/multica/server/pkg/runtimecap"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -215,6 +218,7 @@ func buildSquadLeaderBriefing(ctx context.Context, q *db.Queries, squad db.Squad
 func buildSquadRoster(ctx context.Context, q *db.Queries, squad db.Squad) string {
 	var sb strings.Builder
 	sb.WriteString("## Squad Roster\n\n")
+	sb.WriteString(runtimecap.Guidance + "\n\n")
 
 	// Leader self-row. Leaders are always agents (FK enforced in schema).
 	leaderName := "Leader"
@@ -308,7 +312,7 @@ func renderMemberRow(ctx context.Context, q *db.Queries, m db.SquadMember, skill
 		}
 		// Agents carry skills; surfacing them lets the leader delegate by
 		// capability instead of guessing from the free-text role label.
-		return formatRosterRow(ag.Name, "agent", role, agentSkillsRosterSegment(skillNamesByAgentID, skillsLoaded, id), formatMention(ag.Name, "agent", id))
+		return formatRosterRow(ag.Name, "agent", role, agentSkillsRosterSegment(skillNamesByAgentID, skillsLoaded, id)+runtimeCapabilitiesRosterSegment(ctx, q, ag), formatMention(ag.Name, "agent", id))
 	case "member":
 		user, err := q.GetUser(ctx, m.MemberID)
 		if err != nil {
@@ -367,4 +371,46 @@ func formatRosterRow(name, kind, role, skills, mention string) string {
 // uses the mention:// scheme with the entity type and UUID.
 func formatMention(name, mentionType, id string) string {
 	return "[@" + name + "](mention://" + mentionType + "/" + id + ")"
+}
+
+// The query enforces agent/source/binding access; never union across machines.
+func runtimeCapabilitiesRosterSegment(ctx context.Context, q *db.Queries, ag db.Agent) string {
+	if string(ag.CustomEnv) != "" && string(ag.CustomEnv) != "{}" && string(ag.CustomEnv) != "null" {
+		return ""
+	}
+	if string(ag.CustomArgs) != "" && string(ag.CustomArgs) != "[]" && string(ag.CustomArgs) != "null" {
+		return ""
+	}
+	runtimes, err := q.ListAgentExecutionRuntimes(ctx, ag.ID)
+	if err != nil {
+		return ""
+	}
+	type machine struct {
+		RuntimeID string             `json:"runtime_id"`
+		Provider  string             `json:"provider"`
+		Entries   []runtimecap.Entry `json:"capabilities"`
+	}
+	reports := []machine{}
+	for _, rt := range runtimes {
+		if len(reports) >= 4 {
+			break
+		}
+		if rt.ProfileID.Valid || rt.Status != "online" || !rt.LastSeenAt.Valid || time.Since(rt.LastSeenAt.Time) > time.Minute {
+			continue
+		}
+		report := runtimecap.FromMetadata(rt.Metadata, rt.Provider, time.Now())
+		if report == nil {
+			continue
+		}
+		entries := report.Entries
+		if len(entries) > 12 {
+			entries = entries[:12]
+		}
+		reports = append(reports, machine{util.UUIDToString(rt.ID), rt.Provider, entries})
+	}
+	if len(reports) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(reports)
+	return " — Runtime capability observations (user scope; verify availability/auth in the task): " + string(b)
 }

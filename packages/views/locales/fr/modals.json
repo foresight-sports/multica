@@ -247,7 +247,10 @@
       "error_daemon_version": "Le CLI du daemon de cet agent ({{current}}) est inférieur au minimum requis {{min}}. Mettez le daemon à jour pour utiliser la création avec un agent.",
       "error_unknown": "Échec de l'envoi. Réessayez.",
       "sub_issue_of": "Sous-tâche de {{identifier}}"
-    }
+    },
+    "intake_routing": "Intake Coordinator will review this ticket and assign the work.",
+    "intake_loading": "Loading ticket routing…",
+    "intake_retry": "Could not load ticket routing. Retry"
   },
   "mark_duplicate": {
     "title": "Marquer comme doublon",
@@ -256,5 +259,10 @@
     "toast_failed": "Échec du marquage comme doublon",
     "error_target_is_duplicate": "{{identifier}} est elle-même un doublon. Choisissez plutôt sa tâche d'origine.",
     "error_has_duplicates": "D'autres tâches sont marquées comme doublons de celle-ci. Retirez d'abord ces marques."
+  },
+  "jira": {
+    "manual_required": "This workspace requires a JIRA ticket ID before AI-assisted work. Switch to manual creation and fill in the ticket's JIRA ticket ID.",
+    "loading": "Checking the workspace JIRA requirement…",
+    "load_error": "Could not check the JIRA requirement. Reload to retry."
   }
 }

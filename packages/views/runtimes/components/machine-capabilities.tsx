@@ -91,6 +91,25 @@ export function MachineCapabilities({
               {runtime.name}
             </span>
           </div>
+          <div className="mt-3 space-y-2">
+            <h4 className="text-caption font-medium">{t(($) => $.plugin_capabilities.title)}</h4>
+            <p className="text-caption text-muted-foreground">{t(($) => $.plugin_capabilities.help)}</p>
+            {(() => {
+              const report=capabilities[index]?.runtime_capabilities;
+              if(!report || report.provider!==runtime.provider || report.status!=="reported") return <p className="text-caption">{t(($)=>$.plugin_capabilities.unknown)}</p>;
+              const age=Date.now()-Date.parse(report.observed_at);
+              const stale=runtime.status!=="online" || !Number.isFinite(age) || age<0 || age>300000;
+              return <>
+                <p className="text-caption text-muted-foreground">{t(($)=>$.capabilities.observed,{at:new Date(report.observed_at).toLocaleString()})}</p>
+                {stale && <p className="text-caption">{t(($)=>$.plugin_capabilities.stale)}</p>}
+                <ul className="space-y-2">{report.entries.map((entry,i)=><li key={entry.kind+entry.name+i} className="text-caption">
+                  <span className="font-medium">{entry.name}</span> <span className="text-muted-foreground">{"("}{entry.kind}{") · "}{entry.enabled===true?t(($)=>$.plugin_capabilities.enabled):entry.enabled===false?t(($)=>$.plugin_capabilities.disabled):t(($)=>$.plugin_capabilities.configured)}{" · "}{entry.callable===true?t(($)=>$.plugin_capabilities.callable):entry.callable===false?t(($)=>$.plugin_capabilities.unavailable):t(($)=>$.plugin_capabilities.auth)}</span>
+                  {entry.description && <p className="text-muted-foreground">{entry.description}</p>}
+                </li>)}</ul>
+                {report.truncated && <p className="text-caption">{t(($)=>$.plugin_capabilities.truncated)}</p>}
+              </>;
+            })()}
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {queries[index]?.data?.models.map((model) => (
               <span
