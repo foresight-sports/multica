@@ -236,6 +236,7 @@ func (h *Handler) RerunIssue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.settleJiraBlockerForRerun(r.Context(), sourceTaskID, task.ID, uuidToString(actorUserID))
 	resp := taskToResponse(*task, uuidToString(issue.WorkspaceID))
 	h.hydrateTaskAttributions(r.Context(), []*TaskAttribution{resp.Attribution})
 	writeJSON(w, http.StatusAccepted, resp)

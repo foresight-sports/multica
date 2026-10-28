@@ -35,7 +35,7 @@ export function getInboxDisplayTitle(item: InboxItem): string {
     if (prompt) return prompt;
   }
 
-  if (isQuickCreateOutcome(item.type)) {
+  if (isQuickCreateOutcome(item.type) || item.type === "quick_create_pending") {
     const prompt = singleLine(details.original_prompt);
     if (prompt) return prompt;
   }
@@ -82,7 +82,7 @@ export function resolveDetailItem(
   detailKey: string,
 ): InboxItem | null {
   const byKey = (key: string) =>
-    visibleItems.find((i) => (i.issue_id ?? i.id) === key) ?? null;
+    visibleItems.find((i) => (i.issue_id ?? i.id) === key || i.id === key) ?? null;
   const deferred = detailKey ? byKey(detailKey) : null;
   if (deferred) return deferred;
   // No stale row to hold: either the pane is empty (nothing selected yet) or

@@ -1082,6 +1082,25 @@ type IssueWakeupReceipt struct {
 	CoalesceKey pgtype.Text        `json:"coalesce_key"`
 }
 
+type JiraMcpConnection struct {
+	UserID             pgtype.UUID        `json:"user_id"`
+	Credentials        []byte             `json:"credentials"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	Status             string             `json:"status"`
+	PendingState       pgtype.Text        `json:"pending_state"`
+	PendingCredentials []byte             `json:"pending_credentials"`
+	PendingUntil       pgtype.Timestamptz `json:"pending_until"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type JiraMcpSession struct {
+	ID         string             `json:"id"`
+	TaskID     pgtype.UUID        `json:"task_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	UpstreamID []byte             `json:"upstream_id"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
 type LarkBindingToken struct {
 	TokenHash      string             `json:"token_hash"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -1363,6 +1382,16 @@ type ProjectResource struct {
 	Position     int32              `json:"position"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	CreatedBy    pgtype.UUID        `json:"created_by"`
+}
+
+type ProviderAuthRequest struct {
+	MachineKey string             `json:"machine_key"`
+	ID         pgtype.UUID        `json:"id"`
+	RuntimeID  pgtype.UUID        `json:"runtime_id"`
+	Provider   string             `json:"provider"`
+	Status     string             `json:"status"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 }
 
 type QuickAction struct {
@@ -1781,6 +1810,15 @@ type Workspace struct {
 	// When TRUE, an agent run that resolves to no precise accountable human (would be owner_fallback) is refused at enqueue instead of degrading to the agent owner (MUL-4302 §3.5). Default FALSE = owner_fallback. Never affects authorization (originator_user_id).
 	AttributionFailClosed bool   `json:"attribution_fail_closed"`
 	IssueIntake           []byte `json:"issue_intake"`
+}
+
+type WorkspaceAccessRequest struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DecidedBy   pgtype.UUID        `json:"decided_by"`
 }
 
 type WorkspaceInvitation struct {

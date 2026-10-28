@@ -62,6 +62,7 @@ var supportedLanguages = map[string]struct{}{
 }
 
 type UserPermissions struct {
+	CreateWorkspaces       bool `json:"create_workspaces"`
 	CreateInstanceAgents   bool `json:"create_instance_agents"`
 	CreateAgents           bool `json:"create_agents"`
 	EditAgents             bool `json:"edit_agents"`
@@ -101,7 +102,7 @@ func (h *Handler) userToResponse(ctx context.Context, u db.User) UserResponse {
 		q = []byte("{}")
 	}
 	return UserResponse{
-		Permissions:             UserPermissions{CreateInstanceAgents: h.actionAllowed(ctx, u.Email, permissionCreateInstanceAgent), CreateAgents: h.actionAllowed(ctx, u.Email, permissionCreateAgent), EditAgents: h.actionAllowed(ctx, u.Email, permissionEditAgent), RegisterRuntimes: h.runtimeRegistrationAllowed(ctx, u.Email), ManagePermissionAccess: emailAllowedForPermission(u.Email, h.cfg.PermissionManagerEmails)},
+		Permissions:             UserPermissions{CreateWorkspaces: !h.cfg.DisableWorkspaceCreation && h.actionAllowed(ctx, u.Email, permissionCreateWorkspace), CreateInstanceAgents: h.actionAllowed(ctx, u.Email, permissionCreateInstanceAgent), CreateAgents: h.actionAllowed(ctx, u.Email, permissionCreateAgent), EditAgents: h.actionAllowed(ctx, u.Email, permissionEditAgent), RegisterRuntimes: h.runtimeRegistrationAllowed(ctx, u.Email), ManagePermissionAccess: emailAllowedForPermission(u.Email, h.cfg.PermissionManagerEmails)},
 		ID:                      uuidToString(u.ID),
 		Name:                    u.Name,
 		Email:                   u.Email,

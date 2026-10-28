@@ -9,6 +9,9 @@ import { InboxPage } from "./inbox-page";
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
+vi.mock("../../issues/components/issue-work-panel", () => ({
+  IssueWorkPanel: ({ issueId, recordId }: { issueId: string; recordId: string }) => <div data-testid="inbox-approval">{issueId}:{recordId}</div>,
+}));
 
 vi.mock("react-resizable-panels", () => ({
   useDefaultLayout: () => ({ defaultLayout: undefined, onLayoutChanged: vi.fn() }),
@@ -295,6 +298,13 @@ function reset() {
 }
 
 describe("InboxPage", () => {
+  it("opens the exact approval directly in the Inbox detail pane", () => {
+    reset();
+    listData.active = [item({ id: "approval", issue_id: "issue-approval", type: "installation_approval", details: { work_record_id: "record" } })];
+    searchParams = new URLSearchParams("issue=issue-approval");
+    render(<InboxPage />);
+    expect(screen.getByTestId("inbox-approval")).toHaveTextContent("issue-approval:record");
+  });
   it("keeps the list subordinate to the detail pane on desktop", () => {
     reset();
     layout.width = DESKTOP;
@@ -597,6 +607,17 @@ describe("InboxPage", () => {
     fireEvent.click(back!);
 
     expect(screen.getByTestId("row")).toBeInTheDocument();
+  });
+
+  it("follows a pending creation receipt into its completed issue", () => {
+    reset();
+    listData.active = [item({ id: "receipt", issue_id: null, type: "quick_create_pending" })];
+    const { rerender } = render(<InboxPage />);
+    fireEvent.click(screen.getByTestId("row"));
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    listData.active = [item({ id: "receipt", issue_id: "created-issue", type: "quick_create_done" })];
+    rerender(<InboxPage />);
+    expect(replace).toHaveBeenCalledWith("/acme/inbox?issue=created-issue");
   });
 
   it("retries a failed quick-create with its original source context", async () => {

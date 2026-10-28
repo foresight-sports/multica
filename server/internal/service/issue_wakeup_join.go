@@ -76,7 +76,7 @@ func acknowledgedBySelf(ctx context.Context, q *db.Queries, w db.IssueWakeup, ag
 	var causes []pgtype.UUID
 	for _, r := range receipts {
 		switch {
-		case r.EventType == wakeupConditionEventType:
+		case r.EventType == wakeupConditionEventType, r.EventType == childReviewReady:
 			if !ownRule {
 				return false, nil
 			}
@@ -290,7 +290,7 @@ func (s *IssueWakeupService) reserveForRun(ctx context.Context, q *db.Queries, i
 	var receipts []db.IssueWakeupReceipt
 	var held, free []pgtype.UUID
 	for _, r := range pending {
-		if len(w.Condition) > 0 && r.EventType != wakeupConditionEventType && r.EventType != wakeupTimeoutEventType && r.EventType != wakeupManualEventType {
+		if len(w.Condition) > 0 && r.EventType != wakeupConditionEventType && r.EventType != wakeupTimeoutEventType && r.EventType != wakeupManualEventType && !(w.SystemRule.String == SystemRuleChildDone && r.EventType == childReviewReady) {
 			continue
 		}
 		switch r.TaskID {

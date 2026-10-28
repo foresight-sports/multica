@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { WorkspaceDirectory } from "../workspace/workspace-directory";
+import { api } from "@multica/core/api";
 import { toast } from "sonner";
 import { useAuthStore } from "@multica/core/auth";
 import {
@@ -16,10 +18,10 @@ import { useWorkspaceList } from "@multica/core/workspace";
 import type { AgentRuntime, Workspace } from "@multica/core/types";
 import { StepWelcome } from "./steps/step-welcome";
 import { StepShell } from "./components/step-shell";
+
 import { StepAboutYou } from "./steps/step-about-you";
 import { StepWorkspace } from "./steps/step-workspace";
 import { StepRuntimeConnect } from "./steps/step-runtime-connect";
-import { StepPlatformFork } from "./steps/step-platform-fork";
 import { OnboardingLogoutButton } from "./components/onboarding-logout-button";
 import { getMikaOnboarding, pickContentLang } from "./templates";
 import { useT } from "../i18n";
@@ -149,9 +151,11 @@ function OnboardingStepFlow({
   const storedQuestionnaire = mergeQuestionnaire(user.onboarding_questionnaire);
   const [answers, setAnswers] = useState<QuestionnaireAnswers>(storedQuestionnaire);
 
+  const [createRequested, setCreateRequested] = useState(false);
   const isNewWorkspace = mode === "new_workspace";
+  const isWeb = !!runtimeInstructions;
   const [step, setStep] = useState<OnboardingStep>(
-    isNewWorkspace ? "workspace" : "welcome",
+    isNewWorkspace || isWeb ? "workspace" : "welcome",
   );
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   // Raised by whichever step has a request in flight; locks Back and the
@@ -173,12 +177,6 @@ function OnboardingStepFlow({
     ? workspace
     : (workspace ?? workspaces[0] ?? null);
   const canSkipWelcome = workspacesReady && workspaces.length > 0;
-
-  // The `runtimeInstructions` slot is only plumbed by the web shell
-  // (desktop bundles a daemon, so a CLI install card would be noise
-  // there). We reuse its presence as the web signal rather than
-  // introducing a redundant prop.
-  const isWeb = !!runtimeInstructions;
 
   // Derive "what comes after `from`" from ONBOARDING_STEP_ORDER so
   // inserting/reordering a persisted step only requires editing the
@@ -236,7 +234,19 @@ function OnboardingStepFlow({
       return;
     }
     onComplete(workspaces[0] ?? undefined);
-  }, [workspaces, onComplete]);
+  }, [workspaces, onComplete, t]);
+
+  const openExistingWorkspace = async (ws: Workspace) => {
+    if (stepBusy) return;
+    setStepBusy(true);
+    try {
+      await completeOnboarding("skip_existing", ws.id);
+      onComplete(ws);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t(($) => $.errors.skip_failed));
+      setStepBusy(false);
+    }
+  };
 
   const handleWorkspaceCreated = useCallback(
     (ws: Workspace) => {
@@ -344,8 +354,19 @@ function OnboardingStepFlow({
   // step's validation and submit. New-workspace mode gets no rail navigation
   // at all: it enters at the workspace step and, once that workspace exists,
   // every step behind it is gone. Same invariant `runtimeStepBack` enforces.
-  const handleStepChange = isNewWorkspace ? undefined : setStep;
+  const handleStepChange = isNewWorkspace || isWeb ? undefined : setStep;
 
+  // New accounts discover teams before creation; the API decides whether the
+  // creation button is available. Approval never provisions runtime or agents.
+  if (step === "workspace" && !workspace && (!isNewWorkspace || user.permissions?.create_workspaces !== true) && !createRequested) {
+    return <div className="mx-auto w-full max-w-3xl space-y-6 p-6 sm:p-10">
+      <WorkspaceDirectory busy={stepBusy} onCreate={() => setCreateRequested(true)} onOpen={(id) => {
+        setStepBusy(true);
+        void api.getWorkspace(id).then(openExistingWorkspace).catch(() => toast.error(t(($) => $.workspace_entry.retry))).finally(() => setStepBusy(false));
+      }} />
+      <OnboardingLogoutButton inline />
+    </div>;
+  }
   // ONE shell for the whole flow, rendered here rather than by each step.
   // Every step used to render its own <StepShell>, and because each step is a
   // different component type React tore the shell down and built a new one on
@@ -371,7 +392,7 @@ function OnboardingStepFlow({
     step === "about_you"
       ? () => handleBack("about_you")
       : step === "workspace"
-        ? () => handleBack("workspace")
+        ? (isWeb && !isNewWorkspace ? () => setCreateRequested(false) : () => handleBack("workspace"))
         : runtimeStepBack;
 
   return (
@@ -399,14 +420,11 @@ function OnboardingStepFlow({
         />
       )}
 
-      {/* Step 3 has two paths:
-            - Desktop (no cliInstructions slot) drives the local daemon's
-              runtime list directly.
-            - Web offers Download / CLI / Cloud; under the CLI path it embeds
-              the live probe, and Cloud is a soft exit via the waitlist. */}
+      {/* New workspaces can use an existing runtime or skip setup. The web
+          flow never redirects members to install the desktop application. */}
       {step === "runtime" &&
         workspace &&
-        (!runtimeInstructions ? (
+        (
           <StepRuntimeConnect
             wsId={workspace.id}
             wsSlug={workspace.slug}
@@ -414,14 +432,7 @@ function OnboardingStepFlow({
             onRefresh={onRuntimeRefresh}
             runtimesPending={runtimesPending}
           />
-        ) : (
-          <StepPlatformFork
-            wsId={workspace.id}
-            wsSlug={workspace.slug}
-            onNext={handleRuntimeNext}
-            cliInstructions={runtimeInstructions}
-          />
-        ))}
+        )}
     </StepShell>
   );
 }

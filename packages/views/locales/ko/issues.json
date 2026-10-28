@@ -687,6 +687,7 @@
     "cancel_failed": "실행을 취소하지 못했습니다"
   },
   "execution_log": {
+    "blocked": "차단됨",
     "section": "실행 로그",
     "cancel_task_tooltip": "실행 취소",
     "cancel_task_aria": "실행 취소",
@@ -1417,5 +1418,16 @@
   },
   "jira": {
     "required_notice": "Agent work is waiting for a JIRA ticket ID. Set a key such as FS-123."
+  },
+  "jira_blocker": {
+    "title": "Jira 연결 필요",
+    "instructions": "개인 Atlassian 계정을 연결하면 에이전트가 본인의 권한으로 Jira를 사용합니다. 로그인 후 이 이슈로 돌아와 재개를 선택하세요.",
+    "ready": "Jira가 연결되었습니다. 재개를 선택하면 이슈 맥락을 사용하여 에이전트의 새 실행을 시작합니다.",
+    "connect": "Jira 연결",
+    "resume": "재개",
+    "wait": "현재 실행이 끝나기를 기다리는 중입니다.",
+    "reload": "새로고침",
+    "unavailable": "Jira 로그인을 사용할 수 없습니다. 인스턴스 관리자에게 문의하세요.",
+    "resumed": "Jira 작업 재개됨"
   }
 }

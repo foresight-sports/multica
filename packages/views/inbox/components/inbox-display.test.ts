@@ -33,6 +33,12 @@ function item(overrides: Partial<InboxItem>): InboxItem {
 }
 
 describe("inbox display helpers", () => {
+  it("keeps a creation receipt selected when it becomes an issue", () => {
+    const pending = item({ id: "receipt", issue_id: null, type: "quick_create_pending", details: { original_prompt: "Investigate device entitlements" } });
+    expect(getInboxDisplayTitle(pending)).toBe("Investigate device entitlements");
+    const completed = { ...pending, issue_id: "new-issue", type: "quick_create_done" as const };
+    expect(resolveDetailItem([completed], "receipt", "receipt")).toBe(completed);
+  });
   it("removes legacy quick-create created prefixes from list titles", () => {
     expect(
       stripQuickCreatePrefix(

@@ -32,6 +32,37 @@ func (q *Queries) GetRepositoryConfiguration(ctx context.Context, arg GetReposit
 	return i, err
 }
 
+const listIssueRepositorySources = `-- name: ListIssueRepositorySources :many
+SELECT subject,config FROM repository_configuration
+WHERE scope='task_source' AND subject LIKE $1::text || ':%'
+ORDER BY subject DESC LIMIT 50
+`
+
+type ListIssueRepositorySourcesRow struct {
+	Subject string `json:"subject"`
+	Config  []byte `json:"config"`
+}
+
+func (q *Queries) ListIssueRepositorySources(ctx context.Context, prefix string) ([]ListIssueRepositorySourcesRow, error) {
+	rows, err := q.db.Query(ctx, listIssueRepositorySources, prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueRepositorySourcesRow{}
+	for rows.Next() {
+		var i ListIssueRepositorySourcesRow
+		if err := rows.Scan(&i.Subject, &i.Config); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRuntimeRepositoryWorkspaces = `-- name: ListRuntimeRepositoryWorkspaces :many
 SELECT id FROM workspace WHERE id = (SELECT workspace_id FROM agent_runtime WHERE id = $1::uuid)
 OR EXISTS (SELECT 1 FROM agent a WHERE a.workspace_id=workspace.id AND agent_allows_runtime(a.id, $1::uuid))
@@ -57,6 +88,25 @@ func (q *Queries) ListRuntimeRepositoryWorkspaces(ctx context.Context, runtimeID
 	return items, nil
 }
 
+const pinRepositoryBaseline = `-- name: PinRepositoryBaseline :one
+INSERT INTO repository_configuration(scope,subject,config,revision)
+VALUES ('issue_baseline',$1,$2::jsonb,1)
+ON CONFLICT(scope,subject) DO UPDATE SET config=repository_configuration.config
+RETURNING config
+`
+
+type PinRepositoryBaselineParams struct {
+	Subject string `json:"subject"`
+	Config  []byte `json:"config"`
+}
+
+func (q *Queries) PinRepositoryBaseline(ctx context.Context, arg PinRepositoryBaselineParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, pinRepositoryBaseline, arg.Subject, arg.Config)
+	var config []byte
+	err := row.Scan(&config)
+	return config, err
+}
+
 const putRepositoryReadiness = `-- name: PutRepositoryReadiness :exec
 INSERT INTO repository_configuration(scope,subject,config,revision)
 VALUES ('readiness',$1,$2::jsonb,1)
@@ -70,6 +120,22 @@ type PutRepositoryReadinessParams struct {
 
 func (q *Queries) PutRepositoryReadiness(ctx context.Context, arg PutRepositoryReadinessParams) error {
 	_, err := q.db.Exec(ctx, putRepositoryReadiness, arg.Subject, arg.Config)
+	return err
+}
+
+const putTaskRepositorySource = `-- name: PutTaskRepositorySource :exec
+INSERT INTO repository_configuration(scope,subject,config,revision)
+VALUES ('task_source',$1,$2::jsonb,1)
+ON CONFLICT(scope,subject) DO UPDATE SET config=EXCLUDED.config,revision=repository_configuration.revision+1
+`
+
+type PutTaskRepositorySourceParams struct {
+	Subject string `json:"subject"`
+	Config  []byte `json:"config"`
+}
+
+func (q *Queries) PutTaskRepositorySource(ctx context.Context, arg PutTaskRepositorySourceParams) error {
+	_, err := q.db.Exec(ctx, putTaskRepositorySource, arg.Subject, arg.Config)
 	return err
 }
 

@@ -26,13 +26,19 @@ func (d *Daemon) subscriptionQuotaLoop(ctx context.Context) {
 	var nextClaudePoll time.Time
 	poll := func() {
 		if _, ok := d.agents()["claude"]; ok && len(defaultArgsForProvider(d.cfg, "claude")) == 0 && !time.Now().Before(nextClaudePoll) {
-			report, err := agent.ReadClaudeQuota(ctx)
-			if err != nil && ctx.Err() == nil {
-				nextClaudePoll = time.Now().Add(10 * time.Minute)
-				d.logger.Warn("Claude subscription capacity unavailable; retrying in 10 minutes", "reason", err)
-			}
-			if ctx.Err() == nil {
-				d.reportSubscriptionQuota(ctx, report)
+			configured := map[string]string{}
+			applyProviderAuthEnvironment("claude", configured)
+			if configured["CLAUDE_CODE_OAUTH_TOKEN"] != "" {
+				d.reportSubscriptionQuota(ctx, quota.Report{Provider: "claude", Source: "claude_usage", Status: "unknown", ObservedAt: time.Now().UTC(), Windows: []quota.Window{}})
+			} else {
+				report, err := agent.ReadClaudeQuota(ctx)
+				if err != nil && ctx.Err() == nil {
+					nextClaudePoll = time.Now().Add(10 * time.Minute)
+					d.logger.Warn("Claude subscription capacity unavailable; retrying in 10 minutes", "reason", err)
+				}
+				if ctx.Err() == nil {
+					d.reportSubscriptionQuota(ctx, report)
+				}
 			}
 		}
 		if entry, ok := d.agents()["codex"]; ok {

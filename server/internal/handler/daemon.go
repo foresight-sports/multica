@@ -1179,6 +1179,9 @@ func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
 	updateMs = time.Since(updateStart).Milliseconds()
 
 	ack, m, err := h.processHeartbeat(r.Context(), runtimeID, req.SupportsBatchImport)
+	if err == nil {
+		ack.PendingProviderAuth = h.claimProviderAuth(r.Context(), runtimeID, requestUserID(r), middleware.DaemonIDFromContext(r.Context()))
+	}
 	probeModelMs = m.ProbeModelMs
 	popModelMs = m.PopModelMs
 	probeSkillsMs = m.ProbeSkillsMs
@@ -1199,6 +1202,9 @@ func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// in the WS path and would be redundant noise on the HTTP path where the
 	// caller already knows which runtime it asked about.
 	resp := map[string]any{"status": ack.Status}
+	if ack.PendingProviderAuth != nil {
+		resp["pending_provider_auth"] = ack.PendingProviderAuth
+	}
 	if ack.PendingUpdate != nil {
 		resp["pending_update"] = ack.PendingUpdate
 	}
@@ -1243,6 +1249,9 @@ func (h *Handler) HandleDaemonWSHeartbeat(ctx context.Context, identity daemonws
 		return nil, err
 	}
 	ack, _, err := h.processHeartbeat(ctx, runtimeID, supportsBatchImport)
+	if err == nil {
+		ack.PendingProviderAuth = h.claimProviderAuth(ctx, runtimeID, identity.UserID, identity.DaemonID)
+	}
 	return ack, err
 }
 
@@ -1937,6 +1946,7 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		resp.AuthToken = tokenStr
+		h.attachJiraMCP(&resp)
 		resp.RemoteMCPDaemonToken = remoteMCPToken
 		resp.DeliveredCommentIDs = uuidStringsOrEmpty(receipt)
 		out = append(out, resp)
@@ -2032,18 +2042,38 @@ func (h *Handler) finalizeClaimDelivery(
 		if aerr != nil {
 			return fmt.Errorf("re-read agent for delivery authorization: %w", aerr)
 		}
-		if agent.RuntimeID != task.RuntimeID {
-			return &service.ClaimDeliveryAuthzError{
-				Reason: "error_agent_runtime_changed",
-				Detail: "agent runtime changed before delivery",
-			}
-		}
 		if locked.Visibility == "private" && locked.OwnerID.Valid &&
 			(!agent.OwnerID.Valid || agent.OwnerID != locked.OwnerID) {
 			agentOwnerID = agent.OwnerID
 			return &service.ClaimDeliveryAuthzError{
 				Reason: "error_runtime_access_denied",
 				Detail: "private runtime does not permit task agent at delivery gate",
+			}
+		}
+		// Portable agents have no fixed runtime. Revalidate the selected runtime
+		// and profile inside the delivery transaction, just as at claim time.
+		allowed, accessErr := qtx.AgentAllowsRuntime(ctx, db.AgentAllowsRuntimeParams{AgentID: agent.ID, RuntimeID: task.RuntimeID})
+		if accessErr != nil {
+			return fmt.Errorf("recheck runtime for delivery authorization: %w", accessErr)
+		}
+		selection := execution.ParseSelection(task.ExecutionSelection)
+		if selection.State != "" {
+			raw, policyErr := qtx.GetExecutionPolicy(ctx, agent.ID)
+			if policyErr != nil {
+				return fmt.Errorf("recheck execution policy for delivery authorization: %w", policyErr)
+			}
+			found := false
+			for _, profile := range execution.ParsePolicy(raw).Profiles {
+				if profile.ID == selection.Profile.ID && profile.Provider == locked.Provider && profile.Model == selection.Profile.Model && profile.ThinkingLevel == selection.Profile.ThinkingLevel && profile.ServiceTier == selection.Profile.ServiceTier {
+					found = true
+				}
+			}
+			allowed = allowed && found
+		}
+		if !allowed {
+			return &service.ClaimDeliveryAuthzError{
+				Reason: "error_agent_runtime_changed",
+				Detail: "agent runtime changed before delivery",
 			}
 		}
 		if !locked.OwnerID.Valid {
@@ -3990,6 +4020,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp.AuthToken = tokenStr
+	h.attachJiraMCP(&resp)
 	resp.RemoteMCPDaemonToken = remoteMCPToken
 	task.DeliveredCommentIds = receipt
 	resp.DeliveredCommentIDs = uuidStringsOrEmpty(receipt)
@@ -4236,7 +4267,13 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Warn("start task failed", "task_id", taskID, "error", err)
-		if errors.Is(err, pgx.ErrNoRows) {
+		if service.IsExecutionMachineUnavailable(err) {
+			status := http.StatusUnprocessableEntity
+			if service.IsExecutionStartRequeued(err) {
+				status = http.StatusConflict
+			}
+			writeError(w, status, err.Error())
+		} else if errors.Is(err, pgx.ErrNoRows) {
 			status := http.StatusConflict
 			if legacy {
 				status = http.StatusBadRequest

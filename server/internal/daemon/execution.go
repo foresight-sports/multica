@@ -48,7 +48,7 @@ func (d *Daemon) reportExecutionCapabilities(ctx context.Context, runtimes []Run
 			inventory = d.discoverRuntimeCapabilities(ctx, rt)
 			inventories[key] = inventory
 		}
-		_ = d.client.postJSON(ctx, "/api/daemon/runtimes/"+rt.ID+"/execution-capabilities", map[string]any{"runtime_capabilities": inventory, "execution_observed_at": time.Now().UTC(), "os": runtime.GOOS, "tools": tools, "execution_version": 1, "arch": runtime.GOARCH, "instance_update_version": 1, "workspace_repository_version": 2, "machine_logs_version": 1, "jira_ticket_version": 1, "work_handoff_version": 1}, nil)
+		_ = d.client.postJSON(ctx, "/api/daemon/runtimes/"+rt.ID+"/execution-capabilities", map[string]any{"runtime_capabilities": inventory, "execution_observed_at": time.Now().UTC(), "os": runtime.GOOS, "tools": tools, "execution_version": 1, "arch": runtime.GOARCH, "instance_update_version": 1, "workspace_repository_version": 3, "machine_logs_version": 1, "provider_auth_version": providerAuthCapabilityVersion(), "jira_ticket_version": 1, "work_handoff_version": 1}, nil)
 	}
 }
 

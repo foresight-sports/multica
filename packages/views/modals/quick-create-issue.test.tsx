@@ -205,6 +205,7 @@ vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Test Workspace" }),
   useWorkspacePaths: () => ({
     settings: () => "/ws-test/settings",
+    inbox: () => "/ws-test/inbox",
   }),
 }));
 
@@ -540,7 +541,7 @@ describe("AgentCreatePanel", () => {
     mockProjectsQuery.isSuccess = true;
     mockSquadsData.list = [];
     mockRuntimesData.list = [{ id: "runtime-1", metadata: { cli_version: "1.2.3" } }];
-    mockQuickCreateIssue.mockResolvedValue(undefined);
+    mockQuickCreateIssue.mockResolvedValue({ task_id: "creation-task", inbox_item_id: "creation-task" });
     mockCreateCommentSubIssue.mockResolvedValue({ task_id: "task-source-child" });
     mockApiUploadFile.mockResolvedValue({
       id: "019ec09d-6222-722b-bdfa-427b105d80be",
@@ -625,6 +626,11 @@ describe("AgentCreatePanel", () => {
     await userEvent.click(screen.getByRole("button", {name:/^Create$/i}));
     await waitFor(()=>expect(mockQuickCreateIssue).toHaveBeenCalledWith(expect.objectContaining({squad_id:"squad-intake"})));
     expect(mockQuickCreateIssue.mock.calls[0]?.[0]?.agent_id).toBeUndefined();
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalled());
+    const confirmation = mockToastSuccess.mock.calls.at(-1)?.[1];
+    expect(confirmation.action.label).toBe("View progress");
+    confirmation.action.onClick();
+    expect(mockNavigationPush).toHaveBeenCalledWith("/ws-test/inbox?issue=creation-task");
   });
 
   it("writes prompt changes back to the draft store and clears them after submit", async () => {

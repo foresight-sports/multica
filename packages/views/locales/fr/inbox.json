@@ -60,6 +60,8 @@
     "unarchive": "Désarchiver"
   },
   "types": {
+    "installation_approval": "Votre approbation est requise",
+    "installation_decided": "Demande d’installation mise à jour",
     "issue_assigned": "Assigné",
     "issue_subscribed": "Abonné",
     "unassigned": "Désassigné",
@@ -76,6 +78,8 @@
     "agent_blocked": "Agent bloqué",
     "agent_completed": "Agent terminé",
     "reaction_added": "Réaction",
+    "quick_create_pending": "Création du ticket en cours",
+    "quick_create_pending_body": "Demande reçue. Votre agent prépare le ticket. Vous pouvez quitter cette page ; le résultat apparaîtra ici.",
     "quick_create_done": "Créé avec un agent",
     "quick_create_failed": "Échec de la création avec un agent",
     "quick_create_unconfirmed": "Création avec un agent non confirmée",

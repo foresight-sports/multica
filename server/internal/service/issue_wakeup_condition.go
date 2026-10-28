@@ -307,7 +307,7 @@ func evaluateCondition(ctx context.Context, tx pgx.Tx, q *db.Queries, w db.Issue
 
 // conditionHintSQL selects the event receipts a condition rule subscribes to.
 // They only prompt an early evaluation and never become run inputs.
-const conditionHintSQL = "wakeup_id=$1 AND processed_at IS NULL AND event_type NOT IN ('condition.met','wakeup.timeout','wakeup.manual')"
+const conditionHintSQL = "wakeup_id=$1 AND processed_at IS NULL AND event_type NOT IN ('condition.met','wakeup.timeout','wakeup.manual','child.review_ready')"
 
 // consumeConditionHints marks the pending hints processed. It also returns the
 // agent runs that caused them, or nil when any hint came from elsewhere (a

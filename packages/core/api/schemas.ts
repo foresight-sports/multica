@@ -2582,6 +2582,7 @@ export const UserSchema = z
         .object({
         register_runtimes: z.boolean().catch(false),
         manage_permission_access: z.boolean().catch(false),
+        create_workspaces: z.boolean().catch(false),
         create_instance_agents: z.boolean().catch(false),
         create_agents: z.boolean().catch(false),
         edit_agents: z.boolean().catch(false),
@@ -2589,6 +2590,7 @@ export const UserSchema = z
         .catch({
         register_runtimes: false,
         manage_permission_access: false,
+        create_workspaces: false,
         create_instance_agents: false,
         create_agents: false,
         edit_agents: false,
@@ -2635,6 +2637,10 @@ export const InboxUnreadSummarySchema = z.array(z
 })
     .loose());
 export const EMPTY_INBOX_UNREAD_SUMMARY: InboxWorkspaceUnread[] = [];
+export const QuickCreateReceiptSchema = z.object({
+  task_id: z.string().min(1),
+  inbox_item_id: z.string().min(1).optional(),
+}).loose();
 // ---------------------------------------------------------------------------
 // Inbox items (`/api/inbox` and `/api/inbox/archived` GET).
 // Lenient per the usual rules: `severity` / `type` / `recipient_type` stay
@@ -3580,6 +3586,7 @@ export const EMPTY_JOIN_SHARE_LINK_RESPONSE: {
 };
 export const RuntimePermissionPolicySchema = z.object({
     action: z.enum([
+        "workspace.create",
         "runtime.register",
         "instance-agent.create",
         "agent.create",

@@ -1443,11 +1443,21 @@
     "loading": "Loading JIRA settings…"
   },
   "instance": {
+    "role_owner": "Propriétaire",
+    "membership_warning": "La suppression de cet accès révoque aussi les runtimes de cette personne et annule les exécutions concernées.",
+    "role_admin": "Administrateur",
+    "edit_memberships": "Modifier les espaces de travail",
+    "role_member": "Membre",
+    "role_none": "Aucun accès",
+    "members_hint": "Comptes de cette instance et leurs rôles dans les espaces.",
+    "members_truncated": "Les 1 000 premiers comptes sont affichés.",
+    "no_workspaces": "Aucune appartenance à un espace",
+    "members": "Membres de cette instance",
     "create_scope": "Instance agent",
     "create_scope_hint": "Create one centrally configured agent for every workspace. Instance is selected by default. All workspaces use the same runtime, model, skills and access settings below; each workspace can disable the agent.",
     "create_flow_hint": "Use the normal agent creation flow and select Instance agent in the configuration panel.",
     "title": "Instance",
-    "description": "Shared instructions and agents across every workspace on this server.",
+    "description": "Instructions partagées entre tous les espaces de travail de ce serveur.",
     "instructions": "Instance instructions",
     "instructions_hint": "Included on every agent run, alongside workspace and agent instructions. Changes apply when the next run starts.",
     "read_only": "Only instance administrators can edit the shared instance instructions.",
@@ -1472,7 +1482,8 @@
     "disable_hint": "Disabling an agent cancels its unfinished runs in this workspace and preserves its history.",
     "configure": "Configure instance agent",
     "runtime_required": "The central runtime needs configuration by an instance administrator.",
-    "managed": "This agent is configured centrally. Runtime, model, skills and access are shared from its original workspace. Name, description and instructions are managed in Settings → Instance."
+    "managed": "This agent is configured centrally. Runtime, model, skills and access are shared from its original workspace. Name, description and instructions are managed in Settings → Instance.",
+    "agents_nav": "Agents"
   },
   "permission_access": {
     "scope": "All workspaces",
@@ -1489,7 +1500,7 @@
     "instance_create_title": "Create instance agents",
     "saving": "Saving…",
     "runtime_title": "Register runtimes",
-    "title": "Permission access",
+    "title": "Autorisations",
     "users": "Allowed users",
     "empty": "Saving an empty list blocks everyone from this action.",
     "save": "Save access",
@@ -1502,7 +1513,9 @@
     "unrestricted": "This action is currently unrestricted. Saving limits access to the listed users.",
     "reload": "Reload latest",
     "description": "Manage who can perform restricted actions across all workspaces in this Multica installation.",
-    "runtime_description": "Choose who can add computers and register their AI runtimes. Users must also belong to the workspace."
+    "runtime_description": "Choose who can add computers and register their AI runtimes. Users must also belong to the workspace.",
+    "workspace_create_title": "Créer des espaces de travail",
+    "workspace_create_description": "Seuls les utilisateurs listés peuvent créer des espaces. Être propriétaire d’un espace ne confère pas ce droit."
   },
   "intake": {
     "title": "Ticket intake",
@@ -1525,6 +1538,8 @@
     "missing_project": "Unavailable project — select Use workspace default to remove this override"
   },
   "repository": {
+    "base_branch": "Branche de base partagée",
+    "base_branch_description": "Les tâches récupèrent cette branche et partagent un commit source par ticket. Laisser vide pour utiliser les copies locales.",
     "title": "Workspace repository",
     "description": "Set a GitHub repository to clone it automatically on eligible computers, or set only a local folder to use existing directories. At least one is required to create issues.",
     "machine_title": "Repositories folder",
@@ -1547,5 +1562,21 @@
     "repo_placeholder": "owner/repository",
     "required": "This workspace needs a GitHub repository or a local folder before you can create issues. Your draft is kept.",
     "configure": "Configure workspace repository"
+  },
+  "jira_connection": {
+    "title": "Connexion Jira",
+    "description": "Les agents utilisent votre compte Jira et vos autorisations pour vos demandes. Les identifiants restent sur le serveur Multica.",
+    "loading": "Chargement…",
+    "unavailable": "La connexion Jira n’est pas configurée sur cette instance.",
+    "pending": "Terminez la connexion dans votre navigateur.",
+    "connected": "Votre compte Jira est connecté.",
+    "expired": "Autorisez à nouveau votre connexion Jira.",
+    "disconnected": "Jira n’est pas connecté.",
+    "connect": "Connecter Jira",
+    "reconnect": "Reconnecter Jira",
+    "disconnect": "Déconnecter",
+    "confirm": "Déconnecter Jira ? Les nouveaux appels Jira de vos tâches en cours seront bloqués.",
+    "cancel": "Annuler",
+    "retry": "Réessayer"
   }
 }

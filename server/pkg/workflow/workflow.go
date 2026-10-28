@@ -9,6 +9,7 @@ import (
 )
 
 type Data struct {
+	Supersedes   []string     `json:"supersedes,omitempty"`
 	Tool         string       `json:"tool,omitempty"`
 	Version      string       `json:"version,omitempty"`
 	Source       string       `json:"source,omitempty"`
@@ -54,6 +55,9 @@ func ValidBranch(s string) bool {
 	return len(s) > 0 && len(s) <= 240 && !strings.HasPrefix(s, "-") && !strings.HasPrefix(s, "/") && !strings.HasSuffix(s, "/") && !strings.ContainsAny(s, " ~^:?*[\\\t\r\n") && !strings.Contains(s, "..") && !strings.Contains(s, "@{") && !strings.Contains(s, "//") && !strings.HasSuffix(s, ".lock")
 }
 func (d Data) Validate(kind string) error {
+	if len(d.Supersedes) > 20 || (len(d.Supersedes) > 0 && kind != "decision" && kind != "blocker") {
+		return fmt.Errorf("only decisions or blockers may supersede up to 20 records")
+	}
 	for _, s := range []string{d.Tool, d.Version, d.Source, d.Scope, d.Effects, d.Reason, d.Verification, d.Repository, d.Branch, d.Commit, d.PRURL, d.Validation, d.NextStep, d.Owner, d.Text} {
 		if len(s) > 4000 {
 			return fmt.Errorf("workflow fields must be at most 4000 bytes")

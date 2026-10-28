@@ -13,4 +13,5 @@ export * from "./custom-pricing-store";
 export * from "./cloud-runtime";
 
 export * from "./instance-update";
+export * from "./provider-auth";
 export { parseMachineCapabilities } from "./capabilities";

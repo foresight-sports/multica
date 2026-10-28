@@ -58,6 +58,8 @@
     "unarchive": "보관 해제"
   },
   "types": {
+    "installation_approval": "승인이 필요합니다",
+    "installation_decided": "설치 요청이 업데이트되었습니다",
     "issue_assigned": "할당됨",
     "issue_subscribed": "구독됨",
     "unassigned": "할당 해제됨",
@@ -74,6 +76,8 @@
     "agent_blocked": "에이전트 막힘",
     "agent_completed": "에이전트 완료됨",
     "reaction_added": "반응 추가됨",
+    "quick_create_pending": "이슈 생성 중",
+    "quick_create_pending_body": "요청이 접수되었습니다. 에이전트가 이슈를 준비하고 있습니다. 이 페이지를 떠나도 결과는 여기에 표시됩니다.",
     "quick_create_done": "에이전트로 생성됨",
     "quick_create_failed": "에이전트 생성 실패",
     "quick_create_unconfirmed": "에이전트 생성 결과 미확인",

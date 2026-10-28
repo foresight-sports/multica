@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,38 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/testutil"
 )
+
+func TestStartClaimUnavailableSelectionReturnsConflict(t *testing.T) {
+	id, runtimeID, generation := startClaimFixture(t, "dispatched")
+	dbfx.Exec(t, `UPDATE agent_task_queue SET execution_selection=$2::jsonb WHERE id=$1`, id,
+		`{"state":"selected","profile":{"id":"removed-profile","model":"removed-model"}}`)
+	w := httptest.NewRecorder()
+	testHandler.StartTask(w, startClaimRequest(id, runtimeID, generation))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "Selected profile or machine is no longer accessible") {
+		t.Fatalf("expected actionable, non-retryable conflict, got %d: %s", w.Code, w.Body.String())
+	}
+	var status string
+	dbfx.QueryRow(t, `SELECT status FROM agent_task_queue WHERE id=$1`, id).Scan(&status)
+	if status != "queued" {
+		t.Fatalf("rejected portable claim should remain queued: %s", status)
+	}
+}
+
+func TestStartClaimLockedSelectionDoesNotDiscardOwnedClaim(t *testing.T) {
+	id, runtimeID, generation := startClaimFixture(t, "dispatched")
+	dbfx.Exec(t, `UPDATE agent_task_queue SET execution_selection=$2::jsonb WHERE id=$1`, id,
+		`{"state":"selected","locked":true,"profile":{"id":"removed-profile","model":"removed-model"}}`)
+	w := httptest.NewRecorder()
+	testHandler.StartTask(w, startClaimRequest(id, runtimeID, generation))
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "Selected profile or machine is no longer accessible") {
+		t.Fatalf("owned locked claim must receive actionable failure, got %d: %s", w.Code, w.Body.String())
+	}
+	var status string
+	dbfx.QueryRow(t, `SELECT status FROM agent_task_queue WHERE id=$1`, id).Scan(&status)
+	if status != "dispatched" {
+		t.Fatalf("locked selection was silently rerouted: %s", status)
+	}
+}
 
 func startClaimFixture(t *testing.T, status string) (string, string, time.Time) {
 	t.Helper()

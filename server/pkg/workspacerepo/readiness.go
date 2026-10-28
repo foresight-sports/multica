@@ -86,7 +86,7 @@ func Status(ctx context.Context, q *db.Queries, rt db.AgentRuntime, workspace st
 		Version int `json:"workspace_repository_version"`
 	}
 	_ = json.Unmarshal(rt.Metadata, &meta)
-	if meta.Version < 2 {
+	if meta.Version < 2 || (p.BaseBranch != "" && meta.Version < 3) {
 		status.State = "upgrade_required"
 		status.Message = "Update Multica on this computer to prepare workspace repositories"
 		return status, nil

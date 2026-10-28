@@ -39,6 +39,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/skillbundle"
 	"github.com/multica-ai/multica/server/pkg/taskfailure"
 	"github.com/multica-ai/multica/server/pkg/workflow"
+	"github.com/multica-ai/multica/server/pkg/workspacerepo"
 )
 
 // ErrRepoNotConfigured is returned by ensureRepoReady when the requested repo
@@ -87,12 +88,12 @@ const (
 	taskSlotCapacityBackoff  = 5 * time.Second
 	repoCheckoutModeEnv      = "MULTICA_REPO_CHECKOUT_MODE"
 	repoCheckoutModeIsolated = "isolated"
-	// defaultTaskPrepareTimeout is a hard liveness bound for everything after
+	// defaultTaskPrepareTimeout is an inactivity bound for everything after
 	// claim and before StartTask succeeds: runtime resolution, skill bundles,
 	// execution-environment setup, and the StartTask request itself. It is
 	// intentionally independent from AgentTimeout, which only governs the
 	// provider process after the task reaches running.
-	defaultTaskPrepareTimeout = 5 * time.Minute
+	defaultTaskPrepareTimeout = 20 * time.Minute
 	// pendingWorkHeartbeatTimeout bounds the out-of-band heartbeat a
 	// server-pushed daemon:pending_work hint triggers (MUL-5444). Short on
 	// purpose: the hint is only a latency optimisation, and the scheduled
@@ -4629,6 +4630,9 @@ func (d *Daemon) handleHeartbeatActions(ctx context.Context, runtimeID string, r
 	if resp.PendingUpdate != nil {
 		go d.handleUpdate(ctx, runtimeID, resp.PendingUpdate)
 	}
+	if resp.PendingProviderAuth != nil {
+		go d.handleProviderAuth(ctx, runtimeID, resp.PendingProviderAuth)
+	}
 	if resp.PendingModelList != nil {
 		if rt := d.findRuntime(runtimeID); rt != nil {
 			go d.handleModelList(ctx, *rt, resp.PendingModelList.ID)
@@ -7776,7 +7780,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 
 	prepareTimeout := d.effectiveTaskPrepareTimeout()
-	prepareCtx, cancelPrepare := context.WithTimeoutCause(ctx, prepareTimeout, errTaskPrepareTimeout)
+	var sharedBaseline *workspacerepo.Baseline
+	prepareCtx, cancelPrepare := execenv.WithPreparationInactivityTimeout(ctx, prepareTimeout, errTaskPrepareTimeout)
 	prepareComplete := false
 	defer func() {
 		cancelPrepare()
@@ -7787,7 +7792,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// or the explicit waitForExecutionEnvironment cause) into one sentinel
 		// that handleTask can classify as a retryable platform timeout.
 		taskResult = TaskResult{}
-		returnErr = fmt.Errorf("%w after %s", errTaskPrepareTimeout, prepareTimeout)
+		returnErr = fmt.Errorf("%w after %s without progress", errTaskPrepareTimeout, prepareTimeout)
 	}()
 
 	// task.Repos is the authoritative repo list for this task — when the
@@ -7853,6 +7858,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{}, err
 	}
 	phaseRecorder.Mark(taskPhaseSkillsReady)
+	execenv.ReportPreparationProgress(prepareCtx)
 
 	agentName := "agent"
 	var skills []SkillData
@@ -7937,7 +7943,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// *os.File cannot cross its JSON response back to us. Claiming there would
 	// leave the agent running with no protection at all — which is exactly the
 	// re-dispatch window this guards.
-	envClaim, err := execenv.ClaimEnvRoot(taskRootDirParams(d.cfg.WorkspacesRoot, task))
+	envClaim, err := waitForEnvRootClaim(prepareCtx, taskRootDirParams(d.cfg.WorkspacesRoot, task))
 	if err != nil {
 		return TaskResult{}, fmt.Errorf("claim execution environment: %w", err)
 	}
@@ -8257,7 +8263,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			Task:                  taskCtx,
 		}
 		if localAssignment.UsesWorktree() {
+			sharedBaseline, err = d.prepareSharedBaseline(prepareCtx, task, localAssignment)
+			if err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("prepare shared repository baseline: %w", err))
+			}
 			prepParams.LocalWorktree = &execenv.LocalWorktreeParams{LocalPath: localAssignment.AbsPath}
+			if sharedBaseline != nil {
+				prepParams.LocalWorktree.SharedBase = sharedBaseline.Commit
+			}
 			// Take the per-path mutex for the snapshot alone, then hand it
 			// straight back — long enough to read a consistent tree, short
 			// enough that worktree tasks still overlap for the run itself.
@@ -8492,6 +8505,15 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// "start task failed: <…>" string and the same failure_reason
 	// taxonomy as before — see MUL-2946 for the classifier contract.
 	var taskCapabilities []string
+	if env.LocalWorktree != nil {
+		task.WorkspaceContext += execenv.RepositoryProvenance(env.LocalWorktree)
+		if sharedBaseline != nil {
+			sharedBaseline.Snapshot = env.LocalWorktree.BaseCommit
+			if err := d.client.postJSON(prepareCtx, "/api/daemon/tasks/"+task.ID+"/repository-baseline", sharedBaseline, nil); err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("save repository provenance: %w", err))
+			}
+		}
+	}
 	if agent.SupportsTaskSupplement(provider, resolvedVersion) && task.IssueID != "" {
 		taskCapabilities = append(taskCapabilities, protocol.DaemonCapabilityTaskSupplementV1)
 	}
@@ -8568,6 +8590,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{}, err
 	}
 	agentEnv := taskMulticaEnvironment(task, agentName, agentToken, env.MulticaConfigRoot, d.cfg.WorkspacesRoot, d.cfg.ServerBaseURL, d.cfg.HealthPort, slot, taskTempDir)
+	if !usesCustomProfileCommand {
+		applyProviderAuthEnvironment(provider, agentEnv)
+	}
 	if checkoutMode := repoCheckoutModeFor(provider, runtime.GOOS); checkoutMode != "" {
 		agentEnv[repoCheckoutModeEnv] = checkoutMode
 	}

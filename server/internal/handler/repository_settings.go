@@ -125,6 +125,9 @@ func (h *Handler) applyWorkspaceRepository(ctx context.Context, resp *AgentTaskR
 	if meta.Version < 2 || !capable {
 		return fmt.Errorf("update this machine's Multica client to support workspace repositories")
 	}
+	if c.BaseBranch != "" && meta.Version < 3 {
+		return fmt.Errorf("update this machine to support shared repository baselines")
+	}
 	if !rt.DaemonID.Valid || !rt.OwnerID.Valid {
 		return fmt.Errorf("workspace repository requires an owned machine")
 	}
@@ -136,7 +139,7 @@ func (h *Handler) applyWorkspaceRepository(ctx context.Context, resp *AgentTaskR
 		return fmt.Errorf("set this machine's repositories folder before running workspace tasks")
 	}
 	localPath := workspacerepo.Join(machine.Root, c.Folder)
-	ref, _ := json.Marshal(map[string]string{"daemon_id": rt.DaemonID.String, "local_path": localPath, "repositories_root": machine.Root, "expected_repository": c.Repository, "execution_mode": c.Mode, "label": c.Folder})
+	ref, _ := json.Marshal(map[string]any{"daemon_id": rt.DaemonID.String, "local_path": localPath, "repositories_root": machine.Root, "expected_repository": c.Repository, "execution_mode": c.Mode, "label": c.Folder, "base_branch": c.BaseBranch, "repository_revision": c.Revision})
 	// Never silently replace a project's different local directory.
 	filtered := make([]ProjectResourceData, 0, len(resp.ProjectResources)+1)
 	for _, res := range resp.ProjectResources {

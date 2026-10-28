@@ -14,6 +14,7 @@ import (
 type workspacePermission string
 
 const (
+	permissionCreateWorkspace     workspacePermission = "workspace.create"
 	permissionRegisterRuntime     workspacePermission = "runtime.register"
 	permissionCreateInstanceAgent workspacePermission = "instance-agent.create"
 	permissionCreateAgent         workspacePermission = "agent.create"

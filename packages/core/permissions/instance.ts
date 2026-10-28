@@ -3,6 +3,15 @@ import { api } from "../api";
 import type { InstanceAgentInput, InstanceConfiguration } from "../api/instance-schema";
 
 const configKey = (userId: string) => ["instance-configuration", userId] as const;
+export function instanceMembersOptions(userId: string, canManage: boolean) {
+  return queryOptions({ queryKey: ["instance-members", userId], queryFn: () => api.listInstanceMembers(),
+    enabled: !!userId && canManage, retry: false });
+}
+export function useSetInstanceMembership(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (input: { memberId: string; workspaceId: string; role: "none" | "member" | "admin" | "owner" }) => api.setInstanceMembership(input.memberId, input.workspaceId, input.role),
+    onSuccess: async () => { await Promise.all([qc.invalidateQueries({ queryKey: ["instance-members", userId] }), qc.invalidateQueries({ queryKey: ["workspaces"] })]); } });
+}
 const agentsKey = (wsId: string, userId: string) => ["instance-agents", wsId, userId] as const;
 
 export function instanceConfigurationOptions(userId: string) {

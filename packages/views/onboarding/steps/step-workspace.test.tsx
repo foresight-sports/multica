@@ -1,3 +1,4 @@
+vi.mock("@multica/core/auth", () => ({ useAuthStore: (selector: (s: {user: {permissions: {create_workspaces: boolean}}}) => unknown) => selector({user: {permissions: {create_workspaces: true}}}) }));
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";

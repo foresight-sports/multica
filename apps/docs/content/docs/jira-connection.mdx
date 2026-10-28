@@ -1,0 +1,36 @@
+---
+title: Personal Jira connection
+description: Let agents use your Jira account through Atlassian MCP.
+---
+
+In **Settings → Account → Jira connection**, choose **Connect Jira**. Confirm
+the Multica account shown in the browser, then authorize access in Atlassian.
+Return to Multica after the confirmation. Each person connects their own account.
+
+New agent runs on your behalf receive the `multica_jira` MCP connection. Delegated
+runs use their recorded human requester, not the agent or machine owner's Jira
+account. Jira permissions still apply. Existing running sessions need a new run
+to discover a connection added after they started.
+
+Expired or revoked authorization shows **Reconnect Jira**. Disconnecting removes
+the stored connection and blocks subsequent calls, including calls from running
+tasks. An upstream call already in flight may finish. To revoke the Atlassian
+consent itself, also remove Multica in your Atlassian connected-app settings.
+
+## Instance setup
+
+Set `MULTICA_PUBLIC_URL` to the public HTTPS API origin and
+`MULTICA_JIRA_MCP_SECRET_KEY` to a randomly generated, base64-encoded 32-byte key.
+Keep this key in persistent secret storage and back it up securely; changing or
+losing it requires users to reconnect. The Compose deployment forwards both.
+
+Multica registers an OAuth client with Atlassian during user-initiated sign-in.
+Your Atlassian organization may need to allow the Multica callback domain. The
+callback path is `/api/integrations/jira/callback`. Network access is required to
+`mcp.atlassian.com`. Browser sign-in must pass any instance access gateway.
+
+The gateway exposes Jira tools plus Atlassian account/resource discovery. Tool
+availability depends on the user's consent and the organization's MCP settings;
+Jira management permissions may require administrator enablement. No shared
+service account is used. This feature does not configure Jira access for generic
+machine-local MCP servers or change existing Composio account-selection rules.

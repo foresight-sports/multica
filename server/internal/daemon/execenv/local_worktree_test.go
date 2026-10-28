@@ -1912,3 +1912,68 @@ func TestIsolatedPrepareKeepsTheReadOnlyBranchDrop(t *testing.T) {
 		t.Error("a turn that changed nothing left its branch behind")
 	}
 }
+
+func TestFinalizePreservesNamedFeatureBranch(t *testing.T) {
+	for _, skipEmptyBaseline := range []bool{false, true} {
+		t.Run(fmt.Sprint(skipEmptyBaseline), func(t *testing.T) {
+			repo := newTestRepo(t)
+			wt := prepareTurn(t, repo, "MUL-9910", turnOneTask)
+			base := wt.BaseCommit
+			start := base
+			if skipEmptyBaseline {
+				start = base + "^"
+			}
+			gitRun(t, wt.Path, "checkout", "-b", "feature/requested", start)
+			writeFile(t, filepath.Join(wt.WorkDir, "feature.txt"), "delivered\n")
+			gitRun(t, wt.Path, "add", "-A")
+			gitRun(t, wt.Path, "commit", "-m", "feature work")
+			feature := gitRun(t, wt.Path, "rev-parse", "HEAD")
+			outcome := finalizeOK(t, wt)
+			if outcome.Branch != wt.Branch {
+				t.Fatalf("lost continuation branch: %+v", outcome)
+			}
+			if got := gitRun(t, repo, "rev-parse", "feature/requested"); got != feature {
+				t.Fatal("feature branch was rewritten")
+			}
+			gitRun(t, repo, "merge-base", "--is-ancestor", base, wt.Branch)
+			gitRun(t, repo, "merge-base", "--is-ancestor", feature, wt.Branch)
+			if got := gitRun(t, repo, "show", wt.Branch+":feature.txt"); got != "delivered" {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestFinalizeFeatureBranchCannotDropLocalEdits(t *testing.T) {
+	repo := newTestRepo(t)
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "user edits\n")
+	wt := prepareTurn(t, repo, "MUL-9911", turnOneTask)
+	base := wt.BaseCommit
+	gitRun(t, wt.Path, "checkout", "-b", "feature/unsafe", base+"^")
+	writeFile(t, filepath.Join(wt.WorkDir, "feature.txt"), "feature\n")
+	gitRun(t, wt.Path, "add", "-A")
+	gitRun(t, wt.Path, "commit", "-m", "feature work")
+	outcome, err := wt.Finalize(worktreeTestLogger())
+	if err == nil || outcome.PreservedPath != wt.Path {
+		t.Fatal("accepted discarded user changes")
+	}
+	if got := gitRun(t, repo, "rev-parse", wt.Branch); got != base {
+		t.Fatal("managed branch changed")
+	}
+}
+
+func TestFinalizeExcludesScratchCheckout(t *testing.T) {
+	repo := newTestRepo(t)
+	wt := prepareTurn(t, repo, "MUL-9912", turnOneTask)
+	scratch := filepath.Join(wt.Path, ".multica", "checkpoint-clean")
+	gitRun(t, wt.Path, "clone", "--local", repo, scratch)
+	gitRun(t, wt.Path, "add", ".multica/checkpoint-clean")
+	writeFile(t, filepath.Join(wt.WorkDir, "delivery.txt"), "real work\n")
+	outcome := finalizeOK(t, wt)
+	if got := gitRun(t, repo, "ls-tree", "-r", outcome.Branch, ".multica"); got != "" {
+		t.Fatalf("scratch committed: %s", got)
+	}
+	if got := gitRun(t, repo, "show", outcome.Branch+":delivery.txt"); got != "real work" {
+		t.Fatal(got)
+	}
+}

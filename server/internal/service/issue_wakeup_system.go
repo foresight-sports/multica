@@ -38,7 +38,8 @@ const (
 	WorkspaceSettingChildDoneInstruction = "system_wakeup_child_done_instruction"
 	// childChangeHint prompts an evaluation after sub-issues changed. Like
 	// other hints it never becomes a run input.
-	childChangeHint = "children.changed"
+	childChangeHint  = "children.changed"
+	childReviewReady = "child.review_ready"
 )
 
 var childDoneCondition = json.RawMessage(`{"type":"children_done","each_stage":true}`)
@@ -46,7 +47,7 @@ var childDoneCondition = json.RawMessage(`{"type":"children_done","each_stage":t
 // ChildDoneDefaultInstruction is what the woken assignee is asked to do when
 // neither the issue nor the workspace sets an instruction. The trigger facts
 // say which stage closed, which one is next and how many were cancelled.
-const ChildDoneDefaultInstruction = "Sub-issues of this issue have closed; the trigger facts list each stage and which one is next. " +
+const ChildDoneDefaultInstruction = "For child.review_ready events, review the child according to the trigger instructions before advancing any dependencies. For closure events, sub-issues of this issue have closed; the trigger facts list each stage and which one is next. " +
 	"If a later stage is waiting, check that its dependencies are met, then move its sub-issues out of backlog so they start. " +
 	"If a sub-issue in the closed stages was cancelled rather than finished, decide whether its work is still needed before advancing. " +
 	"When every sub-issue is closed, bring their results together on this issue and move it forward, or mark it ready for review when nothing remains."
@@ -226,6 +227,32 @@ func (s *IssueWakeupService) processChildEvents(ctx context.Context, parentID pg
 	payload, _ := json.Marshal(hint)
 	key := "children:" + util.UUIDToString(events[len(events)-1].ID)
 	for _, w := range rules {
+		if w.SystemRule.String == SystemRuleChildDone && w.Enabled {
+			for _, e := range events {
+				if e.Kind != "review_ready" {
+					continue
+				}
+				child, loadErr := q.GetIssue(ctx, e.ChildID)
+				if errors.Is(loadErr, pgx.ErrNoRows) {
+					continue
+				}
+				if loadErr != nil {
+					return loadErr
+				}
+				if child.WorkspaceID != parent.WorkspaceID || child.ParentIssueID != parent.ID || child.Status != "in_review" {
+					continue
+				}
+				facts := map[string]any{"child_id": util.UUIDToString(e.ChildID), "status": "in_review",
+					"instruction": "Review this child's findings. Recheck its current parent and status before acting. Accept satisfactory work by closing the child, or return it for rework with actionable feedback. Review readiness alone does not satisfy stage dependencies."}
+				if e.SourceTaskID.Valid {
+					facts["source_task_ids"] = []string{util.UUIDToString(e.SourceTaskID)}
+				}
+				data, _ := json.Marshal(facts)
+				if _, err = q.RecordWakeupReceipt(ctx, db.RecordWakeupReceiptParams{ID: dbid.NewV7(), WakeupID: w.ID, Revision: w.Revision, EventKey: "review:" + util.UUIDToString(e.ID), EventType: childReviewReady, Payload: data}); err != nil {
+					return err
+				}
+			}
+		}
 		if _, err = q.RecordWakeupReceipt(ctx, db.RecordWakeupReceiptParams{ID: dbid.NewV7(), WakeupID: w.ID, Revision: w.Revision, EventKey: key, EventType: childChangeHint, Payload: payload}); err != nil {
 			return err
 		}
@@ -355,6 +382,11 @@ func resolveWakeTarget(ctx context.Context, q *db.Queries, issue db.Issue) (wake
 // closed) and how many sub-issues that covers.
 func childDoneFacts(receipts []db.IssueWakeupReceipt) map[string]any {
 	facts := map[string]any{"rule": SystemRuleChildDone}
+	for _, r := range receipts {
+		if r.EventType == childReviewReady {
+			facts["review_ready"] = true
+		}
+	}
 	for i := len(receipts) - 1; i >= 0; i-- {
 		if receipts[i].EventType != wakeupConditionEventType {
 			continue
@@ -556,7 +588,7 @@ func (s *IssueWakeupService) dispatchSystem(ctx context.Context, prev db.IssueWa
 			details, _ := json.Marshal(facts)
 			item, err := q.CreateInboxItem(ctx, db.CreateInboxItemParams{
 				ID: dbid.NewV7(), WorkspaceID: issue.WorkspaceID, RecipientType: "member", RecipientID: current.ID,
-				Type: "children_done", Severity: "info", IssueID: issue.ID, Title: issue.Title,
+				Type: childWakeupInboxType(receipts), Severity: "info", IssueID: issue.ID, Title: issue.Title,
 				ActorType: pgtype.Text{String: "system", Valid: true}, Details: details,
 			})
 			if err != nil {
@@ -651,7 +683,7 @@ func (s *IssueWakeupService) dispatchSystem(ctx context.Context, prev db.IssueWa
 	contextJSON, _ := json.Marshal(map[string]any{"wakeup_id": util.UUIDToString(w.ID), "wakeup_revision": w.Revision, "wakeup_evidence": evidence, "wakeup_system": SystemRuleChildDone})
 	task, err = q.CreateWakeupTask(ctx, db.CreateWakeupTaskParams{
 		ID: dbid.NewV7(), AgentID: agent.ID, RuntimeID: agent.RuntimeID, IssueID: issue.ID, Priority: priorityToInt(issue.Priority),
-		TriggerSummary: pgtype.Text{String: "Wakeup: sub-issues closed", Valid: true}, HandoffNote: pgtype.Text{String: noteText, Valid: true},
+		TriggerSummary: pgtype.Text{String: childWakeupSummary(receipts), Valid: true}, HandoffNote: pgtype.Text{String: noteText, Valid: true},
 		IsLeaderTask: pgtype.Bool{Bool: current.Type == "squad", Valid: current.Type == "squad"}, SquadID: current.SquadID,
 		OriginatorUserID: attr.UserID, AccountableUserID: attr.AccountableUserID, OriginatorSource: source, DelegatedFromTaskID: delegatedFrom,
 		RuleVersionID: attr.RuleVersionID, TriggerEvidenceKind: pgtype.Text{String: "issue_wakeup", Valid: true}, TriggerEvidenceRefID: w.ID,
@@ -808,4 +840,21 @@ func (s *IssueWakeupService) SetChildDoneDefault(ctx context.Context, workspaceI
 		}
 	}
 	return int64(len(changed)), tx.Commit(ctx)
+}
+
+func childWakeupSummary(receipts []db.IssueWakeupReceipt) string {
+	for _, r := range receipts {
+		if r.EventType == childReviewReady {
+			return "Wakeup: sub-issue ready for review"
+		}
+	}
+	return "Wakeup: sub-issues closed"
+}
+func childWakeupInboxType(receipts []db.IssueWakeupReceipt) string {
+	for _, r := range receipts {
+		if r.EventType == childReviewReady {
+			return "review_requested"
+		}
+	}
+	return "children_done"
 }

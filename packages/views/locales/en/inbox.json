@@ -60,6 +60,8 @@
     "unarchive": "Unarchive"
   },
   "types": {
+    "installation_approval": "Needs your approval",
+    "installation_decided": "Installation request updated",
     "issue_assigned": "Assigned",
     "issue_subscribed": "Subscribed",
     "unassigned": "Unassigned",
@@ -76,6 +78,8 @@
     "agent_blocked": "Agent blocked",
     "agent_completed": "Agent completed",
     "reaction_added": "Reacted",
+    "quick_create_pending": "Creating issue",
+    "quick_create_pending_body": "Request received. Your agent is preparing the issue. You can leave this page; the result will appear here.",
     "quick_create_done": "Created with agent",
     "quick_create_failed": "Create with agent failed",
     "quick_create_unconfirmed": "Create with agent unconfirmed",

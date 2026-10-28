@@ -12,6 +12,7 @@ vi.mock("@multica/core/api", () => ({
 const value = {
   revision: 2,
   repository: "org/repo",
+  base_branch: "",
   folder: "repo",
   root: "",
   mode: "worktree" as const,

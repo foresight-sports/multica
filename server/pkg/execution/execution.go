@@ -127,6 +127,29 @@ func (p Policy) Validate() error {
 
 // Select never widens the eligible set. Explicit requests are exact constraints.
 func Select(p Policy, req Request, candidates []Candidate, prompt string) (Profile, string, error) {
+	unavailable := func(fallback string, profileID string) error {
+		reasons := []string{}
+		seen := map[string]bool{}
+		for _, c := range candidates {
+			if profileID != "" && c.Profile.ID != profileID {
+				continue
+			}
+			if req.RuntimeID != "" && c.Profile.RuntimeID != req.RuntimeID {
+				continue
+			}
+			if req.Model != "" && c.Profile.Model != req.Model {
+				continue
+			}
+			if !c.Eligible && c.Reason != "" && !seen[c.Reason] && len(reasons) < 3 {
+				seen[c.Reason] = true
+				reasons = append(reasons, c.Reason)
+			}
+		}
+		if len(reasons) > 0 {
+			return fmt.Errorf("%s: %s", fallback, strings.Join(reasons, "; "))
+		}
+		return fmt.Errorf("%s", fallback)
+	}
 	valid := []Profile{}
 	for _, c := range candidates {
 		if c.Eligible {
@@ -139,7 +162,7 @@ func Select(p Policy, req Request, candidates []Candidate, prompt string) (Profi
 				return v, "Explicit task selection", nil
 			}
 		}
-		return Profile{}, "", fmt.Errorf("the requested execution profile is unavailable or not approved")
+		return Profile{}, "", unavailable("the requested execution profile is unavailable or not approved", req.ProfileID)
 	}
 	mode := p.Mode
 	if req.Mode != "" {
@@ -152,11 +175,11 @@ func Select(p Policy, req Request, candidates []Candidate, prompt string) (Profi
 			}
 		}
 		if !p.AllowFallback {
-			return Profile{}, "", fmt.Errorf("default profile unavailable; fallback is disabled")
+			return Profile{}, "", unavailable("default profile unavailable; fallback is disabled", p.DefaultProfile)
 		}
 	}
 	if len(valid) == 0 {
-		return Profile{}, "", fmt.Errorf("no eligible runtime/model combination is online")
+		return Profile{}, "", unavailable("no eligible runtime/model combination is online", "")
 	}
 	text := strings.ToLower(prompt)
 	score := func(v Profile) int {

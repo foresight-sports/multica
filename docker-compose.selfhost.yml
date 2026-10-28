@@ -142,6 +142,7 @@ services:
       # intentionally NOT used to derive this value, to avoid Host /
       # X-Forwarded-Host spoofing on misconfigured proxies.
       MULTICA_PUBLIC_URL: ${MULTICA_PUBLIC_URL:-}
+      MULTICA_JIRA_MCP_SECRET_KEY: ${MULTICA_JIRA_MCP_SECRET_KEY:-}
       # Surface HTML must use a second, cookie-free browser origin routed to
       # this backend. Both settings are optional only in the sense that leaving
       # either empty disables plugin surfaces rather than weakening isolation.

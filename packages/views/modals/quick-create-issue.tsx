@@ -31,7 +31,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { api, ApiError } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
-import { AppLink, resolveClickIntent } from "../navigation";
+import { AppLink, resolveClickIntent, useNavigation } from "../navigation";
 import { agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
 import { projectListOptions } from "@multica/core/projects/queries";
 import {
@@ -126,6 +126,7 @@ export function AgentCreatePanel({
   const sendShortcut = useShortcut("send");
   const workspaceName = useCurrentWorkspace()?.name;
   const workspacePaths = useWorkspacePaths();
+  const navigation = useNavigation();
   const wsId = useWorkspaceId();
   const repositoryGate=useIssueRepositoryGate();
   const jira = useJiraSettings(wsId);
@@ -445,6 +446,7 @@ export function AgentCreatePanel({
         .map((a) => a.id);
       setError(null);
       try {
+        let receiptTaskId: string | undefined;
         if (anchorCommentId && sourcePreview) {
           await api.createCommentSubIssue(anchorCommentId, {
             mode: "agent",
@@ -461,7 +463,7 @@ export function AgentCreatePanel({
             },
           });
         } else {
-          await api.quickCreateIssue({
+          const result = await api.quickCreateIssue({
             ...(actor.type === "agent"
               ? { agent_id: actor.id }
               : { squad_id: actor.id }),
@@ -472,11 +474,16 @@ export function AgentCreatePanel({
             parent_issue_id: parentIssueId,
             ...(activeAttachmentIds.length > 0 ? { attachment_ids: activeAttachmentIds } : {}),
           });
+          receiptTaskId = result?.inbox_item_id;
         }
         setLastActor(actor.type, actor.id);
         setLastMode("agent");
         toast.success(t(($) => $.create_issue.agent.toast_sent), {
-          duration: 4000,
+          duration: 8000,
+          action: {
+            label: t(($) => $.create_issue.agent.view_progress),
+            onClick: () => navigation.push(`${workspacePaths.inbox()}${receiptTaskId ? `?issue=${encodeURIComponent(receiptTaskId)}` : ""}`),
+          },
         });
         return true;
       } catch (e) {

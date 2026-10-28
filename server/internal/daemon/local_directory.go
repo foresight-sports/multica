@@ -32,6 +32,8 @@ const (
 // project resources. Defined locally so the daemon does not have to import
 // the server handler package.
 type localDirectoryRef struct {
+	BaseBranch         string `json:"base_branch,omitempty"`
+	RepositoryRevision int64  `json:"repository_revision,omitempty"`
 	ExpectedRepository string `json:"expected_repository,omitempty"`
 	RepositoriesRoot   string `json:"repositories_root,omitempty"`
 	LocalPath          string `json:"local_path"`

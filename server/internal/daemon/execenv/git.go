@@ -90,10 +90,8 @@ func setupGitWorktree(gitRoot, worktreePath, branchName, baseRef string) error {
 }
 
 func runGitWorktreeAdd(gitRoot, worktreePath, branchName, baseRef string) error {
-	cmd := exec.Command("git", "-c", "core.longpaths=true", "-C", gitRoot, "worktree", "add", "-b", branchName, worktreePath, baseRef)
-
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(out)), err)
+	if out, err := runGit(gitRoot, "worktree", "add", "-b", branchName, worktreePath, baseRef); err != nil {
+		return fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(out), err)
 	}
 	return nil
 }

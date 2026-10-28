@@ -268,7 +268,7 @@ describe("SettingsPage information architecture", () => {
   it("marks pages a member can only view", () => {
     shell.role = "member";
     renderWithI18n(<SettingsPage />);
-    const general = screen.getByRole("link", { name: /^General/ });
+    const general = within(screen.getByRole("region", { name: /Acme/ })).getByRole("link", { name: /^General/ });
     expect(
       within(general).getByLabelText("Only owners and admins can change this"),
     ).toBeInTheDocument();

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { onInboxInvalidate } from "../inbox/ws-updaters";
 
 export function useWorkRecords(wsId: string, issueId: string) {
   const qc = useQueryClient();
@@ -7,7 +8,7 @@ export function useWorkRecords(wsId: string, issueId: string) {
   const query = useQuery({ queryKey: key, queryFn: () => api.getWorkRecords(issueId), enabled: !!wsId && !!issueId, refetchInterval: 10000 });
   const update = useMutation({
     mutationFn: (input: { id: string; revision: number; action: "approve" | "decline" | "resolve" }) => api.updateWorkRecord(issueId, input.id, input),
-    onSuccess: async () => { await qc.invalidateQueries({ queryKey: key }); },
+    onSuccess: async () => { await Promise.all([qc.invalidateQueries({ queryKey: key }), onInboxInvalidate(qc, wsId)]); },
   });
   return { query, update };
 }

@@ -714,6 +714,7 @@
     "cancel_failed": "Échec de l'annulation de l'exécution"
   },
   "execution_log": {
+    "blocked": "Bloqué",
     "section": "Journal d'exécution",
     "cancel_task_tooltip": "Annuler l'exécution",
     "cancel_task_aria": "Annuler l'exécution",
@@ -1464,5 +1465,16 @@
     "blocker": "Blocker",
     "human_record": "Recorded by a human",
     "agent_record": "Recorded by an agent"
+  },
+  "jira_blocker": {
+    "title": "Connexion Jira requise",
+    "instructions": "Connectez votre compte Atlassian pour permettre à l’agent d’utiliser Jira avec vos autorisations. Revenez ensuite à ce ticket et sélectionnez Reprendre.",
+    "ready": "Jira est connecté. Sélectionnez Reprendre pour lancer une nouvelle exécution de l’agent avec le contexte du ticket.",
+    "connect": "Connecter Jira",
+    "resume": "Reprendre",
+    "wait": "En attente de la fin de l’exécution en cours.",
+    "reload": "Recharger",
+    "unavailable": "La connexion Jira est indisponible. Contactez l’administrateur de votre instance.",
+    "resumed": "Travail Jira repris"
   }
 }

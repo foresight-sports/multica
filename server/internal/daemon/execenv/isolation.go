@@ -9,6 +9,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/redact"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -142,6 +143,7 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 	}
 
 	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Env = append(os.Environ(), "MULTICA_PREPARATION_PROGRESS=1")
 	controller, err := newPreparationProcessController(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("execenv: create preparation process controller: %w", err)
@@ -153,7 +155,7 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 		return nil, fmt.Errorf("execenv: create preparation stdin: %w", err)
 	}
 	var stdout bytes.Buffer
-	var stderr preparationDiagnostics
+	stderr := preparationDiagnostics{progress: func() { ReportPreparationProgress(ctx) }}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -230,10 +232,16 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 // status zero. Retain a bounded tail so those diagnostics reach machine logs.
 var preparationURLCredentials = regexp.MustCompile(`(?i)(https?://)[^/\s@]+@`)
 
-type preparationDiagnostics struct{ data []byte }
+type preparationDiagnostics struct {
+	data     []byte
+	progress func()
+}
 
 func (b *preparationDiagnostics) Write(p []byte) (int, error) {
 	n := len(p)
+	if n > 0 && b.progress != nil {
+		b.progress()
+	}
 	b.data = append(b.data, p...)
 	if len(b.data) > 65536 {
 		b.data = b.data[len(b.data)-65536:]

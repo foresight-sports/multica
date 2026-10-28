@@ -7,6 +7,7 @@ import {
   AlarmClock,
   Bell,
   Blocks,
+  Bot,
   CircleDot,
   CreditCard,
   FolderGit2,
@@ -174,7 +175,12 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
       key: "instance",
       label: t(($) => $.instance.title),
       mark: <Server className="size-4" />,
-      subgroups: [{ key: "instance", entries: [entry("instance", t(($) => $.instance.title), Server, <InstanceTab />)] }],
+      subgroups: [{ key: "instance", entries: [
+          entry("instance", t(($) => $.page.tabs.general), Settings, <InstanceTab section="general" />),
+          ...(canManagePermissions ? [entry("instance-members", t(($) => $.page.tabs.members), Users, <InstanceTab section="members" />)] : []),
+          entry("instance-agents", t(($) => $.instance.agents_nav), Bot, <InstanceTab section="agents" />),
+          ...(canManagePermissions ? [entry("permissions", t(($) => $.permission_access.title), KeyRound, <PermissionAccessTab />)] : []),
+        ] }],
     },
     {
       key: "workspace",
@@ -198,7 +204,6 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
             entry("members", t(($) => $.page.tabs.members), Users, <MembersTab />, {
               adminOnly: true,
             }),
-            ...(canManagePermissions ? [entry("permissions", t(($) => $.permission_access.title), KeyRound, <PermissionAccessTab />)] : []),
             ...(billingEnabled
               ? [
                   entry(

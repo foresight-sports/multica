@@ -1,4 +1,9 @@
 {
+  "workspace_entry": {
+    "title": "워크스페이스 선택",
+    "loading": "워크스페이스 불러오는 중…",
+    "retry": "다시 시도"
+  },
   "step_nav": {
     "wordmark": "Multica",
     "label": "온보딩 단계",
@@ -260,5 +265,32 @@
     "name": "Mika",
     "role": "참모장",
     "blurb": "하고 싶은 일을 Mika에게 알려주면 태스크가 되고, 알맞은 에이전트가 맡습니다."
+  },
+  "directory": {
+    "title": "워크스페이스",
+    "description": "팀을 찾고 워크스페이스 접근 권한을 요청하세요.",
+    "create": "워크스페이스 만들기",
+    "search": "워크스페이스 검색",
+    "search_button": "검색",
+    "loading": "워크스페이스 로딩 중…",
+    "load_error": "워크스페이스를 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "save_error": "요청을 저장하지 못했습니다.",
+    "empty": "워크스페이스가 없습니다. 팀이 보이지 않으면 관리자에게 문의하세요.",
+    "member": "접근 권한 있음",
+    "pending": "요청됨 · 검토 대기 중",
+    "declined": "요청 거절됨 · 다시 요청할 수 있습니다",
+    "approval_required": "관리자 승인 필요",
+    "open": "워크스페이스 열기",
+    "cancel": "요청 취소",
+    "request": "접근 권한 요청",
+    "truncated": "처음 200개 결과입니다. 검색 범위를 좁혀 주세요.",
+    "review_error": "접근 요청을 불러오지 못했습니다.",
+    "review_title": "검토할 접근 요청",
+    "review_description": "승인하면 이 워크스페이스의 일반 멤버 권한이 부여됩니다.",
+    "approve": "승인",
+    "decline": "거절",
+    "review_truncated": "오래된 요청 200개가 표시됩니다. 검토하면 다음 요청을 볼 수 있습니다.",
+    "browse": "워크스페이스 둘러보기"
   }
 }

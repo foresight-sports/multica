@@ -1,4 +1,15 @@
 {
+  "provider_auth": {
+    "title": "Connexion aux fournisseurs",
+    "description": "Ouvre une fenêtre sur ce PC lorsque Multica est inactif. Autorisez la connexion dans le navigateur. La configuration Claude met à jour Claude et enregistre un jeton longue durée, sans suivi de consommation.",
+    "claude": "Configurer Claude",
+    "codex": "Se connecter à Codex",
+    "pending": "En attente de la machine.",
+    "running": "Terminez la connexion sur la machine. Les nouvelles tâches Multica sont suspendues pendant la configuration.",
+    "completed": "Identifiants enregistrés. Lancez une tâche pour vérifier l’accès.",
+    "failed": "Échec ou expiration. Vérifiez la fenêtre et réessayez lorsque la machine est inactive.",
+    "retry": "Actualiser l’état"
+  },
   "page": {
     "title": "Runtimes",
     "tagline": "Machines et workers cloud qui exécutent des sessions CLI pour vos agents.",

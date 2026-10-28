@@ -200,6 +200,10 @@ type CreateWorkspaceRequest struct {
 }
 
 func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
+	if isMachineCredentialActor(r) {
+		writeError(w, http.StatusForbidden, "workspace creation requires a human account")
+		return
+	}
 	userID, ok := requireUserID(w, r)
 	if !ok {
 		return
@@ -212,6 +216,11 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	// 403 here is the only authoritative check.
 	if h.cfg.DisableWorkspaceCreation {
 		writeError(w, http.StatusForbidden, "workspace creation is disabled for this instance")
+		return
+	}
+	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
+	if err != nil || !h.actionAllowed(r.Context(), user.Email, permissionCreateWorkspace) {
+		writeError(w, http.StatusForbidden, "workspace creation requires permission from your instance administrator")
 		return
 	}
 
@@ -633,10 +642,7 @@ func (h *Handler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updatedMember, err := h.Queries.UpdateMemberRole(r.Context(), db.UpdateMemberRoleParams{
-		ID:   target.ID,
-		Role: role,
-	})
+	updatedMember, err := h.setMemberRole(r.Context(), target, role)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update member")
 		return

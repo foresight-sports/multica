@@ -542,6 +542,57 @@ func TestFinalizeClaimDelivery_CurrentRuntimeOwnerMissingNeverMintsToken(t *test
 	}
 }
 
+func TestFinalizeClaimDelivery_PortableProfile(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	for _, revoked := range []bool{false, true} {
+		t.Run(fmt.Sprintf("revoked=%v", revoked), func(t *testing.T) {
+			ctx := context.Background()
+			runtimeID := createClaimReclaimRuntime(t, ctx, "Portable delivery runtime")
+			agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Portable delivery agent")
+			taskID := seedQueuedIssueTask(t, ctx, agentID, runtimeID, issueID)
+			task, err := testHandler.TaskService.ClaimTaskForRuntime(ctx, parseUUID(runtimeID))
+			if err != nil || task == nil {
+				t.Fatalf("claim task: task=%v err=%v", task, err)
+			}
+			runtime, err := testHandler.Queries.GetAgentRuntimeForWorkspace(ctx, db.GetAgentRuntimeForWorkspaceParams{ID: parseUUID(runtimeID), WorkspaceID: parseUUID(testWorkspaceID)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			profile := map[string]any{"id": "default", "provider": runtime.Provider, "model": "test-model", "thinking_level": "medium"}
+			selection, _ := json.Marshal(map[string]any{"state": "selected", "profile": profile})
+			task.ExecutionSelection = selection
+			dbfx.Exec(t, `UPDATE agent_task_queue SET execution_selection=$1 WHERE id=$2`, selection, taskID)
+			// Simulate a policy edit after response assembly but before the final
+			// gate. The provider still matches, so runtime eligibility alone is
+			// insufficient to reject the revoked model selection.
+			if revoked {
+				profile["model"] = "replacement-model"
+			}
+			policy, _ := json.Marshal(map[string]any{"profiles": []any{profile}, "default_profile": "default", "mode": "default", "revision": 1})
+			dbfx.Exec(t, `UPDATE agent SET runtime_id=NULL, execution_policy=$1 WHERE id=$2`, policy, agentID)
+			_, failure, err := testHandler.finalizeClaimDelivery(ctx, task, runtime, runtimeID, testWorkspaceID, nil, db.CreateTaskTokenParams{
+				ID: dbid.NewV7(), TokenHash: auth.HashToken(uuid.NewString()), TaskID: task.ID,
+				AgentID: task.AgentID, WorkspaceID: parseUUID(testWorkspaceID), UserID: runtime.OwnerID,
+				ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+			}, nil, false, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var tokenCount int
+			dbfx.QueryRow(t, `SELECT count(*) FROM task_token WHERE task_id=$1`, taskID).Scan(&tokenCount)
+			if revoked {
+				if failure == nil || !failure.settled || tokenCount != 0 {
+					t.Fatalf("revoked profile: failure=%+v tokens=%d", failure, tokenCount)
+				}
+			} else if failure != nil || tokenCount != 1 {
+				t.Fatalf("allowed portable profile: failure=%+v tokens=%d", failure, tokenCount)
+			}
+		})
+	}
+}
+
 func injectFailTaskSettlementFailure(t *testing.T, ctx context.Context, taskID string) {
 	t.Helper()
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")

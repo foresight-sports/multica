@@ -18,14 +18,14 @@ function renderPage() {
 }
 async function openPolicies() {
  renderPage();
- for (const name of ["Register runtimes", "Create instance agents", "Create agents", "Edit agents"]) {
+ for (const name of ["Register runtimes", "Create instance agents", "Create agents", "Edit agents", "Create workspaces"]) {
    await waitFor(() => expect(within(screen.getByRole("region", { name })).getByRole("button", { expanded: false })).toBeInTheDocument());
    fireEvent.click(within(screen.getByRole("region", { name })).getByRole("button", { expanded: false }));
  }
 }
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.get.mockImplementation((action) => Promise.resolve({ ...policy, action: ({ "runtime-register": "runtime.register", "agent-create": "agent.create", "instance-agent-create": "instance-agent.create", "agent-edit": "agent.edit" } as Record<string, string>)[action] }));
+  mocks.get.mockImplementation((action) => Promise.resolve({ ...policy, action: ({ "runtime-register": "runtime.register", "agent-create": "agent.create", "instance-agent-create": "instance-agent.create", "agent-edit": "agent.edit", "workspace-create": "workspace.create" } as Record<string, string>)[action] }));
   mocks.refresh.mockResolvedValue(undefined);
   useAuthStore.setState({ user: { ...EMPTY_USER, id: "manager", permissions: { register_runtimes: false, manage_permission_access: true } } });
 });
@@ -61,9 +61,9 @@ describe("permission access settings", () => {
 it("saves each agent policy independently", async () => {
  mocks.save.mockImplementation((data) => Promise.resolve({ ...policy, ...data, revision: 3 }));
  await openPolicies();
- await waitFor(() => expect(screen.getAllByLabelText("Allowed users")).toHaveLength(4));
+ await waitFor(() => expect(screen.getAllByLabelText("Allowed users")).toHaveLength(5));
  const fields = screen.getAllByLabelText("Allowed users");
- for (const [index, action] of ["instance-agent-create", "agent-create", "agent-edit"].entries()) {
+ for (const [index, action] of ["instance-agent-create", "agent-create", "agent-edit", "workspace-create"].entries()) {
  fireEvent.change(fields[index + 1]!, { target: { value: "delegate@example.com" } });
  fireEvent.click(within(fields[index + 1]!.closest("form")!).getByRole("button", { name: "Save access" }));
  await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ allowed_emails: ["delegate@example.com"], revision: 2 }, action));

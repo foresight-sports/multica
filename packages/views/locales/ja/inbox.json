@@ -58,6 +58,8 @@
     "unarchive": "アーカイブ解除"
   },
   "types": {
+    "installation_approval": "承認が必要です",
+    "installation_decided": "インストール申請が更新されました",
     "issue_assigned": "割り当て済み",
     "issue_subscribed": "購読済み",
     "unassigned": "割り当て解除",
@@ -74,6 +76,8 @@
     "agent_blocked": "エージェントがブロック",
     "agent_completed": "エージェントが完了",
     "reaction_added": "リアクションあり",
+    "quick_create_pending": "課題を作成中",
+    "quick_create_pending_body": "リクエストを受け付けました。エージェントが課題を準備しています。このページを離れても、結果はここに表示されます。",
     "quick_create_done": "エージェントで作成",
     "quick_create_failed": "エージェントでの作成に失敗",
     "quick_create_unconfirmed": "エージェントでの作成結果は未確認",

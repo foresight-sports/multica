@@ -27,6 +27,8 @@ import { Layers,
   SquarePen,
   X,
 } from "lucide-react";
+import { WorkspaceDirectory } from "../workspace/workspace-directory";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@multica/ui/components/ui/dialog";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
@@ -443,6 +445,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
   const { data: myInvitations = EMPTY_INVITATIONS } = useQuery(myInvitationListOptions());
   const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const canCreateWorkspace = useAuthStore((s) => s.user?.permissions?.create_workspaces === true);
+  const [directoryOpen, setDirectoryOpen] = useState(false);
+  const { data: accessRequests } = useQuery({ queryKey: ["workspace-access-requests", userId], queryFn: () => api.workspaceAccessRequests(), enabled: !!userId, refetchInterval: 30000 });
+  const accessRequestCount = accessRequests?.requests.length ?? 0;
+  const { t: directoryT } = useT("onboarding");
 
   // On a phone the sidebar is a Sheet covering the page, so navigating out of
   // it has to dismiss it — otherwise the destination renders underneath and the
@@ -610,6 +617,13 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const createIssueShortcut = useShortcut("createIssue");
 
   return (
+      <>
+      <Dialog open={directoryOpen} onOpenChange={setDirectoryOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader className="sr-only"><DialogTitle>{directoryT(($) => $.directory.title)}</DialogTitle><DialogDescription>{directoryT(($) => $.directory.description)}</DialogDescription></DialogHeader>
+          <WorkspaceDirectory onOpen={(_id, slug) => { setDirectoryOpen(false); push(paths.workspace(slug).issues()); }} onCreate={() => { setDirectoryOpen(false); push(paths.newWorkspace()); }} />
+        </DialogContent>
+      </Dialog>
       <Sidebar variant="inset">
         {topSlot}
         {/* Workspace Switcher */}
@@ -626,7 +640,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                             workspace with unread inbox items. The active
                             workspace's own unread stays on the Inbox nav count
                             (below), so it is deliberately excluded here. */}
-                        {(myInvitations.length > 0 || otherWorkspaceUnread) && (
+                        {(myInvitations.length > 0 || otherWorkspaceUnread || accessRequestCount > 0) && (
                           <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-brand ring-1 ring-sidebar" />
                         )}
                       </span>
@@ -686,7 +700,8 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         )}
                       </DropdownMenuItem>
                     ))}
-                    {!workspaceCreationDisabled && (
+                    <DropdownMenuItem onClick={() => setDirectoryOpen(true)}><Layers className="h-3.5 w-3.5" />{directoryT(($) => $.directory.browse)}{accessRequestCount > 0 && <span className="ml-auto rounded bg-brand px-1.5 text-caption text-brand-foreground" aria-label={directoryT(($) => $.directory.review_title)}>{accessRequestCount}</span>}</DropdownMenuItem>
+                    {!workspaceCreationDisabled && canCreateWorkspace && (
                       <DropdownMenuItem
                         onClick={() => push(paths.newWorkspace())}
                       >
@@ -936,5 +951,6 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
+      </>
   );
 }

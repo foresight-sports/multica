@@ -672,6 +672,48 @@ func (q *Queries) MarkInboxUnread(ctx context.Context, id pgtype.UUID) (InboxIte
 	return i, err
 }
 
+const syncInstallationInbox = `-- name: SyncInstallationInbox :one
+INSERT INTO inbox_item (id, workspace_id, recipient_type, recipient_id, type, severity, issue_id, title, body, actor_type, actor_id, details)
+SELECT w.id, w.workspace_id, 'member', w.machine_owner_id,
+ CASE WHEN w.state='pending' THEN 'installation_approval' ELSE 'installation_decided' END,
+ CASE WHEN w.state='pending' THEN 'action_required' ELSE 'info' END,
+ w.issue_id, i.title, concat(w.data->>'tool', ' ', w.data->>'version', ' · ', w.data->>'machine'), 'agent', w.agent_id,
+ jsonb_build_object('work_record_id', w.id::text, 'state', w.state)
+FROM work_record w JOIN issue i ON i.id=w.issue_id AND i.workspace_id=w.workspace_id
+WHERE w.id = $1::uuid AND w.workspace_id = $2::uuid AND w.kind='installation'
+ON CONFLICT (id) DO UPDATE SET type=EXCLUDED.type, severity=EXCLUDED.severity, details=EXCLUDED.details, body=EXCLUDED.body,
+ read=false, archived=false
+RETURNING id, workspace_id, recipient_type, recipient_id, type, severity, issue_id, title, body, read, archived, created_at, actor_type, actor_id, details
+`
+
+type SyncInstallationInboxParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) SyncInstallationInbox(ctx context.Context, arg SyncInstallationInboxParams) (InboxItem, error) {
+	row := q.db.QueryRow(ctx, syncInstallationInbox, arg.ID, arg.WorkspaceID)
+	var i InboxItem
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Type,
+		&i.Severity,
+		&i.IssueID,
+		&i.Title,
+		&i.Body,
+		&i.Read,
+		&i.Archived,
+		&i.CreatedAt,
+		&i.ActorType,
+		&i.ActorID,
+		&i.Details,
+	)
+	return i, err
+}
+
 const unarchiveInboxByIssue = `-- name: UnarchiveInboxByIssue :execrows
 UPDATE inbox_item SET archived = false
 WHERE workspace_id = $1 AND recipient_type = $2 AND recipient_id = $3 AND issue_id = $4 AND archived = true
@@ -711,6 +753,69 @@ RETURNING id, workspace_id, recipient_type, recipient_id, type, severity, issue_
 // unread item legitimately raises the unread badge again (MUL-3736).
 func (q *Queries) UnarchiveInboxItem(ctx context.Context, id pgtype.UUID) (InboxItem, error) {
 	row := q.db.QueryRow(ctx, unarchiveInboxItem, id)
+	var i InboxItem
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Type,
+		&i.Severity,
+		&i.IssueID,
+		&i.Title,
+		&i.Body,
+		&i.Read,
+		&i.Archived,
+		&i.CreatedAt,
+		&i.ActorType,
+		&i.ActorID,
+		&i.Details,
+	)
+	return i, err
+}
+
+const upsertQuickCreateInbox = `-- name: UpsertQuickCreateInbox :one
+INSERT INTO inbox_item (
+    id, workspace_id, recipient_type, recipient_id, type, severity,
+    issue_id, title, body, actor_type, actor_id, details
+) VALUES ($1, $2, 'member', $3, $4, $5,
+    $6, $7, $8, 'agent', $9, $10)
+ON CONFLICT (id) DO UPDATE SET
+    type = EXCLUDED.type, severity = EXCLUDED.severity,
+    issue_id = EXCLUDED.issue_id, title = EXCLUDED.title, body = EXCLUDED.body,
+    details = EXCLUDED.details, read = false, archived = false
+WHERE inbox_item.workspace_id = EXCLUDED.workspace_id
+  AND inbox_item.recipient_id = EXCLUDED.recipient_id
+RETURNING id, workspace_id, recipient_type, recipient_id, type, severity, issue_id, title, body, read, archived, created_at, actor_type, actor_id, details
+`
+
+type UpsertQuickCreateInboxParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	RecipientID pgtype.UUID `json:"recipient_id"`
+	Type        string      `json:"type"`
+	Severity    string      `json:"severity"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	Title       string      `json:"title"`
+	Body        pgtype.Text `json:"body"`
+	ActorID     pgtype.UUID `json:"actor_id"`
+	Details     []byte      `json:"details"`
+}
+
+// One durable receipt per creation request, including its retry attempts.
+func (q *Queries) UpsertQuickCreateInbox(ctx context.Context, arg UpsertQuickCreateInboxParams) (InboxItem, error) {
+	row := q.db.QueryRow(ctx, upsertQuickCreateInbox,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.RecipientID,
+		arg.Type,
+		arg.Severity,
+		arg.IssueID,
+		arg.Title,
+		arg.Body,
+		arg.ActorID,
+		arg.Details,
+	)
 	var i InboxItem
 	err := row.Scan(
 		&i.ID,

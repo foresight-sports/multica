@@ -23,10 +23,12 @@ export function PermissionAccessTab() {
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-caption text-muted-foreground"><Globe2 className="size-4" aria-hidden="true" />{t(($) => $.permission_access.scope)}</div>
         <SettingsCard>
+
           <PolicySection userId={userId} action="runtime-register" icon={Monitor} title={t(($) => $.permission_access.runtime_title)} description={t(($) => $.permission_access.runtime_description)} />
           <PolicySection userId={userId} action="instance-agent-create" icon={ShieldCheck} title={t(($) => $.permission_access.instance_create_title)} description={t(($) => $.permission_access.instance_create_description)} />
           <PolicySection userId={userId} action="agent-create" icon={Bot} title={t(($) => $.permission_access.agent_create_title)} description={t(($) => $.permission_access.agent_create_description)} />
           <PolicySection userId={userId} action="agent-edit" icon={Pencil} title={t(($) => $.permission_access.agent_edit_title)} description={t(($) => $.permission_access.agent_edit_description)} />
+          <PolicySection userId={userId} action="workspace-create" icon={Globe2} title={t(($) => $.permission_access.workspace_create_title)} description={t(($) => $.permission_access.workspace_create_description)} />
         </SettingsCard>
         <p className="px-1 text-caption text-muted-foreground">{t(($) => $.permission_access.managers)}</p>
       </div>

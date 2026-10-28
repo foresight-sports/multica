@@ -1,4 +1,9 @@
 {
+  "workspace_entry": {
+    "title": "Choisir un espace de travail",
+    "loading": "Chargement des espaces…",
+    "retry": "Réessayer"
+  },
   "step_nav": {
     "wordmark": "Multica",
     "label": "Étapes de prise en main",
@@ -262,5 +267,32 @@
     "name": "Mika",
     "role": "Chef de cabinet",
     "blurb": "Dites à Mika ce que vous voulez faire. Cela devient une tâche, avec le bon agent dessus."
+  },
+  "directory": {
+    "title": "Espaces de travail",
+    "description": "Trouvez votre équipe et demandez accès à un espace de travail.",
+    "create": "Créer un espace",
+    "search": "Rechercher des espaces",
+    "search_button": "Rechercher",
+    "loading": "Chargement des espaces…",
+    "load_error": "Impossible de charger les espaces.",
+    "retry": "Réessayer",
+    "save_error": "Impossible d’enregistrer votre demande.",
+    "empty": "Aucun espace trouvé. Contactez votre administrateur si votre équipe est absente.",
+    "member": "Vous avez accès",
+    "pending": "Accès demandé · en attente",
+    "declined": "Demande refusée · vous pouvez réessayer",
+    "approval_required": "Approbation d’un administrateur requise",
+    "open": "Ouvrir l’espace",
+    "cancel": "Annuler la demande",
+    "request": "Demander accès",
+    "truncated": "Les 200 premiers résultats sont affichés. Affinez votre recherche.",
+    "review_error": "Impossible de charger les demandes.",
+    "review_title": "Demandes d’accès à examiner",
+    "review_description": "L’approbation accorde un accès membre standard à cet espace.",
+    "approve": "Approuver",
+    "decline": "Refuser",
+    "review_truncated": "Les 200 demandes les plus anciennes sont affichées. Traitez-les pour voir la suite.",
+    "browse": "Parcourir les espaces"
   }
 }

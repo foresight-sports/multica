@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY workspace_access_request_identity;

@@ -202,7 +202,13 @@ export function ExecutionLogSection({ issueId, identifier, issueTitle }: Executi
       {open && (
         <div className="space-y-0.5 pl-2">
           {activeTasks.map((task) => (
-            <div key={task.id}><ActiveTaskRow task={task} issueId={issueId} /><TaskExecutionControls task={task} issueId={issueId}/></div>
+            <div key={task.id}><ActiveTaskRow task={task} issueId={issueId} />
+              {task.status === "queued" && task.execution?.state === "blocked" && (
+                <p role="status" className="ml-7 mb-2 whitespace-normal break-words text-caption text-destructive">
+                  {t(($) => $.execution_log.blocked)}: {task.execution.reason}
+                </p>
+              )}
+              <TaskExecutionControls task={task} issueId={issueId}/></div>
           ))}
           {activeTasks.length > 0 && pastRuns.length > 0 && (
             <div className="my-1.5 border-t border-border/60" />

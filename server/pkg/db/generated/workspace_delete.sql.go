@@ -72,9 +72,10 @@ func (q *Queries) DeleteTaskTokensByAgent(ctx context.Context, agentID pgtype.UU
 
 const deleteWorkspaceAdministration = `-- name: DeleteWorkspaceAdministration :exec
 WITH
+deleted_access_requests AS (DELETE FROM workspace_access_request WHERE workspace_id=$1),
 deleted_work_records AS (DELETE FROM work_record WHERE workspace_id=$1),
 deleted_repository_configuration AS (
- DELETE FROM repository_configuration WHERE (scope = 'workspace' AND subject = $1::uuid::text) OR (scope='readiness' AND subject LIKE $1::uuid::text || ':%')
+ DELETE FROM repository_configuration WHERE (scope = 'workspace' AND subject = $1::uuid::text) OR (scope IN ('readiness','issue_baseline','task_source') AND subject LIKE $1::uuid::text || ':%')
 ),
 deleted_members AS (
     DELETE FROM member WHERE member.workspace_id = $1

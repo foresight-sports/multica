@@ -1426,11 +1426,21 @@
     "plugins": "インストールするとツール、定期フック、ストレージを追加でき、プラグインごとに権限を付与します。"
   },
   "instance": {
+    "role_owner": "オーナー",
+    "membership_warning": "アクセスを削除すると、このユーザーのワークスペースランタイムが無効になり、関連するエージェント実行がキャンセルされます。",
+    "role_admin": "管理者",
+    "edit_memberships": "ワークスペースの所属を編集",
+    "role_member": "メンバー",
+    "role_none": "アクセスなし",
+    "members_hint": "このインスタンスのアカウントとワークスペース内の役割。",
+    "members_truncated": "最初の1,000件を表示しています。",
+    "no_workspaces": "所属ワークスペースなし",
+    "members": "インスタンスのメンバー",
     "create_scope": "インスタンスエージェント",
     "create_scope_hint": "すべてのワークスペースで使うエージェントを一元設定します。インスタンスが既定で選択されます。ランタイム、モデル、スキル、アクセス設定を共有し、各ワークスペースで無効にできます。",
     "create_flow_hint": "通常のエージェント作成フローを使い、設定パネルでインスタンスエージェントを選択してください。",
     "title": "インスタンス",
-    "description": "このサーバーのすべてのワークスペースで共有する指示とエージェント。",
+    "description": "このサーバーのすべてのワークスペースで共有する指示。",
     "instructions": "インスタンスの指示",
     "instructions_hint": "ワークスペースとエージェントの指示とともに、毎回の実行に含まれます。変更は次の実行開始時に適用されます。",
     "read_only": "インスタンス共通の指示はインスタンス管理者のみが編集できます。",
@@ -1455,7 +1465,8 @@
     "disable_hint": "無効にすると、このワークスペースでの未完了の実行がキャンセルされ、履歴は保持されます。",
     "configure": "インスタンスエージェントを設定",
     "runtime_required": "インスタンス管理者による中央ランタイムの設定が必要です。",
-    "managed": "このエージェントは一元設定されています。ランタイム、モデル、スキル、アクセスは元のワークスペースから共有されます。名前、説明、指示は設定 → インスタンスで管理します。"
+    "managed": "このエージェントは一元設定されています。ランタイム、モデル、スキル、アクセスは元のワークスペースから共有されます。名前、説明、指示は設定 → インスタンスで管理します。",
+    "agents_nav": "エージェント"
   },
   "permission_access": {
     "scope": "すべてのワークスペース",
@@ -1472,7 +1483,7 @@
     "instance_create_title": "インスタンスエージェントの作成",
     "saving": "保存中…",
     "runtime_title": "ランタイムの登録",
-    "title": "アクセス権限",
+    "title": "権限",
     "users": "許可するユーザー",
     "empty": "空のリストは全員に対してこの操作を禁止します。",
     "save": "権限を保存",
@@ -1485,7 +1496,9 @@
     "unrestricted": "現在、この操作には制限がありません。保存すると、リスト内のユーザーのみが実行できます。",
     "reload": "最新の情報を再読み込み",
     "description": "この Multica 環境のすべてのワークスペースで制限された操作を行えるユーザーを管理します。",
-    "runtime_description": "コンピューターを追加して AI ランタイムを登録できるユーザーを選択します。ワークスペースへの所属も必要です。"
+    "runtime_description": "コンピューターを追加して AI ランタイムを登録できるユーザーを選択します。ワークスペースへの所属も必要です。",
+    "workspace_create_title": "ワークスペースの作成",
+    "workspace_create_description": "リストに登録されたユーザーのみ作成できます。既存ワークスペースの所有者権限とは別です。"
   },
   "intake": {
     "title": "Ticket intake",
@@ -1508,6 +1521,8 @@
     "missing_project": "Unavailable project — select Use workspace default to remove this override"
   },
   "repository": {
+    "base_branch": "共有ベースブランチ",
+    "base_branch_description": "このブランチを取得し、課題ごとに同じソースコミットを使います。空欄の場合は各マシンのローカルコードを使います。",
     "title": "Workspace repository",
     "description": "Set a GitHub repository to clone it automatically on eligible computers, or set only a local folder to use existing directories. At least one is required to create issues.",
     "machine_title": "Repositories folder",
@@ -1537,5 +1552,21 @@
     "require": "Require JIRA ticket ID before agent work",
     "require_description": "Runs wait until a valid key, such as FS-123, is supplied. Tickets remain editable. New subtasks inherit their parent's key. Existing running tasks are not interrupted.",
     "loading": "Loading JIRA settings…"
+  },
+  "jira_connection": {
+    "title": "Jira 接続",
+    "description": "エージェントはあなたの依頼に対して、あなたの Jira アカウントと権限を使用します。認証情報は Multica サーバーに保存されます。",
+    "loading": "読み込み中…",
+    "unavailable": "このインスタンスでは Jira サインインが設定されていません。",
+    "pending": "ブラウザーでサインインを完了してください。",
+    "connected": "Jira アカウントに接続済みです。",
+    "expired": "Jira 接続を再認証してください。",
+    "disconnected": "Jira に接続していません。",
+    "connect": "Jira に接続",
+    "reconnect": "Jira に再接続",
+    "disconnect": "切断",
+    "confirm": "Jira を切断しますか？実行中のタスクからの新しい Jira 呼び出しはブロックされます。",
+    "cancel": "キャンセル",
+    "retry": "再試行"
   }
 }

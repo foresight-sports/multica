@@ -1,6 +1,7 @@
 import { z } from "zod";
 export const RepositorySettingsSchema = z.object({
   repository: z.string().default(""),
+  base_branch: z.string().default(""),
   folder: z.string().default(""),
   root: z.string().default(""),
   mode: z.enum(["", "worktree", "in_place"]).default(""),

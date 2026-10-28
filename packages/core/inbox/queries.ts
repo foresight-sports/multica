@@ -21,6 +21,7 @@ export function inboxListOptions(wsId: string) {
   return queryOptions({
     queryKey: inboxKeys.list(wsId),
     queryFn: () => api.listInbox(),
+    refetchInterval: (query) => query.state.data?.some((item) => item.type === "quick_create_pending" || item.type === "installation_approval" || (item.details?.reason === "jira_connection_required" && !item.details.resumed_task_id)) ? 5000 : false,
   });
 }
 
@@ -190,14 +191,15 @@ function groupInboxItemsByIssue(items: InboxItem[]): InboxItem[] {
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
-    const newest = group[0];
+    // An unresolved human action must not disappear behind later comments.
+    const newest = group.find((item) => item.type === "installation_approval" || (item.details?.reason === "jira_connection_required" && !item.details.resumed_task_id)) ?? group[0];
     if (!newest) continue;
 
     const commentId =
       newest.details?.comment_id ??
       group.find((item) => item.details?.comment_id)?.details?.comment_id;
 
-    if (commentId && newest.details?.comment_id !== commentId) {
+    if (newest.type !== "installation_approval" && commentId && newest.details?.comment_id !== commentId) {
       merged.push({
         ...newest,
         details: { ...(newest.details ?? {}), comment_id: commentId },

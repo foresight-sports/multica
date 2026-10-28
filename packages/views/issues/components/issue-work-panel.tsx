@@ -9,14 +9,14 @@ function safeLink(value: string) {
   try { const u = new URL(value); return u.protocol === "https:" && !u.username && !u.password ? u.href : undefined; } catch { return undefined; }
 }
 
-export function IssueWorkPanel({ issueId }: { issueId: string }) {
+export function IssueWorkPanel({ issueId, recordId }: { issueId: string; recordId?: string }) {
   const wsId = useWorkspaceId();
   const { query, update } = useWorkRecords(wsId, issueId);
   const { t } = useT("issues");
-  const records = query.data?.records ?? [];
+  const records = (query.data?.records ?? []).filter((r) => !recordId || r.id === recordId);
   const closed = new Set(["resolved", "declined", "completed", "cancelled"]);
-  const active = records.filter((r) => !closed.has(r.state));
-  const history = records.filter((r) => closed.has(r.state));
+  const active = records.filter((r) => recordId || !closed.has(r.state));
+  const history = recordId ? [] : records.filter((r) => closed.has(r.state));
   function record(r: WorkRecord) {
     const d = r.data;
     return <article key={r.id} className="space-y-2 rounded-lg border p-3 text-body-sm break-words">

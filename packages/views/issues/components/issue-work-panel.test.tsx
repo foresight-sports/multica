@@ -18,3 +18,11 @@ it("does not offer human approval to another viewer", () => {
   render(<IssueWorkPanel issueId="issue" />);
   expect(screen.queryByRole("button", { name: "Approve and continue" })).not.toBeInTheDocument();
 });
+it("shows the requested record and its declined outcome directly in Inbox", () => {
+  const record = mocks.query.data.records[0] as { state: string };
+  record.state = "declined";
+  render(<IssueWorkPanel issueId="issue" recordId="approval" />);
+  expect(screen.getByText("declined")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Approve and continue" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Resolved work/)).not.toBeInTheDocument();
+});

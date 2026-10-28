@@ -558,6 +558,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			Logger:  slog.Default(),
 		}
 	}
+	if key, err := secretbox.LoadKey("MULTICA_JIRA_MCP_SECRET_KEY"); err == nil && strings.HasPrefix(signupConfig.PublicURL, "https://") {
+		if box, err := secretbox.New(key); err == nil {
+			h.JiraMCP = handler.NewJiraMCP(box)
+		}
+	}
 	installationStore := lark.NewChannelInstallationStore(queries)
 	h.ChannelSupervisor = buildChannelSupervisor(
 		installationStore,
@@ -1556,6 +1561,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Auth group made a missing cookie a hard 401, breaking the flow for exactly
 	// the browsers above; the other four composio endpoints stay session-gated.
 	r.Get("/api/integrations/composio/callback", h.ComposioCallback)
+	r.Get("/api/integrations/jira/callback", h.JiraMCPCallback)
+	r.Get("/api/integrations/jira/authorize", h.JiraMCPAuthorize)
+	r.Post("/api/integrations/jira/authorize", h.JiraMCPAuthorize)
 
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
@@ -1593,6 +1601,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/runtimes/{runtimeId}/tasks/pending", h.ListPendingTasksByRuntime)
 		r.Post("/runtimes/{runtimeId}/update/{updateId}/result", h.ReportUpdateResult)
 		r.Post("/runtimes/{runtimeId}/logs", h.ReportMachineLogs)
+		r.Post("/runtimes/{runtimeId}/provider-auth", h.ReportProviderAuth)
 		r.Get("/runtimes/{runtimeId}/workspace-repositories", h.DaemonWorkspaceRepositories)
 		r.Post("/runtimes/{runtimeId}/workspace-repositories", h.DaemonWorkspaceRepositories)
 		r.Post("/runtimes/{runtimeId}/models/{requestId}/result", h.ReportModelListResult)
@@ -1602,6 +1611,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
 		r.Post("/tasks/{taskId}/execution/resolve", h.ResolveTaskExecution)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
+		r.Post("/tasks/{taskId}/repository-baseline", h.PinTaskRepositoryBaseline)
 		r.Post("/tasks/{taskId}/supplements/claim", h.ClaimTaskSupplement)
 		r.Post("/tasks/{taskId}/supplements/{commentId}/ack", h.AckTaskSupplement)
 		r.Post("/tasks/{taskId}/wait-local-directory", h.MarkTaskWaitingLocalDirectory)
@@ -1665,9 +1675,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// no workspace in the path to gate on.
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
+		r.With(handler.RequireHumanActor).Get("/api/integrations/jira", h.JiraMCPStatus)
+		r.With(handler.RequireHumanActor).Post("/api/integrations/jira/connect", h.JiraMCPConnect)
+		r.With(handler.RequireHumanActor).Delete("/api/integrations/jira", h.JiraMCPDisconnect)
+		r.HandleFunc("/api/integrations/jira/mcp", h.JiraMCPProxy)
 		r.With(handler.RequireHumanActor).Get("/api/instance/configuration", h.GetInstanceConfiguration)
 		r.With(handler.RequireHumanActor).Put("/api/instance/configuration", h.UpdateInstanceConfiguration)
 		r.With(handler.RequireHumanActor).Get("/api/instance/agents", h.ListInstanceAgents)
+		r.With(handler.RequireHumanActor).Get("/api/instance/members", h.ListInstanceMembers)
+		r.With(handler.RequireHumanActor).Put("/api/instance/members/{userId}/workspaces/{workspaceId}", h.SetInstanceMembership)
 		r.With(handler.RequireHumanActor).Post("/api/instance/agents", h.SaveInstanceAgent)
 		r.With(handler.RequireHumanActor).Put("/api/instance/agents/{id}", h.SaveInstanceAgent)
 		r.With(handler.RequireHumanActor).Get("/api/permission-policies/{action}", h.GetRuntimePermissionPolicy)
@@ -1713,6 +1729,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// because they are JSON-API consumers that always have
 		// workspace context.
 		r.Get("/api/attachments/{id}/download", h.DownloadAttachment)
+
+		r.With(handler.RequireHumanActor).Get("/api/workspace-directory", h.WorkspaceDirectory)
+		r.With(handler.RequireHumanActor).Post("/api/workspace-directory/{id}/request", h.RequestWorkspaceAccess)
+		r.With(handler.RequireHumanActor).Delete("/api/workspace-directory/{id}/request", h.RequestWorkspaceAccess)
+		r.With(handler.RequireHumanActor).Get("/api/workspace-access-requests", h.ListWorkspaceAccessRequests)
+		r.With(handler.RequireHumanActor).Post("/api/workspace-directory/{id}/requests/{userId}", h.ReviewWorkspaceAccess)
 
 		r.Route("/api/workspaces", func(r chi.Router) {
 			r.Get("/", h.ListWorkspaces)
@@ -2076,6 +2098,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.With(handler.RequireHumanActor).Post("/tasks/{taskId}/supplements", h.CreateTaskSupplement)
 					r.With(handler.RequireHumanActor).Post("/tasks/{taskId}/supplements/{commentId}/retry", h.RetryTaskSupplement)
 					r.Post("/rerun", h.RerunIssue)
+					r.With(handler.RequireHumanActor).Get("/jira-blockers", h.ListIssueJiraBlockers)
+					r.With(handler.RequireHumanActor).Post("/jira-blockers/{taskId}/resume", h.ResumeIssueJiraBlocker)
 					r.Post("/quick-actions/{quickActionId}/run", h.RunQuickAction)
 					r.Post("/quick-actions/{quickActionId}/render", h.RenderQuickAction)
 					r.Get("/task-runs", h.ListTasksByIssue)
@@ -2369,6 +2393,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/activity", h.GetRuntimeTaskActivity)
 					r.Get("/update-status", h.GetRuntimeUpdateStatus)
 					r.With(handler.RequireHumanActor).Get("/logs", h.GetMachineLogs)
+					r.With(handler.RequireHumanActor).Get("/provider-auth", h.ProviderAuth)
+					r.With(handler.RequireHumanActor).Post("/provider-auth", h.ProviderAuth)
 					r.Get("/workspace-repositories/{workspaceId}", h.WorkspaceRepositoryReadiness)
 					r.Get("/repository-settings", h.RepositorySettings)
 					r.With(handler.RequireHumanActor).Put("/repository-settings", h.RepositorySettings)

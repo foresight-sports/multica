@@ -31,7 +31,7 @@ func TestCreateWorkspace_RejectsReservedSlug(t *testing.T) {
 				"name": fmt.Sprintf("Test %s", slug),
 				"slug": slug,
 			})
-			w := testutil.Call(t, testHandler.CreateWorkspace, req)
+			w := testutil.Call(t, workspaceCreator(t).CreateWorkspace, req)
 
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("slug %q: expected 400, got %d: %s", slug, w.Code, w.Body.String())
@@ -70,7 +70,7 @@ func TestCreateWorkspace_DoesNotMarkOnboarded(t *testing.T) {
 		"name": "Onboarding Invariant Probe",
 		"slug": slug,
 	})
-	testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusCreated)
+	testutil.Call(t, workspaceCreator(t).CreateWorkspace, req).Want(http.StatusCreated)
 
 	var onboardedAt *string
 	dbfx.QueryRow(t, `SELECT onboarded_at FROM "user" WHERE id = $1`, testUserID).Scan(&onboardedAt)
@@ -104,7 +104,7 @@ func TestCreateWorkspace_DisabledByConfig(t *testing.T) {
 		"name": "Disabled Create",
 		"slug": slug,
 	})
-	testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusForbidden)
+	testutil.Call(t, workspaceCreator(t).CreateWorkspace, req).Want(http.StatusForbidden)
 
 	var count int
 	dbfx.QueryRow(t, `SELECT count(*) FROM workspace WHERE slug = $1`, slug).Scan(&count)
@@ -1411,7 +1411,7 @@ func TestCreateWorkspace_ChineseNameDerivesPrefixFromSlug(t *testing.T) {
 		"name": "前端团队",
 		"slug": slug,
 	})
-	w := testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusCreated)
+	w := testutil.Call(t, workspaceCreator(t).CreateWorkspace, req).Want(http.StatusCreated)
 
 	var resp WorkspaceResponse
 	w.JSON(&resp)
@@ -1440,7 +1440,7 @@ func TestCreateWorkspace_HonorsExplicitIssuePrefix(t *testing.T) {
 		"slug":         slug,
 		"issue_prefix": "fe",
 	})
-	w := testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusCreated)
+	w := testutil.Call(t, workspaceCreator(t).CreateWorkspace, req).Want(http.StatusCreated)
 
 	var resp WorkspaceResponse
 	w.JSON(&resp)
@@ -1477,7 +1477,7 @@ func TestCreateWorkspace_RejectsInvalidIssuePrefix(t *testing.T) {
 				"slug":         slug,
 				"issue_prefix": prefix,
 			})
-			w := testutil.Call(t, testHandler.CreateWorkspace, req)
+			w := testutil.Call(t, workspaceCreator(t).CreateWorkspace, req)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("issue_prefix %q: expected 400, got %d: %s", prefix, w.Code, w.Body.String())
 			}
@@ -1512,4 +1512,12 @@ func TestUpdateWorkspace_RejectsInvalidIssuePrefix(t *testing.T) {
 	if after != before {
 		t.Fatalf("issue_prefix changed on a rejected update: %q → %q", before, after)
 	}
+}
+
+// Existing creation behavior is exercised with an explicit instance grant.
+func workspaceCreator(t *testing.T) *Handler {
+	t.Helper()
+	h := *testHandler
+	h.cfg.PermissionManagerEmails = []string{handlerTestEmail}
+	return &h
 }

@@ -1,4 +1,9 @@
 {
+  "workspace_entry": {
+    "title": "选择工作区",
+    "loading": "正在加载工作区…",
+    "retry": "重试"
+  },
   "step_nav": {
     "wordmark": "Multica",
     "label": "引导步骤",
@@ -260,5 +265,32 @@
     "name": "Mika",
     "role": "参谋长",
     "blurb": "把你想做的事告诉 Mika，它会变成一个任务，并交给合适的智能体处理。"
+  },
+  "directory": {
+    "title": "工作区",
+    "description": "查找团队并申请工作区访问权限。",
+    "create": "创建工作区",
+    "search": "搜索工作区",
+    "search_button": "搜索",
+    "loading": "正在加载工作区…",
+    "load_error": "无法加载工作区。",
+    "retry": "重试",
+    "save_error": "无法保存申请。",
+    "empty": "未找到工作区。如果没有显示你的团队，请联系实例管理员。",
+    "member": "已有访问权限",
+    "pending": "已申请 · 等待审批",
+    "declined": "申请已拒绝 · 可以重新申请",
+    "approval_required": "需要管理员批准",
+    "open": "打开工作区",
+    "cancel": "取消申请",
+    "request": "申请访问",
+    "truncated": "仅显示前200条结果，请缩小搜索范围。",
+    "review_error": "无法加载访问申请。",
+    "review_title": "待审批的访问申请",
+    "review_description": "批准后将授予此工作区的普通成员权限。",
+    "approve": "批准",
+    "decline": "拒绝",
+    "review_truncated": "显示最早的200条申请。处理后可查看后续申请。",
+    "browse": "浏览工作区"
   }
 }

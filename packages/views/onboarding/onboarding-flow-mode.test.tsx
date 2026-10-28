@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+vi.mock("../workspace/workspace-directory", () => ({ WorkspaceDirectory: ({onOpen}: {onOpen: (id: string) => void}) => state.ready ? <button onClick={() => onOpen("ws-1")}>Open Existing</button> : <p role="status">Loading your workspaces</p> }));
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enOnboarding from "../locales/en/onboarding.json";
 import enWorkspace from "../locales/en/workspace.json";
 
+const state = vi.hoisted(() => ({ canCreate: true, ready: true, unavailable: false, complete: vi.fn(), workspaces: [{ id: "ws-1", name: "Existing", slug: "existing" }] }));
 const TEST_RESOURCES = {
   en: { common: enCommon, onboarding: enOnboarding, workspace: enWorkspace },
 };
@@ -18,7 +20,7 @@ vi.mock("@multica/core/config", () => ({
 }));
 
 vi.mock("@multica/core/api", () => ({
-  api: { getBaseUrl: () => "https://multica.ai" },
+  api: { getBaseUrl: () => "https://multica.ai", getWorkspace: () => Promise.resolve(state.workspaces[0]) },
 }));
 
 vi.mock("@multica/core/workspace/mutations", () => ({
@@ -28,7 +30,7 @@ vi.mock("@multica/core/workspace/mutations", () => ({
 vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector: (s: { user: unknown }) => unknown) =>
-      selector({ user: { id: "u-1", onboarding_questionnaire: {} } }),
+      selector({ user: { id: "u-1", onboarding_questionnaire: {}, permissions: { create_workspaces: state.canCreate } } }),
     { getState: () => ({ user: { id: "u-1" } }) },
   ),
 }));
@@ -38,8 +40,8 @@ vi.mock("@multica/core/auth", () => ({
 vi.mock("@multica/core/workspace", () => {
   return {
     useWorkspaceList: () => ({
-      workspaces: [{ id: "ws-1", name: "Existing", slug: "existing" }],
-      ready: true,
+      workspaces: state.workspaces,
+      ready: state.ready,
     }),
   };
 });
@@ -48,7 +50,7 @@ vi.mock("@multica/core/onboarding", async () => {
   const actual = await vi.importActual<Record<string, unknown>>(
     "@multica/core/onboarding",
   );
-  return { ...actual, useBootstrapMika: () => ({ mutateAsync: vi.fn() }) };
+  return { ...actual, completeOnboarding: state.complete, useBootstrapMika: () => ({ mutateAsync: vi.fn() }) };
 });
 
 import { OnboardingFlow } from "./onboarding-flow";
@@ -88,4 +90,29 @@ describe("OnboardingFlow — new-workspace mode", () => {
       screen.queryByRole("heading", { name: /Name your workspace/i }),
     ).not.toBeInTheDocument();
   });
+});
+
+beforeEach(() => { state.canCreate = true; state.ready = true; state.complete.mockReset(); state.complete.mockResolvedValue(undefined); });
+describe("web onboarding membership entry", () => {
+  it("opens an existing workspace without creation or runtime setup", async () => {
+    const done = vi.fn();
+    renderFlow({ runtimeInstructions: <div>CLI setup</div>, onComplete: done });
+    expect(screen.queryByText("Download Desktop")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Existing" }));
+    await waitFor(() => expect(done).toHaveBeenCalledWith(state.workspaces[0]));
+    expect(state.complete).toHaveBeenCalledWith("skip_existing", "ws-1");
+  });
+  it("does not offer creation while memberships are loading", () => {
+    state.ready = false;
+    renderFlow({ runtimeInstructions: <div>CLI setup</div> });
+    expect(screen.getByRole("status")).toHaveTextContent("Loading your workspaces");
+    expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+  });
+});
+it("offers the directory when an unauthorized user opens the creation route", () => {
+ state.canCreate = false;
+ renderFlow({ mode: "new_workspace" });
+ expect(screen.getByRole("button", { name: "Open Existing" })).toBeInTheDocument();
+ expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
 });

@@ -1,4 +1,5 @@
 "use client";
+import { LoaderCircle } from "lucide-react";
 
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { formatDateOnly } from "@multica/core/issues/date";
@@ -16,6 +17,8 @@ import { priorityLabel } from "../../issues/utils/priority-label";
 export function useTypeLabels(): Record<InboxItemType, string> {
   const { t } = useT("inbox");
   return {
+    installation_approval: t(($) => $.types.installation_approval),
+    installation_decided: t(($) => $.types.installation_decided),
     issue_assigned: t(($) => $.types.issue_assigned),
     issue_subscribed: t(($) => $.types.issue_subscribed),
     unassigned: t(($) => $.types.unassigned),
@@ -33,6 +36,7 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     agent_completed: t(($) => $.types.agent_completed),
     reaction_added: t(($) => $.types.reaction_added),
     quick_create_done: t(($) => $.types.quick_create_done),
+    quick_create_pending: t(($) => $.types.quick_create_pending),
     quick_create_failed: t(($) => $.types.quick_create_failed),
     quick_create_unconfirmed: t(($) => $.types.quick_create_unconfirmed),
     autopilot_paused: t(($) => $.types.autopilot_paused),
@@ -58,6 +62,7 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
   const { categoryOf, colorOf, iconOf } = useIssueStatuses(item.workspace_id);
   const statusLabelOf = useStatusLabel(item.workspace_id);
   const details = item.details ?? {};
+  if (details.reason === "jira_connection_required") return <span>{details.resumed_task_id ? tIssues(($) => $.jira_blocker.resumed) : tIssues(($) => $.jira_blocker.title)}</span>;
 
   switch (item.type) {
     case "status_changed": {
@@ -123,6 +128,8 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
       if (identifier) return <span>{t(($) => $.labels.created_with_agent, { identifier })}</span>;
       return <span>{typeLabels[item.type]}</span>;
     }
+    case "quick_create_pending":
+      return <span className="inline-flex items-center gap-1.5"><LoaderCircle aria-hidden="true" className="size-3 animate-spin motion-reduce:animate-none" />{typeLabels[item.type]}</span>;
     case "quick_create_failed": {
       const detail = getQuickCreateOutcomeDetail(item);
       if (detail) return <span>{t(($) => $.labels.failed_with_detail, { detail })}</span>;

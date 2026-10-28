@@ -51,12 +51,14 @@ import {
 } from "@multica/core/inbox/filter-store";
 
 import { IssueDetail, issueHighlightMementoKey } from "../../issues/components/issue-detail";
+import { IssueWorkPanel } from "../../issues/components/issue-work-panel";
 import { useViewStateWriter } from "../../platform";
 import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
 import { useNavigation, useReportNavigating } from "../../navigation";
 import { toast } from "sonner";
 import {
   MoreHorizontal,
+  LoaderCircle,
   Inbox,
   CheckCheck,
   Archive,
@@ -152,7 +154,7 @@ export function InboxPage() {
   const effectiveFilters = useMemo(() => inboxFiltersForPrioritySupport(filters, priorityFilterSupport), [filters, priorityFilterSupport]);
   const visibleItems = useMemo(() => filterInboxItems(viewItems, effectiveFilters), [viewItems, effectiveFilters]);
   const hasActiveFilters = inboxFilterCount(effectiveFilters) > 0;
-  const selectedOnPage = viewItems.find((i) => (i.issue_id ?? i.id) === selectedKey);
+  const selectedOnPage = viewItems.find((i) => (i.issue_id ?? i.id) === selectedKey || i.id === selectedKey);
   // A deep link can point beyond every loaded page. Resolve its group directly
   // without adding it to the cursor chain or mistaking a page miss for a 404.
   const lookup = useQuery({
@@ -164,8 +166,8 @@ export function InboxPage() {
     if (!isArchivedView || selectedOnPage) return visibleItems;
     return [...visibleItems, ...filterInboxItems(lookupItems, effectiveFilters)];
   }, [isArchivedView, selectedOnPage, visibleItems, lookupItems, effectiveFilters]);
-  const selected = selectionItems.find((i) => (i.issue_id ?? i.id) === selectedKey) ?? null;
-  const selectedInView = selectedOnPage ?? (isArchivedView ? lookupItems.find((i) => (i.issue_id ?? i.id) === selectedKey) : null);
+  const selected = selectionItems.find((i) => (i.issue_id ?? i.id) === selectedKey || i.id === selectedKey) ?? null;
+  const selectedInView = selectedOnPage ?? (isArchivedView ? lookupItems.find((i) => (i.issue_id ?? i.id) === selectedKey || i.id === selectedKey) : null);
   const selectionFilteredOut = !!selectedKey && !!selectedInView && !selected;
 
   // What the DETAIL pane shows, one React transition behind the click.
@@ -215,6 +217,11 @@ export function InboxPage() {
     replace(buildInboxUrl(view, key));
   }, [replace, buildInboxUrl, view]);
 
+  const completedReceiptIssueId = rawItems.find((item) => item.id === selectedKey && item.type === "quick_create_done")?.issue_id;
+  useEffect(() => {
+    if (completedReceiptIssueId) setSelectedKey(completedReceiptIssueId);
+  }, [completedReceiptIssueId, setSelectedKey]);
+
   // Switching views always clears the selection: the two lists are mutually
   // exclusive, so a key carried across would never resolve, and the fallback
   // effect below would bounce the user to the issue page.
@@ -250,6 +257,7 @@ export function InboxPage() {
   // too — clear the selection and stay on /inbox instead.
   useEffect(() => {
     if (viewLoading || lookupLoading || lookupError || (isArchivedView && archivedError)) return;
+    if (completedReceiptIssueId) return;
     if (!selectedKey) return;
     if (selected) return;
     if (selectionFilteredOut) return;
@@ -260,6 +268,7 @@ export function InboxPage() {
     replace(wsPaths.issueDetail(selectedKey));
   }, [
     viewLoading,
+    completedReceiptIssueId,
     isArchivedView,
     archivedError,
     lookupLoading,
@@ -688,6 +697,12 @@ export function InboxPage() {
         </div>
       ) : undefined}
     >
+      <div className="flex flex-1 min-h-0 flex-col">
+      {(detailItem.type === "installation_approval" || detailItem.type === "installation_decided") && detailItem.details?.work_record_id && (
+        <div className="max-h-[50%] shrink-0 overflow-y-auto border-b p-4">
+          <IssueWorkPanel issueId={detailItem.issue_id} recordId={detailItem.details.work_record_id} />
+        </div>
+      )}
       <IssueDetail
         key={detailItem.issue_id}
         issueId={detailItem.issue_id}
@@ -709,18 +724,24 @@ export function InboxPage() {
           handleArchive(detailItem.id);
         }}
       />
+      </div>
     </ErrorBoundary>
   ) : detailItem ? (
     <div className="p-6">
       <h2 className="text-title font-semibold">
-        {isAutopilotQuotaNotice(detailItem.type)
+        {isAutopilotQuotaNotice(detailItem.type) || detailItem.type === "quick_create_pending"
           ? typeLabels[detailItem.type]
           : getInboxDisplayTitle(detailItem)}
       </h2>
       <p className="mt-1 text-body text-muted-foreground">
         {typeLabels[detailItem.type]} · {timeAgo(detailItem.created_at)}
       </p>
-      {isAutopilotQuotaNotice(detailItem.type) ? (
+      {detailItem.type === "quick_create_pending" ? (
+        <div role="status" className="mt-4 flex items-start gap-3 rounded-lg border bg-muted/40 p-4 text-body">
+          <LoaderCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0 animate-spin motion-reduce:animate-none text-muted-foreground" />
+          <p>{t(($) => $.types.quick_create_pending_body)}</p>
+        </div>
+      ) : isAutopilotQuotaNotice(detailItem.type) ? (
         <AutopilotQuotaNotice
           item={detailItem}
           onOpenRecovery={showAutopilotQuotaRecoveryPrompt}
@@ -730,7 +751,7 @@ export function InboxPage() {
           {detailItem.body}
         </div>
       ) : null}
-      {isQuickCreateOutcome(detailItem.type) && detailItem.details?.original_prompt && (
+      {(isQuickCreateOutcome(detailItem.type) || detailItem.type === "quick_create_pending") && detailItem.details?.original_prompt && (
         <div className="mt-4 rounded-md border bg-muted/40 p-3">
           <p className="text-caption font-medium text-muted-foreground">
             {t(($) => $.detail.original_input)}

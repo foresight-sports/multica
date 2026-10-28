@@ -150,7 +150,8 @@ function ActiveChip({
   // truly running. With nothing running (queued / dispatched / parked on a
   // path lock) the chip reads "is queued" so a not-yet-started agent isn't
   // mislabelled as working.
-  const label = isSingle
+  const allBlocked = !anyRunning && queued.length > 0 && queued.every((task) => task.execution?.state === "blocked");
+  const label = allBlocked ? t(($) => $.execution_log.blocked) : isSingle
     ? t(
         ($) =>
           anyRunning ? $.agent_live.is_working : $.agent_live.is_queued,

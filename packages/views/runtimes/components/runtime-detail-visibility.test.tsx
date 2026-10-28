@@ -64,6 +64,9 @@ vi.mock("@tanstack/react-query", async () => {
       if (key?.[0] === "workspaces" && key?.[2] === "members") {
         return { data: mockQueryData.members, isLoading: false };
       }
+      if (key?.includes("subscription-quota")) {
+        return { data: undefined, isLoading: false };
+      }
       return { data: [], isLoading: false };
     }),
   };

@@ -1,3 +1,4 @@
+import { WorkspaceDirectorySchema, WorkspaceAccessRequestsSchema, type WorkspaceDirectoryData, type WorkspaceAccessRequests } from "./workspace-directory-schema";
 import { WorkRecordsSchema, WorkRecordSchema, type WorkRecords, type WorkRecord } from "./work-record-schema";
 import { MachineLogsSchema, type MachineLogs } from "./machine-logs-schema";
 import { RepositoryReadinessSchema, type RepositoryReadiness } from "./repository-readiness-schema";
@@ -5,6 +6,8 @@ import { RepositorySettingsSchema, type RepositorySettings } from "./repository-
 import { JiraSettingsSchema, type JiraSettings } from "./jira-settings-schema";
 import { IssueIntakeSchema, type IssueIntake } from "./issue-intake-schema";
 import { InstanceUpdateSchema, RuntimeUpdateResponseSchema, type InstanceUpdateInfo } from "./runtime-update-schema";
+import { ProviderAuthSchema, type ProviderAuthStatus } from "./provider-auth-schema";
+import { JiraConnectionSchema, JiraConnectSchema, JiraBlockersSchema, JiraResumeSchema, type JiraBlockers, type JiraConnection } from "./jira-connection-schema";
 import { SubscriptionQuotaSchema, unknownSubscriptionQuota } from "./subscription-quota-schema";
 import { ExecutionPolicySchema, ExecutionPreviewSchema, type ExecutionPolicy, type ExecutionRequest, type ExecutionPreview } from "./execution-schema";
 import { parseAgentResponse, parseAgentListResponse } from "./agent-schema";
@@ -15,7 +18,7 @@ import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSche
 import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { configStore } from "../config";
-import { InstanceConfigurationSchema, InstanceAgentListSchema, InstanceAgentSavedSchema, type InstanceConfiguration, type InstanceAgent, type InstanceAgentInput } from "./instance-schema";
+import { InstanceMembersSchema, type InstanceMembers, InstanceConfigurationSchema, InstanceAgentListSchema, InstanceAgentSavedSchema, type InstanceConfiguration, type InstanceAgent, type InstanceAgentInput } from "./instance-schema";
 import type {
   Issue,
   IssuePriority,
@@ -412,6 +415,7 @@ import {
   InboxUnreadSummarySchema,
   EMPTY_INBOX_UNREAD_SUMMARY,
   InboxItemListSchema,
+  QuickCreateReceiptSchema,
   ArchivedInboxPageSchema,
   ArchivedInboxFacetsSchema,
   EMPTY_INBOX_ITEMS,
@@ -1041,6 +1045,17 @@ export class ApiClient {
     return result;
   }
 
+  async listInstanceMembers(): Promise<InstanceMembers> {
+    const raw = await this.fetch<unknown>("/api/instance/members", { cache: "no-store" });
+    const result = parseWithFallback<InstanceMembers | null>(raw, InstanceMembersSchema, null, { endpoint: "GET /api/instance/members" });
+    if (!result) throw new Error("Could not load instance members. Please reload.");
+    return result;
+  }
+
+  async setInstanceMembership(userId: string, workspaceId: string, role: "none" | "member" | "admin" | "owner"): Promise<void> {
+    await this.fetch(`/api/instance/members/${userId}/workspaces/${workspaceId}`, { method: "PUT", body: JSON.stringify({ role }) });
+  }
+
   async updateInstanceConfiguration(data: InstanceConfiguration): Promise<InstanceConfiguration> {
     const raw = await this.fetch<unknown>("/api/instance/configuration", { method: "PUT", body: JSON.stringify(data) });
     const result = parseWithFallback<InstanceConfiguration | null>(raw, InstanceConfigurationSchema, null, { endpoint: "PUT /api/instance/configuration" });
@@ -1529,11 +1544,14 @@ export class ApiClient {
     project_id?: string | null;
     parent_issue_id?: string | null;
     attachment_ids?: string[];
-  }): Promise<{ task_id: string }> {
-    return this.fetch("/api/issues/quick-create", {
+  }): Promise<{ task_id: string; inbox_item_id?: string }> {
+    const raw = await this.fetch<unknown>("/api/issues/quick-create", {
       method: "POST",
       body: JSON.stringify(data),
     });
+    const receipt = parseWithFallback<{ task_id: string; inbox_item_id?: string } | null>(raw, QuickCreateReceiptSchema, null, { endpoint: "POST /api/issues/quick-create" });
+    if (!receipt) throw new Error("Could not confirm the request. Check Inbox before submitting again.");
+    return receipt;
   }
 
   async getCommentSubIssuePreview(anchorCommentId: string): Promise<SourceContextPreview> {
@@ -2779,6 +2797,52 @@ export class ApiClient {
  const result=parseWithFallback<RuntimeUpdate|null>(raw,RuntimeUpdateResponseSchema,null,{endpoint:"POST /api/runtimes/:id/update"});if(!result)throw new Error("Invalid update response");return result;
   }
 
+  async providerAuth(runtimeId: string, provider?: "claude" | "codex"): Promise<ProviderAuthStatus> {
+    const path = `/api/runtimes/${runtimeId}/provider-auth`;
+    const raw = await this.fetch<unknown>(path, provider ? {
+      method: "POST", body: JSON.stringify({ provider }),
+    } : undefined);
+    const result = parseWithFallback<ProviderAuthStatus | null>(raw, ProviderAuthSchema, null, { endpoint: path });
+    if (!result) throw new Error("Invalid authentication setup response");
+    return result;
+  }
+
+  async jiraConnection(): Promise<JiraConnection> {
+    const path = "/api/integrations/jira";
+    const raw = await this.fetch<unknown>(path);
+    const result = parseWithFallback<JiraConnection | null>(raw, JiraConnectionSchema, null, { endpoint: path });
+    if (!result) throw new Error("Invalid Jira connection response");
+    return result;
+  }
+
+  async issueJiraBlockers(issueId: string): Promise<JiraBlockers> {
+    const path = `/api/issues/${issueId}/jira-blockers`;
+    const raw = await this.fetch<unknown>(path);
+    const result = parseWithFallback<JiraBlockers | null>(raw, JiraBlockersSchema, null, { endpoint: path });
+    if (!result) throw new Error("Could not load Jira blockers");
+    return result;
+  }
+
+  async resumeJiraWork(issueId: string, taskId: string): Promise<{ task_id: string }> {
+    const path = `/api/issues/${issueId}/jira-blockers/${taskId}/resume`;
+    const raw = await this.fetch<unknown>(path, { method: "POST" });
+    const result = parseWithFallback<{ task_id: string } | null>(raw, JiraResumeSchema, null, { endpoint: path });
+    if (!result) throw new Error("Could not read resumed Jira work");
+    return result;
+  }
+
+  async connectJira(): Promise<{ redirect_url: string }> {
+    const path = "/api/integrations/jira/connect";
+    const raw = await this.fetch<unknown>(path, { method: "POST" });
+    const result = parseWithFallback<{ redirect_url: string } | null>(raw, JiraConnectSchema, null, { endpoint: path });
+    if (!result) throw new Error("Invalid Jira sign-in response");
+    return result;
+  }
+
+  async disconnectJira(): Promise<void> {
+    await this.fetch<void>("/api/integrations/jira", { method: "DELETE" });
+  }
+
   async getUpdateResult(
     runtimeId: string,
     updateId: string,
@@ -3151,6 +3215,21 @@ export class ApiClient {
     return parseWithFallback<AppConfigResponse>(raw, AppConfigSchema, EMPTY_APP_CONFIG, {
       endpoint: "GET /api/config",
     });
+  }
+
+  async workspaceDirectory(search = ""): Promise<WorkspaceDirectoryData> {
+    const data = await this.fetch<unknown>(`/api/workspace-directory?q=${encodeURIComponent(search)}`);
+    return parseWithFallback(data, WorkspaceDirectorySchema, { workspaces: [], can_create: false, truncated: false }, { endpoint: "GET /api/workspace-directory" });
+  }
+  async workspaceAccessRequests(): Promise<WorkspaceAccessRequests> {
+    const data = await this.fetch<unknown>("/api/workspace-access-requests");
+    return parseWithFallback(data, WorkspaceAccessRequestsSchema, { requests: [], truncated: false }, { endpoint: "GET /api/workspace-access-requests", sensitive: true });
+  }
+  async requestWorkspaceAccess(id: string, cancel: boolean): Promise<void> {
+    return this.fetch(`/api/workspace-directory/${id}/request`, { method: cancel ? "DELETE" : "POST" });
+  }
+  async reviewWorkspaceAccess(id: string, userId: string, decision: "approved" | "declined"): Promise<void> {
+    return this.fetch(`/api/workspace-directory/${id}/requests/${userId}`, { method: "POST", body: JSON.stringify({ decision }) });
   }
 
   // Workspaces

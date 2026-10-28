@@ -1,6 +1,7 @@
 "use client";
 
 import { IssueWorkPanel } from "./issue-work-panel";
+import { JiraBlockerPanel } from "./jira-blocker-panel";
 import {
   issueBehavesAs,
   issueBehavesAsAny,
@@ -3393,6 +3394,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
           ) : null}
 
+          <JiraBlockerPanel issueId={id} />
           {parentIssue && !issue.source_context && (
             <AppLink
               href={paths.issueDetail(parentIssue.id)}

@@ -1,4 +1,15 @@
 {
+  "provider_auth": {
+    "title": "プロバイダーへのログイン",
+    "description": "Multica が待機中に、この PC で設定画面を開きます。ブラウザーで認証してください。Claude を更新し、長期トークンを保存します。このトークンでは使用量を表示できません。",
+    "claude": "Claude を設定",
+    "codex": "Codex にログイン",
+    "pending": "マシンを待っています。",
+    "running": "マシン上の設定画面でログインを完了してください。設定中は新しい Multica タスクを停止します。",
+    "completed": "認証情報を保存しました。タスクを実行してアクセスを確認してください。",
+    "failed": "設定が失敗またはタイムアウトしました。画面を確認し、マシンが待機中に再試行してください。",
+    "retry": "状態を再取得"
+  },
   "capabilities": {
     "tab": "Capabilities",
     "title": "Execution capabilities",

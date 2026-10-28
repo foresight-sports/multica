@@ -38,10 +38,10 @@ describe("resolvePostAuthDestination", () => {
     );
   });
 
-  it("onboarded + no workspace → /workspaces/new", () => {
+  it("onboarded + no workspace → workspace directory", () => {
     // Already-onboarded user without any workspace — usually a returning
     // user whose last workspace got deleted or who left it. They skip
-    // re-onboarding and go straight to workspace creation.
-    expect(resolvePostAuthDestination([], true)).toBe(paths.newWorkspace());
+    // setup and return to workspace discovery and access requests.
+    expect(resolvePostAuthDestination([], true)).toBe(paths.onboarding());
   });
 });

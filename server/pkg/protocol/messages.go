@@ -415,6 +415,7 @@ type DaemonHeartbeatRequestPayload struct {
 // and re-registers; without it the dead UUID would keep heartbeating until the
 // daemon process restarts.
 type DaemonHeartbeatAckPayload struct {
+	PendingProviderAuth     *DaemonHeartbeatProviderAuth            `json:"pending_provider_auth,omitempty"`
 	RuntimeID               string                                  `json:"runtime_id"`
 	Status                  string                                  `json:"status"`
 	ServerCapabilities      []string                                `json:"server_capabilities,omitempty"`
@@ -439,6 +440,11 @@ const HeartbeatStatusRuntimeGone = "runtime_gone"
 type DaemonHeartbeatPendingUpdate struct {
 	ID            string `json:"id"`
 	TargetVersion string `json:"target_version"`
+}
+
+type DaemonHeartbeatProviderAuth struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
 }
 
 // DaemonHeartbeatPendingModelList describes a request for the daemon to

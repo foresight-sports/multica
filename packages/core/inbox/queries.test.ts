@@ -32,6 +32,18 @@ function item(overrides: Partial<InboxItem>): InboxItem {
 }
 
 describe("deduplicateInboxItems", () => {
+  it("keeps a Jira connection action visible until resumed", () => {
+    const blocker = item({ id: "jira", type: "agent_blocked", details: { reason: "jira_connection_required", task_id: "task" } });
+    const comment = item({ id: "comment", created_at: "2026-06-15T09:00:00Z" });
+    expect(deduplicateInboxItems([blocker, comment])[0]?.id).toBe("jira");
+    expect(deduplicateInboxItems([{ ...blocker, details: { ...blocker.details, resumed_task_id: "new-task" } }, comment])[0]?.id).toBe("comment");
+  });
+  it("keeps a pending approval visible over a newer comment until decided", () => {
+    const approval = item({ id: "approval", type: "installation_approval", severity: "action_required", details: { work_record_id: "record", state: "pending" } });
+    const comment = item({ id: "comment", created_at: "2026-06-15T09:00:00Z", details: { comment_id: "comment" } });
+    expect(deduplicateInboxItems([approval, comment])[0]).toEqual(approval);
+    expect(deduplicateInboxItems([{ ...approval, type: "installation_decided" }, comment])[0]?.id).toBe("comment");
+  });
   it("keeps the newest issue row while preserving an older comment anchor", () => {
     const merged = deduplicateInboxItems([
       item({

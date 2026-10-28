@@ -1540,6 +1540,7 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 // onto the agent's Instructions, matching the behavior of issue-bound
 // tasks assigned to the squad.
 type QuickCreateContext struct {
+	InboxItemID   string   `json:"inbox_item_id,omitempty"`
 	Type          string   `json:"type"`
 	Prompt        string   `json:"prompt"`
 	RequesterID   string   `json:"requester_id"`
@@ -1606,7 +1607,9 @@ func (s *TaskService) enqueueQuickCreateTask(ctx context.Context, workspaceID, r
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
 
+	taskID := dbid.NewV7()
 	payload := QuickCreateContext{
+		InboxItemID: util.UUIDToString(taskID),
 		Type:        QuickCreateContextType,
 		Prompt:      prompt,
 		RequesterID: util.UUIDToString(requesterID),
@@ -1656,7 +1659,6 @@ func (s *TaskService) enqueueQuickCreateTask(ctx context.Context, workspaceID, r
 	}
 	attrSource, _, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, requesterID, agent)
-	taskID := dbid.NewV7()
 	createParams := db.CreateQuickCreateTaskParams{
 		ID:                   taskID,
 		AgentID:              agentID,
@@ -1672,15 +1674,15 @@ func (s *TaskService) enqueueQuickCreateTask(ctx context.Context, workspaceID, r
 		TriggerEvidenceRefID: attrEvidenceRef,
 	}
 	var task db.AgentTaskQueue
+	tx, beginErr := s.TxStarter.Begin(ctx)
+	if beginErr != nil {
+		return db.AgentTaskQueue{}, fmt.Errorf("begin quick-create tx: %w", beginErr)
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.Queries.WithTx(tx)
 	if capture == nil {
-		task, err = s.Queries.CreateQuickCreateTask(ctx, createParams)
+		task, err = qtx.CreateQuickCreateTask(ctx, createParams)
 	} else {
-		tx, beginErr := s.TxStarter.Begin(ctx)
-		if beginErr != nil {
-			return db.AgentTaskQueue{}, fmt.Errorf("begin quick-create source context tx: %w", beginErr)
-		}
-		defer tx.Rollback(ctx)
-		qtx := s.Queries.WithTx(tx)
 		if _, err = qtx.LockIssueForDescriptionUpdate(ctx, db.LockIssueForDescriptionUpdateParams{
 			ID: capture.SourceIssueID, WorkspaceID: workspaceID,
 		}); err == nil {
@@ -1708,13 +1710,18 @@ func (s *TaskService) enqueueQuickCreateTask(ctx context.Context, workspaceID, r
 		if err == nil {
 			_, err = PersistSourceContext(ctx, qtx, *capture, pgtype.UUID{}, task.ID)
 		}
-		if err == nil {
-			err = tx.Commit(ctx)
-		}
 	}
 	if err != nil {
 		return db.AgentTaskQueue{}, fmt.Errorf("create quick-create task with source context: %w", err)
 	}
+	receipt, err := qtx.UpsertQuickCreateInbox(ctx, quickCreatePendingInboxParams(task, payload))
+	if err != nil {
+		return db.AgentTaskQueue{}, fmt.Errorf("create quick-create receipt: %w", err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return db.AgentTaskQueue{}, fmt.Errorf("commit quick-create request: %w", err)
+	}
+	s.publishQuickCreateInbox(receipt, payload.WorkspaceID, util.UUIDToString(agentID), "")
 
 	slog.Info("quick-create task enqueued",
 		"task_id", util.UUIDToString(task.ID),
@@ -1797,10 +1804,15 @@ func (s *TaskService) RetrySourceContextQuickCreate(ctx context.Context, workspa
 	}); err != nil {
 		return nil, fmt.Errorf("transfer source context manual retry: %w", err)
 	}
+	receipt, err := qtx.UpsertQuickCreateInbox(ctx, quickCreatePendingInboxParams(child, quickCreate))
+	if err != nil {
+		return nil, fmt.Errorf("reopen quick-create receipt: %w", err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit source context manual retry: %w", err)
 	}
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, child)
+	s.publishQuickCreateInbox(receipt, quickCreate.WorkspaceID, util.UUIDToString(child.AgentID), "")
 	s.NotifyTaskEnqueued(ctx, child)
 	return &child, nil
 }
@@ -4216,11 +4228,26 @@ func (s *TaskService) maybeLogClaimSlow(agentID pgtype.UUID, outcome string, sta
 }
 
 var errExecutionMachineUnavailable = errors.New("selected machine no longer satisfies the execution profile or workspace requirements")
+var errExecutionStartRequeued = errors.New("task start claim requeued")
 
-func (s *TaskService) requeueUnavailableExecution(ctx context.Context, task db.AgentTaskQueue, err error) {
+// IsExecutionMachineUnavailable identifies a rejected start, not a transient
+// server failure that a daemon should retry with the same claim.
+func IsExecutionMachineUnavailable(err error) bool {
+	return errors.Is(err, errExecutionMachineUnavailable)
+}
+
+func IsExecutionStartRequeued(err error) bool {
+	return errors.Is(err, errExecutionStartRequeued)
+}
+
+func (s *TaskService) requeueUnavailableExecution(ctx context.Context, task db.AgentTaskQueue, err error) error {
 	if errors.Is(err, errExecutionMachineUnavailable) && !execution.ParseSelection(task.ExecutionSelection).Locked && !task.StartedAt.Valid {
-		_, _ = s.RequeueTaskAfterClaimFailure(ctx, task)
+		if _, requeueErr := s.RequeueTaskAfterClaimFailure(ctx, task); requeueErr != nil {
+			return fmt.Errorf("%w: %w", err, requeueErr)
+		}
+		return fmt.Errorf("%w: %w", errExecutionStartRequeued, err)
 	}
+	return err
 }
 
 func (s *TaskService) validateTaskExecutionStart(ctx context.Context, current db.AgentTaskQueue) error {
@@ -4247,17 +4274,7 @@ func (s *TaskService) validateTaskExecutionStart(ctx context.Context, current db
 		if e != nil {
 			return e
 		}
-		eligible := false
-		for _, candidate := range s.ConstrainExecutionToTask(ctx, current, s.ExecutionCandidates(ctx, a, execution.ParsePolicy(raw))) {
-			p := candidate.Profile
-			if candidate.Eligible && selection.State == "selected" && p.ID == selection.Profile.ID && p.RuntimeID == util.UUIDToString(current.RuntimeID) && p.Model == selection.Profile.Model && p.ThinkingLevel == selection.Profile.ThinkingLevel && p.ServiceTier == selection.Profile.ServiceTier {
-				eligible = true
-				break
-			}
-		}
-		if !eligible {
-			return errExecutionMachineUnavailable
-		}
+		return validateSelectedExecution(selection.Profile, util.UUIDToString(current.RuntimeID), s.ConstrainExecutionToTask(ctx, current, s.ExecutionCandidates(ctx, a, execution.ParsePolicy(raw))))
 	}
 	return nil
 }
@@ -4270,8 +4287,7 @@ func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID, supplem
 		return nil, fmt.Errorf("load task: %w", err)
 	}
 	if err := s.validateTaskExecutionStart(ctx, current); err != nil {
-		s.requeueUnavailableExecution(ctx, current, err)
-		return nil, err
+		return nil, s.requeueUnavailableExecution(ctx, current, err)
 	}
 	enableTaskSupplement := len(supplementSupport) > 0 && supplementSupport[0]
 	task, err := s.Queries.StartAgentTaskWithSupplement(ctx, db.StartAgentTaskWithSupplementParams{
@@ -4306,8 +4322,7 @@ func (s *TaskService) StartTaskForClaim(ctx context.Context, claim db.LockAgentT
 	if !replay {
 		if err := s.validateTaskExecutionStart(ctx, task); err != nil {
 			_ = tx.Rollback(ctx)
-			s.requeueUnavailableExecution(ctx, task, err)
-			return nil, err
+			return nil, s.requeueUnavailableExecution(ctx, task, err)
 		}
 		task, err = qtx.StartAgentTaskWithSupplement(ctx, db.StartAgentTaskWithSupplementParams{
 			TaskID:               task.ID,
@@ -6328,7 +6343,7 @@ func delegatedFailureRecoveryContent(failed, source db.AgentTaskQueue) string {
 		reason = truncateForSummary(redact.Text(failed.FailureReason.String), triggerSummaryMaxLen)
 	}
 	content := fmt.Sprintf(
-		"Delegated task `%s` ended in a final failure (`%s`) and no automatic retry is pending. Resume coordination: inspect this failed runtime and its diagnostics. Retry only after changed conditions or a categorized transient failure; otherwise record a blocker with an owner. Reassign or change scope only within the user request.",
+		"Delegated task `%s` ended in a final failure (`%s`) and no automatic retry is pending. Resume coordination within the user's issue scope. Do not repair Multica, its daemon, host configuration, or shared repositories. Report platform problems to the machine owner. Retry only after changed conditions or a categorized transient failure; otherwise record a blocker with an owner. Reassign or change scope only within the user request.",
 		util.UUIDToString(failed.ID), reason,
 	)
 	if failed.Error.Valid && failed.Error.String != "" {
@@ -6349,6 +6364,12 @@ func delegatedFailureRecoveryContent(failed, source db.AgentTaskQueue) string {
 // Lifecycle is checked only at dispatch: even an unresolved or paused status
 // must leave a durable signal that can be replayed when it becomes executable.
 func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, failed db.AgentTaskQueue) (*delegatedFailureRecoveryTarget, error) {
+	// Platform failures belong to Multica and the machine owner. Never turn
+	// them into a worker/coordinator assignment, including legacy daemon errors.
+	reason := taskfailure.NormalizeDaemonReason(failed.FailureReason.String, failed.Error.String)
+	if !allowsCoordinatorFailureRecovery(reason) {
+		return nil, nil
+	}
 	if failed.Status != "failed" || !failed.DelegatedFromTaskID.Valid || failed.AutopilotRunID.Valid ||
 		(failed.TriggerEvidenceKind.Valid && failed.TriggerEvidenceKind.String == string(attribution.EvidenceDelegatedFailure)) {
 		return nil, nil
@@ -6393,6 +6414,21 @@ func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, fail
 		return nil, nil
 	}
 	return &delegatedFailureRecoveryTarget{failed: failed, source: source, issue: issue, agent: agent}, nil
+}
+
+func allowsCoordinatorFailureRecovery(reason taskfailure.Reason) bool {
+	switch reason {
+	case taskfailure.ReasonEnvironmentPrepareFailed, taskfailure.ReasonSkillBundleUnavailable,
+		taskfailure.ReasonTimeout,
+		taskfailure.ReasonRuntimeCLITimeout, taskfailure.ReasonInvalidTaskIdentity,
+		taskfailure.ReasonRuntimeAccessDenied, taskfailure.ReasonQueuedExpired,
+		taskfailure.ReasonRuntimeOffline, taskfailure.ReasonRuntimeReconnectTimeout,
+		taskfailure.ReasonRuntimeRecovery, taskfailure.ReasonAgentRuntimeMissingExecutable,
+		taskfailure.ReasonAgentRuntimeVersionUnsupported:
+		return false
+	default:
+		return true
+	}
 }
 
 // canDispatchDelegatedFailureRecovery matches the lifecycle predicate in
@@ -6863,6 +6899,10 @@ func (s *TaskService) dispatchDelegatedFailureRecoveryComment(ctx context.Contex
 	if err != nil {
 		return delegatedFailureRecoveryCovered, fmt.Errorf("load failed recovery source: %w", err)
 	}
+	if !allowsCoordinatorFailureRecovery(taskfailure.NormalizeDaemonReason(failed.FailureReason.String, failed.Error.String)) {
+		_, err := s.Queries.SettleDelegatedFailureRecoveryComment(ctx, comment.ID)
+		return delegatedFailureRecoveryCovered, err
+	}
 	target, err := loadDelegatedFailureRecoveryTarget(ctx, s.Queries, failed)
 	if err != nil || target == nil {
 		return delegatedFailureRecoveryCovered, err
@@ -7258,6 +7298,7 @@ func (s *TaskService) NotifyTaskEnqueued(ctx context.Context, task db.AgentTaskQ
 // is not available; the hint only means that a queued successor may have
 // become claimable because an agent-capacity or serialization barrier cleared.
 func (s *TaskService) NotifyTaskFinished(task db.AgentTaskQueue) {
+	s.settleCancelledQuickCreateReceipt(task)
 	s.forgetTaskReclaim(task)
 	s.notifyRuntimeMayHaveWork(task.RuntimeID, "")
 }
@@ -7268,6 +7309,7 @@ func (s *TaskService) NotifyTaskFinished(task db.AgentTaskQueue) {
 func (s *TaskService) notifyTasksFinished(tasks []db.AgentTaskQueue) {
 	seen := make(map[string]struct{}, len(tasks))
 	for _, task := range tasks {
+		s.settleCancelledQuickCreateReceipt(task)
 		if !task.RuntimeID.Valid {
 			continue
 		}
@@ -8023,19 +8065,17 @@ func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.Ag
 		"identifier":      identifier,
 		"original_prompt": qc.Prompt,
 	})
-	item, err := s.Queries.CreateInboxItem(ctx, db.CreateInboxItemParams{
-		ID:            dbid.NewV7(),
-		WorkspaceID:   workspaceID,
-		RecipientType: "member",
-		RecipientID:   requesterID,
-		Type:          "quick_create_done",
-		Severity:      "info",
-		IssueID:       issue.ID,
-		Title:         issue.Title,
-		Body:          pgtype.Text{},
-		ActorType:     pgtype.Text{String: "agent", Valid: true},
-		ActorID:       task.AgentID,
-		Details:       details,
+	item, err := s.Queries.UpsertQuickCreateInbox(ctx, db.UpsertQuickCreateInboxParams{
+		ID:          quickCreateInboxID(task, qc),
+		WorkspaceID: workspaceID,
+		RecipientID: requesterID,
+		Type:        "quick_create_done",
+		Severity:    "info",
+		IssueID:     issue.ID,
+		Title:       issue.Title,
+		Body:        pgtype.Text{},
+		ActorID:     task.AgentID,
+		Details:     details,
 	})
 	if err != nil {
 		slog.Error("quick-create completion: inbox write failed", "task_id", util.UUIDToString(task.ID), "error", err)
@@ -8099,6 +8139,34 @@ const quickCreateNotifyTimeout = 5 * time.Second
 // user-facing wording and the row type; the row shape — original prompt, agent
 // id, redacted message — is identical so the frontend's recovery affordance
 // keeps working for both.
+func quickCreatePendingInboxParams(task db.AgentTaskQueue, qc QuickCreateContext) db.UpsertQuickCreateInboxParams {
+	details, _ := json.Marshal(map[string]string{"task_id": util.UUIDToString(task.ID), "agent_id": util.UUIDToString(task.AgentID), "original_prompt": qc.Prompt})
+	workspaceID, _ := util.ParseUUID(qc.WorkspaceID)
+	requesterID, _ := util.ParseUUID(qc.RequesterID)
+	return db.UpsertQuickCreateInboxParams{
+		ID: quickCreateInboxID(task, qc), WorkspaceID: workspaceID, RecipientID: requesterID,
+		Type: "quick_create_pending", Severity: "info", Title: "Creating issue",
+		Body:    pgtype.Text{String: "Your request was received. The agent is preparing your issue. You can leave this page; the result will appear here.", Valid: true},
+		ActorID: task.AgentID, Details: details,
+	}
+}
+
+func (s *TaskService) settleCancelledQuickCreateReceipt(task db.AgentTaskQueue) {
+	if task.Status != "cancelled" {
+		return
+	}
+	if qc, ok := s.parseQuickCreateContext(task); ok && qc.InboxItemID != "" {
+		s.writeQuickCreateOutcomeInbox(context.Background(), task, qc, inboxTypeQuickCreateUnconfirmed, "Issue creation stopped", "Creation was stopped. Check your recent issues before submitting again.")
+	}
+}
+
+func quickCreateInboxID(task db.AgentTaskQueue, qc QuickCreateContext) pgtype.UUID {
+	if id, err := util.ParseUUID(qc.InboxItemID); err == nil && id.Valid {
+		return id
+	}
+	return task.ID
+}
+
 func (s *TaskService) writeQuickCreateOutcomeInbox(ctx context.Context, task db.AgentTaskQueue, qc QuickCreateContext, inboxType, title, errMsg string) {
 	requesterID, err := util.ParseUUID(qc.RequesterID)
 	if err != nil {
@@ -8124,19 +8192,17 @@ func (s *TaskService) writeQuickCreateOutcomeInbox(ctx context.Context, task db.
 		"error":             redact.Text(errMsg),
 		"source_context_id": qc.SourceContextID,
 	})
-	item, err := s.Queries.CreateInboxItem(ctx, db.CreateInboxItemParams{
-		ID:            dbid.NewV7(),
-		WorkspaceID:   workspaceID,
-		RecipientType: "member",
-		RecipientID:   requesterID,
-		Type:          inboxType,
-		Severity:      "action_required",
-		IssueID:       pgtype.UUID{},
-		Title:         title,
-		Body:          pgtype.Text{String: redact.Text(errMsg), Valid: true},
-		ActorType:     pgtype.Text{String: "agent", Valid: true},
-		ActorID:       task.AgentID,
-		Details:       details,
+	item, err := s.Queries.UpsertQuickCreateInbox(ctx, db.UpsertQuickCreateInboxParams{
+		ID:          quickCreateInboxID(task, qc),
+		WorkspaceID: workspaceID,
+		RecipientID: requesterID,
+		Type:        inboxType,
+		Severity:    "action_required",
+		IssueID:     pgtype.UUID{},
+		Title:       title,
+		Body:        pgtype.Text{String: redact.Text(errMsg), Valid: true},
+		ActorID:     task.AgentID,
+		Details:     details,
 	})
 	if err != nil {
 		slog.Error("quick-create failure: inbox write failed", "task_id", util.UUIDToString(task.ID), "error", err)

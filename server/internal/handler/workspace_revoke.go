@@ -65,6 +65,16 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 		return empty, err
 	}
 
+	if err := lockWorkspaceMembership(ctx, tx, workspaceID); err != nil {
+		return empty, err
+	}
+	current, err := qtx.GetMember(ctx, memberID)
+	if err != nil {
+		return empty, err
+	}
+	if err := protectWorkspaceOwner(ctx, qtx, current, "none"); err != nil {
+		return empty, err
+	}
 	runtimes, err := qtx.ListAgentRuntimesByOwner(ctx, db.ListAgentRuntimesByOwnerParams{
 		WorkspaceID: workspaceID,
 		OwnerID:     userID,

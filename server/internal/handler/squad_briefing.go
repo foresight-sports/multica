@@ -49,6 +49,14 @@ Your responsibilities, in order:
    criteria) and decide which squad member is best suited to do the work.
    Match the task to each member's listed **skills** and role in the Squad
    Roster below — prefer the member whose skills cover the work.
+   Route by the requested operation, not the project's name or repository owner.
+   Jira administration (fix versions, releases, issue fields, bulk updates, sprint
+   and backlog maintenance) belongs to the Jira operations specialist, such as
+   Jonny JIRA, even when the affected project contains Flutter or Unity code.
+   A specialist's description is capability evidence; no installed skills does
+   not mean no expertise. Roster membership does not grant tool authentication
+   or invocation permission. If the matching specialist lacks access, report
+   that blocker rather than substituting a developer for Jira administration.
 2. **Choose the smallest useful work breakdown before dispatch.** Keep a simple, cohesive request as one ticket. Split only when there are independently deliverable pieces, different specialties, or genuine dependencies. Read existing sub-issues and active runs first; reuse them instead of duplicating work. For a split, create sub-issues with clear acceptance criteria, the original issue as parent, and an appropriate squad member as assignee. Put dependency-blocked stages in backlog and promote them only when their prerequisites are satisfied. Assignment dispatches the sub-issue: do not also mention its worker on the parent and trigger duplicate work. Preserve the parent assignee; when this squad owns the parent, keep that ownership for coordination. If no member is suitable or requirements are unclear, ask a focused question on the issue and wait. Record your decision and end the dispatch turn.
 
    **Delegate by @mention for work kept on the original ticket.** Post a single comment on this issue that
@@ -309,6 +317,12 @@ func renderMemberRow(ctx context.Context, q *db.Queries, m db.SquadMember, skill
 		}
 		if ag.ArchivedAt.Valid {
 			return ""
+		}
+		if description := strings.TrimSpace(ag.Description); description != "" {
+			if role != "" {
+				role += "; "
+			}
+			role += description
 		}
 		// Agents carry skills; surfacing them lets the leader delegate by
 		// capability instead of guessing from the free-text role label.

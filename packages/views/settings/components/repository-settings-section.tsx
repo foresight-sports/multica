@@ -78,6 +78,11 @@ export function RepositorySettingsSection({
                     onChange={(e) => edit({ folder: e.target.value })}
                   />
                 </SettingsRow>
+                <SettingsRow label={t(($) => $.repository.base_branch)} description={t(($) => $.repository.base_branch_description)} size="text">
+                  <Input aria-label={t(($) => $.repository.base_branch)} value={value.base_branch ?? ""}
+                    disabled={!query.data?.can_edit || save.isPending}
+                    onChange={(e) => edit({ base_branch: e.target.value })} />
+                </SettingsRow>
                 <SettingsRow
                   label={t(($) => $.repository.worktree)}
                   description={t(($) => $.repository.worktree_description)}

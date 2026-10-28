@@ -33,6 +33,7 @@ import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
 import { pendingRuntimesForProfiles } from "./pending-runtime";
 import { RepositorySettingsSection } from "../../settings/components/repository-settings-section";
 import { MachineCliSection } from "./machine-cli-section";
+import { ProviderAuthSection } from "./provider-auth-section";
 import { HealthIcon, useHealthLabel } from "./shared";
 import { useT, useTimeAgo } from "../../i18n";
 
@@ -170,6 +171,9 @@ export function RuntimeDetailPage({
     currentMember?.role === "owner" || currentMember?.role === "admin";
   const canAddRuntime =
     isAdmin && machine?.mode === "local" && !!machine.daemonId;
+  const authRuntime = machine?.mode === "local" ? machine.runtimes.find(
+    (runtime) => runtime.owner_id === currentUserId && runtime.metadata?.provider_auth_version === 1 && runtime.metadata?.os === "windows",
+  ) : undefined;
   const renameTarget = useMemo(() => {
     if (!machine || machine.runtimes.length === 0) return null;
     const editable = isAdmin
@@ -273,6 +277,7 @@ export function RuntimeDetailPage({
                     currentUserId={currentUserId}
                     canManagePublicRuntimes={isAdmin}
                   />
+                  {authRuntime && <ProviderAuthSection runtimeId={authRuntime.id} />}
                   {machine.lastSeenAt && (
                     <span>{timeAgo(machine.lastSeenAt)}</span>
                   )}

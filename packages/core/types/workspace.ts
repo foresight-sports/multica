@@ -55,7 +55,7 @@ export interface Member {
 
 export interface User {
   /** Server-computed account permissions; workspace membership is still required. */
-  permissions?: { register_runtimes: boolean; manage_permission_access?: boolean; create_instance_agents?: boolean; create_agents?: boolean; edit_agents?: boolean };
+  permissions?: { create_workspaces?: boolean; register_runtimes: boolean; manage_permission_access?: boolean; create_instance_agents?: boolean; create_agents?: boolean; edit_agents?: boolean };
   id: string;
   name: string;
   email: string;

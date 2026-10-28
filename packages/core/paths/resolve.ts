@@ -6,7 +6,7 @@ import { paths } from "./paths";
  * Priority (onboarded-first):
  *   !hasOnboarded               → /onboarding
  *   hasOnboarded + workspace[0] → /<first.slug>/issues
- *   hasOnboarded + no workspace → /workspaces/new
+ *   hasOnboarded + no workspace → /onboarding (workspace directory)
  *
  * V3 invariant: `onboarded_at != null` is the single source of truth for
  * "may access /<slug>/*". The web workspace layout and the desktop App.tsx
@@ -38,7 +38,7 @@ export function resolvePostAuthDestination(
   if (first) {
     return paths.workspace(first.slug).issues();
   }
-  return paths.newWorkspace();
+  return paths.onboarding();
 }
 
 /**

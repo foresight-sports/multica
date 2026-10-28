@@ -714,6 +714,7 @@
     "cancel_failed": "Failed to cancel run"
   },
   "execution_log": {
+    "blocked": "Blocked",
     "section": "Execution log",
     "cancel_task_tooltip": "Cancel run",
     "cancel_task_aria": "Cancel run",
@@ -1464,5 +1465,16 @@
     "blocker": "Blocker",
     "human_record": "Recorded by a human",
     "agent_record": "Recorded by an agent"
+  },
+  "jira_blocker": {
+    "title": "Jira connection required",
+    "instructions": "Connect your own Atlassian account to let the agent use Jira with your permissions. After sign-in, return to this issue and select Resume.",
+    "ready": "Jira is connected. Select Resume to start a new run of the blocked agent with the issue context.",
+    "connect": "Connect Jira",
+    "resume": "Resume",
+    "wait": "Waiting for the current run to finish.",
+    "reload": "Reload",
+    "unavailable": "Jira sign-in is unavailable. Contact your instance administrator.",
+    "resumed": "Jira work resumed"
   }
 }

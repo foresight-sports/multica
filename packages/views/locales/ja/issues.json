@@ -687,6 +687,7 @@
     "cancel_failed": "実行をキャンセルできませんでした"
   },
   "execution_log": {
+    "blocked": "ブロック中",
     "section": "実行ログ",
     "cancel_task_tooltip": "実行をキャンセル",
     "cancel_task_aria": "実行をキャンセル",
@@ -1417,5 +1418,16 @@
   },
   "jira": {
     "required_notice": "Agent work is waiting for a JIRA ticket ID. Set a key such as FS-123."
+  },
+  "jira_blocker": {
+    "title": "Jira への接続が必要です",
+    "instructions": "ご自身の Atlassian アカウントを接続すると、エージェントがあなたの権限で Jira を利用できます。サインイン後、この課題に戻って「再開」を選択してください。",
+    "ready": "Jira に接続しました。「再開」を選択すると、課題のコンテキストを使ってエージェントを新たに実行します。",
+    "connect": "Jira に接続",
+    "resume": "再開",
+    "wait": "現在の実行が終了するまでお待ちください。",
+    "reload": "再読み込み",
+    "unavailable": "Jira にサインインできません。インスタンス管理者にお問い合わせください。",
+    "resumed": "Jira の作業を再開しました"
   }
 }

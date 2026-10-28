@@ -267,6 +267,7 @@ func (h *Handler) ReportExecutionCapabilities(w http.ResponseWriter, r *http.Req
 		Version                    int                `json:"execution_version"`
 		Arch                       string             `json:"arch,omitempty"`
 		MachineLogsVersion         int                `json:"machine_logs_version"`
+		ProviderAuthVersion        int                `json:"provider_auth_version"`
 		WorkspaceRepositoryVersion int                `json:"workspace_repository_version"`
 		WorkHandoffVersion         int                `json:"work_handoff_version"`
 		JiraTicketVersion          int                `json:"jira_ticket_version"`

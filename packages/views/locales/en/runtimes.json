@@ -1,4 +1,15 @@
 {
+  "provider_auth": {
+    "title": "Provider sign-in",
+    "description": "Opens a setup window on this PC while Multica is idle. Complete browser authorization there. Claude setup updates Claude and saves a long-lived token; usage reporting is unavailable with that token.",
+    "claude": "Set up Claude",
+    "codex": "Sign in to Codex",
+    "pending": "Waiting for the machine.",
+    "running": "Complete sign-in in the setup window on the machine. New Multica work is paused during setup.",
+    "completed": "Credentials saved. Run a task to verify access.",
+    "failed": "Setup failed or timed out. Check the setup window and retry when the machine is idle.",
+    "retry": "Retry status"
+  },
   "capabilities": {
     "tab": "Capabilities",
     "title": "Execution capabilities",

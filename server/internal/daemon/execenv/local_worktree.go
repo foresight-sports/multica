@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/multica-ai/multica/server/internal/daemon/gitsubmodule"
+	"github.com/multica-ai/multica/server/pkg/workspacerepo"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -44,11 +45,10 @@ const (
 	// repo path must stay under MAX_PATH for tools that predate long paths.
 	localWorktreeDirName = "worktree"
 
-	// gitTimeout bounds every git invocation this file makes. These are all
-	// local-only operations (no network), so a slow one means a wedged index
-	// lock rather than a slow remote; failing the task beats hanging a daemon
-	// slot forever.
-	gitTimeout = 2 * time.Minute
+	// Keep metadata operations bounded separately from materializing a large
+	// checkout, which can take minutes on Windows under antivirus scanning.
+	gitTimeout         = 2 * time.Minute
+	gitCheckoutTimeout = 20 * time.Minute
 
 	// maxUntrackedFiles / maxUntrackedBytes bound the untracked content a task
 	// will replay. `--exclude-standard` already drops anything gitignored
@@ -80,6 +80,8 @@ type LocalWorktreeParams struct {
 	// or any subdirectory of it; the worktree always covers the whole repo,
 	// and the agent's cwd is the matching subdirectory inside it.
 	LocalPath string
+	// SharedBase opts into the server-pinned remote source instead of local HEAD.
+	SharedBase string
 	// EnvRoot is the daemon-owned task env root. The worktree is created
 	// inside it so the ordinary env-root GC reclaims it.
 	EnvRoot string
@@ -162,7 +164,8 @@ type LocalWorktree struct {
 	// Measuring against the older commit let a run reset away everything this
 	// turn replayed and still be recorded as having delivered it, which is how
 	// the user's edits went missing from the turn after (MUL-6881 review).
-	BaseCommit string
+	BaseCommit   string
+	SourceCommit string
 	// DirtyBaseCaptured records that the user had uncommitted tracked edits
 	// which were replayed into the worktree.
 	DirtyBaseCaptured bool
@@ -356,19 +359,30 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 		return nil, fmt.Errorf("execenv: repository %q has no commit to branch from "+
 			"(worktree mode needs at least one commit; make an initial commit or switch the resource back to in_place): %w", gitRoot, err)
 	}
+	if params.SharedBase != "" {
+		if !workspacerepo.ValidCommit(params.SharedBase) {
+			return nil, fmt.Errorf("invalid shared baseline")
+		}
+		headSHA = params.SharedBase
+	}
 
 	// Refuse an untracked payload too large to reproduce BEFORE snapshotting it:
 	// the snapshot writes every one of those bytes into the user's own object
 	// database, which is not something to do by accident on a directory full of
 	// un-ignored build output.
-	if err := checkUntrackedReplayable(gitRoot, logger); err != nil {
-		return nil, err
+	if params.SharedBase == "" {
+		if err := checkUntrackedReplayable(gitRoot, logger); err != nil {
+			return nil, err
+		}
 	}
 
 	// The commit describing the user's directory as this task sees it — their
 	// tracked edits and their untracked files in one tree. Everything below
 	// reasons about the user's state through this single object.
-	userState, err := captureUserSnapshot(gitRoot, params.EnvRoot, headSHA, logger)
+	userState := headSHA
+	if params.SharedBase == "" {
+		userState, err = captureUserSnapshot(gitRoot, params.EnvRoot, headSHA, logger)
+	}
 	if err != nil {
 		// Fail closed. The promise of this mode is that the agent reasons about
 		// the code the user actually has; silently starting from HEAD instead
@@ -380,6 +394,25 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 	}
 
 	plan := resolveTaskBranch(gitRoot, params, headSHA, logger)
+	if params.SharedBase != "" && plan.continues {
+		if _, err := runGit(gitRoot, "merge-base", "--is-ancestor", headSHA, plan.base); err != nil {
+			// A snapshot-only branch has no agent changes to reconcile. Preserve
+			// it, and start a separate source-specific conversation branch.
+			if plan.priorState == "" {
+				return nil, fmt.Errorf("existing task branch lacks source provenance; preserve and reconcile its work before continuing")
+			}
+			if _, err := runGit(gitRoot, "diff", "--quiet", plan.priorState, plan.base, "--"); err != nil {
+				return nil, fmt.Errorf("existing task branch has changes against an older baseline; preserve and reconcile its work before continuing")
+			}
+			params.ConversationKey += "-base-" + headSHA[:12]
+			plan = resolveTaskBranch(gitRoot, params, headSHA, logger)
+			if plan.continues {
+				if _, err := runGit(gitRoot, "merge-base", "--is-ancestor", headSHA, plan.base); err != nil {
+					return nil, fmt.Errorf("source-specific branch diverged from the issue baseline")
+				}
+			}
+		}
+	}
 	actualBranch, createdBranch, err := addLocalWorktree(gitRoot, worktreePath, plan, params.TaskID)
 	if err != nil {
 		return nil, err
@@ -391,6 +424,7 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 		WorkDir:       filepath.Join(worktreePath, rel),
 		Branch:        actualBranch,
 		BaseCommit:    plan.base,
+		SourceCommit:  headSHA,
 		Continued:     plan.continues,
 		createdBranch: createdBranch,
 		userState:     userState,
@@ -660,6 +694,13 @@ func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, err
 	// makes that recoverable — the worktree is still there to preserve, exactly
 	// as for a commit that could not be made.
 	if !dropped {
+		var reconcileErr error
+		tip, reconcileErr = w.reconcileDeliveryBranch(tip)
+		if reconcileErr != nil {
+			outcome.Branch = ""
+			outcome.PreservedPath = w.Path
+			return outcome, fmt.Errorf("could not preserve feature-branch delivery: %w; worktree preserved at %s", reconcileErr, w.Path)
+		}
 		if verifyErr := w.verifyDeliveryPoint(tip); verifyErr != nil {
 			outcome.Branch = ""
 			outcome.PreservedPath = w.Path
@@ -798,8 +839,21 @@ func (w *LocalWorktree) commitAll(logger *slog.Logger) (bool, error) {
 // commit" case and (false, err) for a real failure — the distinction callers
 // need to decide whether the tree is safe to discard.
 func commitEverything(worktreePath, message string, allowEmpty bool) (bool, error) {
-	if out, err := runGit(worktreePath, "add", "-A"); err != nil {
+	if out, err := runGit(worktreePath, "add", "-A", "--", ".", ":(glob,exclude)**/.multica/**", ":(glob,exclude)**/.agent_context/**"); err != nil {
 		return false, fmt.Errorf("git add: %s: %w", strings.TrimSpace(out), err)
+	}
+	// Agents may have staged scratch checkouts themselves. Remove only new
+	// sidecar entries from the index; never delete their files or existing history.
+	added, err := runGitStdout(worktreePath, "diff", "--cached", "--name-only", "--diff-filter=A", "-z")
+	if err != nil {
+		return false, err
+	}
+	for _, path := range strings.Split(added, "\x00") {
+		if path != "" && isMulticaSidecarPath(path) {
+			if _, err := runGit(worktreePath, "update-index", "--force-remove", "--", path); err != nil {
+				return false, err
+			}
+		}
 	}
 	// --no-verify: the user's commit hooks are written for the user's own
 	// workflow (interactive linters, test suites, signing prompts) and a hook
@@ -1675,7 +1729,12 @@ func runGit(dir string, args ...string) (string, error) {
 // runGitEnv is runGit with extra environment entries, for the one caller that
 // has to redirect GIT_INDEX_FILE.
 func runGitEnv(dir string, extraEnv []string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	ctx, cancel := context.WithCancel(context.Background())
+	checkout := len(args) >= 2 && args[0] == "worktree" && args[1] == "add"
+	if !checkout {
+		cancel()
+		ctx, cancel = context.WithTimeout(context.Background(), gitTimeout)
+	}
 	defer cancel()
 
 	full := append([]string{"-c", "core.longpaths=true", "-C", dir}, args...)
@@ -1684,7 +1743,13 @@ func runGitEnv(dir string, extraEnv []string, args ...string) (string, error) {
 		cmd.Env = append(os.Environ(), extraEnv...)
 	}
 	cmd.WaitDelay = 5 * time.Second
+	if checkout {
+		return runGitWithProgressTimeout(cmd, cancel, gitCheckoutTimeout)
+	}
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		err = fmt.Errorf("git %s timed out after %s: %w", strings.Join(args[:min(2, len(args))], " "), gitTimeout, ctx.Err())
+	}
 	return string(out), err
 }
 

@@ -1,4 +1,5 @@
 "use client";
+import { useAuthStore } from "@multica/core/auth";
 
 import { type ReactNode, useRef, useEffect, useState } from "react";
 import { Dices, Plus } from "lucide-react";
@@ -100,7 +101,9 @@ export function StepWorkspace({
 }) {
   const { t, i18n } = useT("onboarding");
   const locale = matchLocale([i18n.resolvedLanguage ?? i18n.language]);
-  const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const instanceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const hasCreatePermission = useAuthStore((s) => s.user?.permissions?.create_workspaces === true);
+  const workspaceCreationDisabled = instanceCreationDisabled || !hasCreatePermission;
   const urlHost = workspaceUrlHost(useConfigStore((s) => s.daemonAppUrl));
   // Single source of truth for "can the user reach the create path on this
   // instance?" — drives the resume-mode picker, the eyebrow/headline/lede

@@ -1,4 +1,15 @@
 {
+  "provider_auth": {
+    "title": "提供商登录",
+    "description": "Multica 空闲时在此电脑上打开设置窗口。请在浏览器中完成授权。Claude 设置会更新 Claude 并保存长期令牌；使用该令牌时无法显示用量。",
+    "claude": "设置 Claude",
+    "codex": "登录 Codex",
+    "pending": "正在等待电脑。",
+    "running": "请在电脑上的设置窗口中完成登录。设置期间暂停新的 Multica 任务。",
+    "completed": "凭据已保存。请运行任务验证访问权限。",
+    "failed": "设置失败或超时。请检查设置窗口，并在电脑空闲时重试。",
+    "retry": "重试获取状态"
+  },
   "capabilities": {
     "tab": "Capabilities",
     "title": "Execution capabilities",

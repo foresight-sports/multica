@@ -23,3 +23,5 @@ export { permissionPolicyKey, runtimePermissionPolicyOptions, useUpdateRuntimePe
 export { runtimeInstallationOptions } from "./runtime-policy";
 export { instanceConfigurationOptions, instanceAgentsOptions, useUpdateInstanceConfiguration, useSaveInstanceAgent, useSetInstanceAgentEnabled } from "./instance";
 export type { InstanceConfiguration, InstanceAgent, InstanceAgentInput } from "../api/instance-schema";
+export { instanceMembersOptions, useSetInstanceMembership } from "./instance";
+export { useJiraConnection, useIssueJiraBlockers } from "./jira-connection";

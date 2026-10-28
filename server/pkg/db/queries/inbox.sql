@@ -97,6 +97,21 @@ INSERT INTO inbox_item (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()))
 RETURNING *;
 
+-- name: UpsertQuickCreateInbox :one
+-- One durable receipt per creation request, including its retry attempts.
+INSERT INTO inbox_item (
+    id, workspace_id, recipient_type, recipient_id, type, severity,
+    issue_id, title, body, actor_type, actor_id, details
+) VALUES (@id, @workspace_id, 'member', @recipient_id, @type, @severity,
+    @issue_id, @title, @body, 'agent', @actor_id, @details)
+ON CONFLICT (id) DO UPDATE SET
+    type = EXCLUDED.type, severity = EXCLUDED.severity,
+    issue_id = EXCLUDED.issue_id, title = EXCLUDED.title, body = EXCLUDED.body,
+    details = EXCLUDED.details, read = false, archived = false
+WHERE inbox_item.workspace_id = EXCLUDED.workspace_id
+  AND inbox_item.recipient_id = EXCLUDED.recipient_id
+RETURNING *;
+
 -- name: MarkInboxRead :one
 UPDATE inbox_item SET read = true
 WHERE id = $1
@@ -216,3 +231,16 @@ WHERE i.workspace_id = $1 AND i.recipient_type = 'member' AND i.recipient_id = $
     WHERE workspace_id = $1
       AND status = ANY(sqlc.arg('terminal_status_keys')::text[])
   );
+
+-- name: SyncInstallationInbox :one
+INSERT INTO inbox_item (id, workspace_id, recipient_type, recipient_id, type, severity, issue_id, title, body, actor_type, actor_id, details)
+SELECT w.id, w.workspace_id, 'member', w.machine_owner_id,
+ CASE WHEN w.state='pending' THEN 'installation_approval' ELSE 'installation_decided' END,
+ CASE WHEN w.state='pending' THEN 'action_required' ELSE 'info' END,
+ w.issue_id, i.title, concat(w.data->>'tool', ' ', w.data->>'version', ' · ', w.data->>'machine'), 'agent', w.agent_id,
+ jsonb_build_object('work_record_id', w.id::text, 'state', w.state)
+FROM work_record w JOIN issue i ON i.id=w.issue_id AND i.workspace_id=w.workspace_id
+WHERE w.id = sqlc.arg('id')::uuid AND w.workspace_id = sqlc.arg('workspace_id')::uuid AND w.kind='installation'
+ON CONFLICT (id) DO UPDATE SET type=EXCLUDED.type, severity=EXCLUDED.severity, details=EXCLUDED.details, body=EXCLUDED.body,
+ read=false, archived=false
+RETURNING *;

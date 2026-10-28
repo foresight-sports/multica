@@ -80,6 +80,9 @@ func init() {
 		for _, flag := range flags {
 			c.Flags().String(flag, "", flag+" for this work record")
 		}
+		if spec.action == "create" && (spec.kind == "decision" || spec.kind == "blocker") {
+			c.Flags().StringSlice("supersedes", nil, "Record IDs replaced by this correction; historical records are retained")
+		}
 		if spec.kind == "checkpoint" {
 			c.Flags().String("directory", ".", "Task checkout to verify or resume")
 		}
@@ -166,6 +169,9 @@ func runWorkRecord(cmd *cobra.Command, args []string, kind, action string) error
 	}
 	b, _ := json.Marshal(raw)
 	_ = json.Unmarshal(b, &data)
+	if cmd.Flags().Lookup("supersedes") != nil {
+		data.Supersedes, _ = cmd.Flags().GetStringSlice("supersedes")
+	}
 	var row cliWorkRecord
 	if len(args) == 2 {
 		for _, r := range list.Records {

@@ -243,7 +243,7 @@ SELECT id FROM agent_task_queue WHERE issue_id= @issue_id AND agent_id= @agent_i
 SELECT w.id FROM issue_wakeup w
 WHERE w.issue_id= @issue_id AND (w.agent_id= @agent_id OR w.system_rule IS NOT NULL) AND w.disabled_at IS NULL
  AND EXISTS(SELECT 1 FROM issue_wakeup_receipt r WHERE r.wakeup_id=w.id AND r.revision=w.revision AND r.processed_at IS NULL
-  AND (w.condition IS NULL OR r.event_type IN ('condition.met','wakeup.timeout','wakeup.manual')))
+  AND (w.condition IS NULL OR r.event_type IN ('condition.met','wakeup.timeout','wakeup.manual','child.review_ready')))
 ORDER BY w.created_at,w.id;
 
 -- name: TryLockIssueWakeup :one

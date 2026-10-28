@@ -2,6 +2,7 @@ package workspacerepo
 
 import (
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/workflow"
 	"net/url"
 	"path"
 	"regexp"
@@ -13,6 +14,7 @@ type Configuration struct {
 	Folder     string `json:"folder"`
 	Root       string `json:"root"`
 	Mode       string `json:"mode"`
+	BaseBranch string `json:"base_branch,omitempty"`
 }
 
 var segment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -22,6 +24,10 @@ func (c *Configuration) Validate(scope string) error {
 	c.Repository = strings.TrimSpace(c.Repository)
 	c.Folder = strings.TrimSpace(c.Folder)
 	c.Root = strings.TrimSpace(c.Root)
+	c.BaseBranch = strings.TrimSpace(c.BaseBranch)
+	if c.BaseBranch != "" && (scope == "machine" || c.Repository == "" || c.Mode == "in_place" || !workflow.ValidBranch(c.BaseBranch)) {
+		return fmt.Errorf("a shared base branch requires a GitHub repository in worktree mode and a valid branch name")
+	}
 	if scope == "machine" {
 		if c.Repository != "" || c.Folder != "" || c.Mode != "" {
 			return fmt.Errorf("machine configuration only accepts a repositories folder")

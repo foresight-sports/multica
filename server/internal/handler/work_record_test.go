@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/workflow"
 )
 
@@ -28,6 +30,20 @@ func workRequest(method, issueID, recordID, agentID, taskID string, body any) *h
 }
 
 func TestWorkInstallationApprovalMachineAffinity(t *testing.T) {
+	previousBus := testHandler.Bus
+	testHandler.Bus = events.New()
+	t.Cleanup(func() { testHandler.Bus = previousBus })
+	published := 0
+	testHandler.Bus.Subscribe(protocol.EventInboxNew, func(event events.Event) {
+		payload := event.Payload.(map[string]any)["item"].(map[string]any)
+		if payload["recipient_id"] != testUserID {
+			t.Fatal("notification routed to another user")
+		}
+		if _, err := testHandler.Queries.GetInboxItem(t.Context(), parseUUID(payload["id"].(string))); err != nil {
+			t.Fatal("notification published before commit", err)
+		}
+		published++
+	})
 	aid, iid, rt, other, _ := executionFixture(t)
 	taskID := dbfx.Task(t, aid, testutil.Cols{"runtime_id": rt, "issue_id": iid, "status": "running"})
 	t.Cleanup(func() { testPool.Exec(context.Background(), "DELETE FROM work_record WHERE issue_id=$1", iid) })
@@ -40,6 +56,12 @@ func TestWorkInstallationApprovalMachineAffinity(t *testing.T) {
 	}
 	body := workRecordRequest{Kind: "installation", Data: workflow.Data{Tool: "fvm", Version: "3.2.1", Source: "https://pub.dev/packages/fvm", Scope: "user", Reason: "Build this checkout"}}
 	testutil.Call(t, testHandler.WorkRecords, workRequest("POST", iid, "", aid, taskID, body)).Want(201).JSON(&record)
+	t.Cleanup(func() { testPool.Exec(context.Background(), "DELETE FROM inbox_item WHERE issue_id=$1", iid) })
+	notice, err := testHandler.Queries.GetInboxItem(t.Context(), parseUUID(record.ID))
+	if err != nil || notice.Type != "installation_approval" || notice.Severity != "action_required" || notice.Read || notice.RecipientID != parseUUID(testUserID) || notice.IssueID != parseUUID(iid) {
+		t.Fatalf("missing owner approval notification: %+v %v", notice, err)
+	}
+	testutil.Call(t, testHandler.WorkRecords, workRequest("POST", iid, "", aid, taskID, body)).Want(409)
 	if record.Data.Provider != "codex" || record.Data.Tool != "fvm" {
 		t.Fatalf("lost structured machine context: %+v", record)
 	}
@@ -62,6 +84,13 @@ func TestWorkInstallationApprovalMachineAffinity(t *testing.T) {
 	testutil.Call(t, testHandler.WorkRecords, workRequest("PUT", iid, record.ID, "", "", decision)).Want(200).JSON(&record)
 	if record.State != "approved" || record.ContinuationTaskID == "" {
 		t.Fatalf("no durable continuation: %+v", record)
+	}
+	notice, err = testHandler.Queries.GetInboxItem(t.Context(), parseUUID(record.ID))
+	if err != nil || notice.Type != "installation_decided" || notice.Severity != "info" || !strings.Contains(string(notice.Details), "approved") {
+		t.Fatalf("approval notification did not settle: %+v %v", notice, err)
+	}
+	if published != 2 {
+		t.Fatalf("expected request and decision events, got %d", published)
 	}
 	if !allowed(rt) || allowed(other) {
 		t.Fatal("approval did not bind the original machine")
@@ -177,4 +206,24 @@ func TestWorkMessagePagesDoNotSkipEarlierMessages(t *testing.T) {
 	}
 	req := withURLParam(newRequest("GET", "/messages?tail=2&since=bogus", nil), "taskId", task)
 	testutil.Call(t, testHandler.ListTaskMessagesByUser, req.WithContext(middleware.SetMemberContext(req.Context(), testWorkspaceID, db.Member{}))).Want(400)
+}
+
+func TestInstallationDeclineSettlesInbox(t *testing.T) {
+	aid, iid, rt, _, _ := executionFixture(t)
+	task := dbfx.Task(t, aid, testutil.Cols{"runtime_id": rt, "issue_id": iid, "status": "running"})
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), "DELETE FROM inbox_item WHERE issue_id=$1", iid)
+		testPool.Exec(context.Background(), "DELETE FROM work_record WHERE issue_id=$1", iid)
+	})
+	var record struct {
+		ID       string
+		Revision int64
+	}
+	body := workRecordRequest{Kind: "installation", Data: workflow.Data{Tool: "fvm", Version: "3.2.1", Source: "https://pub.dev/packages/fvm", Scope: "user", Reason: "Build"}}
+	testutil.Call(t, testHandler.WorkRecords, workRequest("POST", iid, "", aid, task, body)).Want(201).JSON(&record)
+	testutil.Call(t, testHandler.WorkRecords, workRequest("PUT", iid, record.ID, "", "", workRecordRequest{Action: "decline", Revision: record.Revision})).Want(200)
+	notice, err := testHandler.Queries.GetInboxItem(t.Context(), parseUUID(record.ID))
+	if err != nil || notice.Type != "installation_decided" || !strings.Contains(string(notice.Details), "declined") {
+		t.Fatalf("stale approval: %+v %v", notice, err)
+	}
 }

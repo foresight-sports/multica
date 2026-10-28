@@ -298,3 +298,108 @@ func TestChildDoneBackfillKeepsAPendingClose(t *testing.T) {
 		t.Fatalf("pending closing lost after the backfill: runs=%d condition_state=%q", n, w.ConditionState)
 	}
 }
+
+func TestChildReviewHandoff(t *testing.T) {
+	for _, scenario := range []string{"review", "disabled", "stale", "reparented"} {
+		t.Run(scenario, func(t *testing.T) {
+			f, s, issue, agent := conditionFixture(t)
+			ctx := context.Background()
+			f.Exec(t, "UPDATE issue SET status='in_progress',assignee_type='agent',assignee_id=$2 WHERE id=$1", issue, agent)
+			child := f.Issue(t, "review child", testutil.Cols{"parent_issue_id": issue, "status": "in_progress", "stage": 1})
+			next := f.Issue(t, "next stage", testutil.Cols{"parent_issue_id": issue, "status": "backlog", "stage": 2})
+			f.Cleanup(t, "DELETE FROM issue_child_event WHERE parent_id=$1", issue)
+			if err := s.ProcessChildEvents(ctx, issue); err != nil {
+				t.Fatal(err)
+			}
+			w, err := f.q.GetSystemWakeup(ctx, db.GetSystemWakeupParams{IssueID: issue, SystemRule: systemRuleText(SystemRuleChildDone)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "disabled" {
+				f.Exec(t, "UPDATE issue_wakeup SET enabled=false WHERE id=$1", w.ID)
+			}
+			f.Exec(t, "UPDATE issue SET status='in_review' WHERE id=$1", child)
+			f.Exec(t, "UPDATE issue SET status='in_review' WHERE id=$1", child)
+			if scenario == "stale" {
+				f.Exec(t, "UPDATE issue SET status='in_progress' WHERE id=$1", child)
+			}
+			if scenario == "reparented" {
+				f.Exec(t, "UPDATE issue SET parent_issue_id=NULL WHERE id=$1", child)
+			}
+			for i := 0; i < 2; i++ {
+				if err := s.ProcessChildEvents(ctx, issue); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := 0
+			if scenario == "review" {
+				want = 1
+			}
+			if n := wakeRuns(t, f, w.ID); n != want {
+				t.Fatalf("runs=%d want=%d", n, want)
+			}
+			if n := f.Count(t, "SELECT count(*) FROM issue WHERE id=$1 AND status='backlog'", next); n != 1 {
+				t.Fatal("review advanced dependent stage")
+			}
+			if scenario == "review" {
+				var note string
+				f.QueryRow(t, "SELECT handoff_note FROM agent_task_queue WHERE context->>'wakeup_id'=$1", util.UUIDToString(w.ID)).Scan(&note)
+				if !strings.Contains(note, "child.review_ready") || !strings.Contains(note, "Review readiness alone") {
+					t.Fatalf("missing review instructions: %s", note)
+				}
+				if n := f.Count(t, "SELECT count(*) FROM issue_child_event WHERE parent_id=$1 AND kind='review_ready'", issue); n != 1 {
+					t.Fatalf("duplicate transition events: %d", n)
+				}
+			}
+		})
+	}
+}
+
+func TestChildReviewJoinsWaitingCoordinator(t *testing.T) {
+	f, s, issue, agent := conditionFixture(t)
+	ctx := context.Background()
+	f.Exec(t, "UPDATE issue SET status='in_progress',assignee_type='agent',assignee_id=$2 WHERE id=$1", issue, agent)
+	child := f.Issue(t, "review child", testutil.Cols{"parent_issue_id": issue, "status": "in_progress"})
+	f.Cleanup(t, "DELETE FROM issue_child_event WHERE parent_id=$1", issue)
+	waiting := wakeWaitingRun(t, f, issue, agent, f.UserID)
+	f.Exec(t, "UPDATE issue SET status='in_review' WHERE id=$1", child)
+	if err := s.ProcessChildEvents(ctx, issue); err != nil {
+		t.Fatal(err)
+	}
+	if notes := wakeClaim(t, f, s, waiting); !strings.Contains(notes, "child.review_ready") {
+		t.Fatalf("waiting coordinator missed review: %s", notes)
+	}
+}
+
+func TestChildReviewReworkCreatesAnotherHandoff(t *testing.T) {
+	f, s, issue, agent := conditionFixture(t)
+	ctx := context.Background()
+	f.Exec(t, "UPDATE issue SET status='in_progress',assignee_type='agent',assignee_id=$2 WHERE id=$1", issue, agent)
+	child := f.Issue(t, "review child", testutil.Cols{"parent_issue_id": issue, "status": "in_review"})
+	f.Cleanup(t, "DELETE FROM issue_child_event WHERE parent_id=$1", issue)
+	if err := s.ProcessChildEvents(ctx, issue); err != nil {
+		t.Fatal(err)
+	}
+	w, err := f.q.GetSystemWakeup(ctx, db.GetSystemWakeupParams{IssueID: issue, SystemRule: systemRuleText(SystemRuleChildDone)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := wakeRuns(t, f, w.ID); n != 1 {
+		t.Fatalf("initial review runs=%d", n)
+	}
+	f.Exec(t, "UPDATE agent_task_queue SET status='completed',started_at=now(),completed_at=now() WHERE context->>'wakeup_id'=$1", util.UUIDToString(w.ID))
+	f.Exec(t, "UPDATE issue SET status='in_progress' WHERE id=$1", child)
+	if err := s.ProcessChildEvents(ctx, issue); err != nil {
+		t.Fatal(err)
+	}
+	f.Exec(t, "UPDATE issue SET status='in_review' WHERE id=$1", child)
+	if err := s.ProcessChildEvents(ctx, issue); err != nil {
+		t.Fatal(err)
+	}
+	if n := wakeRuns(t, f, w.ID); n != 2 {
+		t.Fatalf("rework review runs=%d", n)
+	}
+	if n := f.Count(t, "SELECT count(*) FROM issue_wakeup_receipt WHERE wakeup_id=$1 AND event_type='condition.met'", w.ID); n != 0 {
+		t.Fatal("review incorrectly satisfied closure condition")
+	}
+}

@@ -1,4 +1,9 @@
 {
+  "workspace_entry": {
+    "title": "Choose a workspace",
+    "loading": "Loading your workspaces…",
+    "retry": "Retry loading workspaces"
+  },
   "step_nav": {
     "wordmark": "Multica",
     "label": "Onboarding steps",
@@ -262,5 +267,32 @@
     "name": "Mika",
     "role": "Chief of Staff",
     "blurb": "Tell Mika what you want done. It becomes an issue, with the right agent on it."
+  },
+  "directory": {
+    "title": "Workspaces",
+    "description": "Find your team and request access to a workspace.",
+    "create": "Create workspace",
+    "search": "Search workspaces",
+    "search_button": "Search",
+    "loading": "Loading workspaces…",
+    "load_error": "Could not load workspaces.",
+    "retry": "Retry",
+    "save_error": "Could not save your request.",
+    "empty": "No workspaces found. Contact your instance administrator if your team is missing.",
+    "member": "You have access",
+    "pending": "Access requested · awaiting review",
+    "declined": "Request declined · you can request again",
+    "approval_required": "Admin approval required",
+    "open": "Open workspace",
+    "cancel": "Cancel request",
+    "request": "Request access",
+    "truncated": "Showing the first 200 results. Refine your search to find a workspace.",
+    "review_error": "Could not load access requests.",
+    "review_title": "Access requests to review",
+    "review_description": "Approving grants standard member access to this workspace.",
+    "approve": "Approve",
+    "decline": "Decline",
+    "review_truncated": "Showing the oldest 200 requests. Review these to see more.",
+    "browse": "Browse workspaces"
   }
 }

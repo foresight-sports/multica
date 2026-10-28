@@ -3,6 +3,8 @@ import type { IssuePriority, IssueStatus } from "./issue";
 export type InboxSeverity = "action_required" | "attention" | "info";
 
 export type InboxItemType =
+  | "installation_approval"
+  | "installation_decided"
   | "issue_assigned"
   | "issue_subscribed"
   | "unassigned"
@@ -20,6 +22,7 @@ export type InboxItemType =
   | "agent_completed"
   | "reaction_added"
   | "quick_create_done"
+  | "quick_create_pending"
   | "quick_create_failed"
   // Quick create whose outcome could not be verified. Distinct from
   // quick_create_failed because it must NOT be rendered with failure framing:

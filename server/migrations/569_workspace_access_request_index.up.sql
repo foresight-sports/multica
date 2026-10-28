@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY workspace_access_request_identity ON workspace_access_request (workspace_id,user_id);

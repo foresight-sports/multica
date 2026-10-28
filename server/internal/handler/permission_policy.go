@@ -37,7 +37,7 @@ func (h *Handler) actionPermissionPolicy(ctx context.Context, action workspacePe
 	if action != permissionRegisterRuntime {
 		initial.AllowedEmails = []string{}
 		initial.Restricted = false
-		if action == permissionCreateInstanceAgent {
+		if action == permissionCreateInstanceAgent || action == permissionCreateWorkspace {
 			initial.AllowedEmails = append([]string{}, h.cfg.PermissionManagerEmails...)
 			initial.Restricted = true
 		}
@@ -161,6 +161,8 @@ func normalizePermissionEmails(input []string) ([]string, error) {
 
 func permissionAction(r *http.Request) (workspacePermission, bool) {
 	switch chi.URLParam(r, "action") {
+	case "workspace-create":
+		return permissionCreateWorkspace, true
 	case "", "runtime-register":
 		return permissionRegisterRuntime, true
 	case "instance-agent-create":

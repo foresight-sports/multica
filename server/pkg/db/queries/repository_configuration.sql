@@ -21,3 +21,19 @@ OR EXISTS (SELECT 1 FROM agent a WHERE a.workspace_id=workspace.id AND agent_all
 INSERT INTO repository_configuration(scope,subject,config,revision)
 VALUES ('readiness',@subject,@config::jsonb,1)
 ON CONFLICT(scope,subject) DO UPDATE SET config=EXCLUDED.config,revision=repository_configuration.revision+1;
+
+-- name: PinRepositoryBaseline :one
+INSERT INTO repository_configuration(scope,subject,config,revision)
+VALUES ('issue_baseline',@subject,@config::jsonb,1)
+ON CONFLICT(scope,subject) DO UPDATE SET config=repository_configuration.config
+RETURNING config;
+
+-- name: PutTaskRepositorySource :exec
+INSERT INTO repository_configuration(scope,subject,config,revision)
+VALUES ('task_source',@subject,@config::jsonb,1)
+ON CONFLICT(scope,subject) DO UPDATE SET config=EXCLUDED.config,revision=repository_configuration.revision+1;
+
+-- name: ListIssueRepositorySources :many
+SELECT subject,config FROM repository_configuration
+WHERE scope='task_source' AND subject LIKE @prefix::text || ':%'
+ORDER BY subject DESC LIMIT 50;

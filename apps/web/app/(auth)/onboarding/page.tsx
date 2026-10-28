@@ -55,12 +55,12 @@ export default function OnboardingPage() {
     // Mika setup can run. The new entry-point
     // judgment in callback / login handles "where should this user go on
     // login" so OnboardingPage no longer needs to second-guess it.
-    if (hasOnboarded) {
+    if (hasOnboarded && workspaces.length > 0) {
       router.replace(resolvePostAuthDestination(workspaces, hasOnboarded));
     }
   }, [isLoading, user, hasOnboarded, workspacesReady, workspaces, router]);
 
-  if (isLoading || !user || hasOnboarded) return null;
+  if (isLoading || !user || (hasOnboarded && workspaces.length > 0)) return null;
 
   // Layout: page owns its own scroll (root layout sets `body {
   // overflow: hidden }` for the app-shell convention). OnboardingFlow

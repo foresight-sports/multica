@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+export const InstanceMembersSchema = z.object({
+  members: z.array(z.object({ id: z.string().uuid(), name: z.string(), email: z.string(), workspaces: z.array(z.string()), memberships: z.array(z.object({ workspace_id: z.string().uuid(), role: z.enum(["owner", "admin", "member"]) })).optional().default([]) })),
+  workspaces: z.array(z.object({ id: z.string().uuid(), name: z.string(), slug: z.string() })).optional().default([]),
+  truncated: z.boolean(),
+});
+export type InstanceMembers = z.infer<typeof InstanceMembersSchema>;
+
 export const InstanceConfigurationSchema = z.object({
   instructions: z.string(),
   revision: z.number().int().positive(),

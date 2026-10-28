@@ -1426,11 +1426,21 @@
     "plugins": "安装后可提供工具、定时 hook 和存储，每个插件单独授权。"
   },
   "instance": {
+    "role_owner": "所有者",
+    "membership_warning": "移除访问权限也会撤销此人的工作区运行时并取消受影响的智能体运行。",
+    "role_admin": "管理员",
+    "edit_memberships": "编辑工作区成员资格",
+    "role_member": "成员",
+    "role_none": "无访问权限",
+    "members_hint": "此实例中的账户及其工作区角色。",
+    "members_truncated": "显示前 1,000 个账户。",
+    "no_workspaces": "尚未加入工作区",
+    "members": "实例成员",
     "create_scope": "实例智能体",
     "create_scope_hint": "创建一个供所有工作区使用的集中配置智能体。默认选择实例。所有工作区共享下方的运行时、模型、技能和访问设置；每个工作区可单独停用。",
     "create_flow_hint": "使用常规智能体创建流程，并在配置面板中选择「实例智能体」。",
     "title": "实例",
-    "description": "此服务器上所有工作区共用的指令和智能体。",
+    "description": "此服务器上所有工作区共用的指令。",
     "instructions": "实例指令",
     "instructions_hint": "每次智能体运行时都会提供这些指令，以及工作区和智能体指令。修改将在下次运行开始时生效。",
     "read_only": "只有实例管理员可以编辑实例共享指令。",
@@ -1455,7 +1465,8 @@
     "disable_hint": "禁用会取消该智能体在此工作区中尚未完成的运行，并保留历史记录。",
     "configure": "配置实例智能体",
     "runtime_required": "实例管理员需要配置中央运行时。",
-    "managed": "此智能体集中配置。运行时、模型、技能和访问权限由原始工作区统一共享。名称、描述和指令在设置 → 实例中管理。"
+    "managed": "此智能体集中配置。运行时、模型、技能和访问权限由原始工作区统一共享。名称、描述和指令在设置 → 实例中管理。",
+    "agents_nav": "智能体"
   },
   "permission_access": {
     "scope": "所有工作区",
@@ -1472,7 +1483,7 @@
     "instance_create_title": "创建实例级智能体",
     "saving": "正在保存…",
     "runtime_title": "注册运行时",
-    "title": "权限管理",
+    "title": "权限",
     "users": "允许的用户",
     "empty": "空列表将禁止所有人执行此操作。",
     "save": "保存权限",
@@ -1485,7 +1496,9 @@
     "unrestricted": "此操作目前不受限制。保存后仅列表中的用户可执行。",
     "reload": "重新加载",
     "description": "管理此 Multica 实例中所有工作区的受限操作权限。",
-    "runtime_description": "选择谁可以添加计算机并注册 AI 运行时。用户还必须是工作区成员。"
+    "runtime_description": "选择谁可以添加计算机并注册 AI 运行时。用户还必须是工作区成员。",
+    "workspace_create_title": "创建工作区",
+    "workspace_create_description": "仅列表中的用户可以创建工作区。现有工作区的所有者不会自动获得此权限。"
   },
   "intake": {
     "title": "Ticket intake",
@@ -1508,6 +1521,8 @@
     "missing_project": "Unavailable project — select Use workspace default to remove this override"
   },
   "repository": {
+    "base_branch": "共享基准分支",
+    "base_branch_description": "任务拉取此分支，每个议题共享同一源提交。留空则使用各机器的本地代码。",
     "title": "Workspace repository",
     "description": "Set a GitHub repository to clone it automatically on eligible computers, or set only a local folder to use existing directories. At least one is required to create issues.",
     "machine_title": "Repositories folder",
@@ -1537,5 +1552,21 @@
     "require": "Require JIRA ticket ID before agent work",
     "require_description": "Runs wait until a valid key, such as FS-123, is supplied. Tickets remain editable. New subtasks inherit their parent's key. Existing running tasks are not interrupted.",
     "loading": "Loading JIRA settings…"
+  },
+  "jira_connection": {
+    "title": "Jira 连接",
+    "description": "智能体处理你的请求时，会使用你的 Jira 账号和权限。凭据保存在 Multica 服务器上。",
+    "loading": "正在加载…",
+    "unavailable": "此实例尚未配置 Jira 登录。",
+    "pending": "请在浏览器中完成登录。",
+    "connected": "你的 Jira 账号已连接。",
+    "expired": "请重新授权 Jira 连接。",
+    "disconnected": "尚未连接 Jira。",
+    "connect": "连接 Jira",
+    "reconnect": "重新连接 Jira",
+    "disconnect": "断开连接",
+    "confirm": "断开 Jira 连接？正在运行的任务将无法发起新的 Jira 调用。",
+    "cancel": "取消",
+    "retry": "重试"
   }
 }

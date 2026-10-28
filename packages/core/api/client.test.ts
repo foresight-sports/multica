@@ -10,6 +10,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("quick-create acceptance receipts", () => {
+  it.each([{ task_id: "task" }, { task_id: "task", inbox_item_id: "receipt" }])("accepts old and new server responses: %j", async (response) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 202, headers: { "Content-Type": "application/json" } })));
+    await expect(new ApiClient("https://api.example.test").quickCreateIssue({ prompt: "Investigate entitlements" })).resolves.toEqual(response);
+  });
+  it("does not claim acceptance from a malformed response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"task_id":null}', { status: 202, headers: { "Content-Type": "application/json" } })));
+    await expect(new ApiClient("https://api.example.test").quickCreateIssue({ prompt: "Investigate entitlements" })).rejects.toThrow("Check Inbox before submitting again");
+  });
+});
+
 describe("ApiClient status reorder", () => {
   it("opts into built-in ordering and tolerates malformed responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ statuses: "invalid" }), {
@@ -2825,6 +2836,18 @@ describe("ApiClient session expiry", () => {
 });
 
 describe("ApiClient permission access", () => {
+  it("loads and saves the workspace creation policy through response validation", async () => {
+    const policy = { action: "workspace.create", allowed_emails: ["admin@example.com"], restricted: true, revision: 0 };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(policy), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...policy, revision: 1 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.getRuntimePermissionPolicy("workspace-create")).resolves.toEqual(policy);
+    await expect(client.updateRuntimePermissionPolicy({ allowed_emails: policy.allowed_emails, revision: 0 }, "workspace-create")).resolves.toEqual({ ...policy, revision: 1 });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/permission-policies/workspace-create");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.test/api/permission-policies/workspace-create");
+  });
   it("rejects malformed policy responses rather than showing an editable default", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ allowed_emails: "wrong" }), { status: 200 })));
     const client = new ApiClient("https://api.example.test");

@@ -2106,7 +2106,7 @@ func TestCreateWorkspaceUsesRequestedSlug(t *testing.T) {
 		"name": "Handler Create Workspace Requested",
 		"slug": slug,
 	})
-	w := testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusCreated)
+	w := testutil.Call(t, workspaceCreator(t).CreateWorkspace, req).Want(http.StatusCreated)
 
 	var created WorkspaceResponse
 	w.JSON(&created)
@@ -2127,7 +2127,7 @@ func TestCreateWorkspaceSlugConflictReturnsConflict(t *testing.T) {
 		"name": "Duplicate Handler Workspace",
 		"slug": handlerTestWorkspaceSlug,
 	})
-	testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusConflict)
+	testutil.Call(t, workspaceCreator(t).CreateWorkspace, req).Want(http.StatusConflict)
 
 	var count int
 	dbfx.QueryRow(t, `SELECT count(*) FROM workspace WHERE slug = $1`, retriedSlug).Scan(&count)
@@ -2141,7 +2141,7 @@ func TestCreateWorkspaceInvalidSlugReturnsBadRequest(t *testing.T) {
 		"name": "Invalid Slug Workspace",
 		"slug": "invalid slug",
 	})
-	testutil.Call(t, testHandler.CreateWorkspace, req).Want(http.StatusBadRequest)
+	testutil.Call(t, workspaceCreator(t).CreateWorkspace, req).Want(http.StatusBadRequest)
 }
 
 func TestSendCode(t *testing.T) {
