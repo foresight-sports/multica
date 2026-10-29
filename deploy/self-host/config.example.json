@@ -1,0 +1,22 @@
+{
+  "host": "YOUR-HOST",
+  "owner_sid": "YOUR-WINDOWS-OWNER-SID",
+  "state_root": "C:/Users/Operator/.multica/deployment/runs",
+  "workspace_id": "YOUR-MULTICA-WORKSPACE-UUID",
+  "approver_ids": ["YOUR-HUMAN-USER-UUID"],
+  "repository": "https://github.com/foresight-sports/multica.git",
+  "branch": "foresight-custom/0.6.1",
+  "compose_project": "multica",
+  "compose_directory": "C:/Users/Operator/.multica/server",
+  "compose_file": "C:/Users/Operator/.multica/server-061/docker-compose.selfhost.yml",
+  "env_file": "C:/Users/Operator/.multica/server/.env",
+  "postgres_container": "multica-postgres-1",
+  "backend_health": "http://127.0.0.1:8080/readyz",
+  "frontend_health": "http://127.0.0.1:3000",
+  "git": "C:/Program Files/Git/cmd/git.exe",
+  "docker": "C:/Program Files/Docker/Docker/resources/bin/docker.exe",
+  "powershell": "C:/Program Files/PowerShell/7/pwsh.exe",
+  "server_url": "https://multica.edgeofglory.dev",
+  "login_file": "C:/Users/Operator/.multica/config.json",
+  "access_file": "C:/Users/Operator/.multica/cloudflare-access.json"
+}
