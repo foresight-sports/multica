@@ -2571,12 +2571,45 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "Comment added to issue %s.\n", issueRef.Display)
+	printCommentDispatchReceipt(os.Stderr, content, result)
 
 	output, _ := cmd.Flags().GetString("output")
 	if output == "table" {
 		return nil
 	}
 	return cli.PrintJSON(os.Stdout, result)
+}
+
+// Posting and dispatch are separate outcomes. Keep a saved comment successful
+// (retrying it would duplicate the post), but never hide blocked delegation in
+// compact output. Older servers may not return dispatch receipts at all.
+func printCommentDispatchReceipt(w io.Writer, content string, result map[string]any) {
+	outcomes, _ := result["trigger_outcomes"].([]any)
+	if len(outcomes) == 0 {
+		if strings.Contains(content, "mention://agent/") || strings.Contains(content, "mention://squad/") {
+			fmt.Fprintln(w, "Dispatch unconfirmed: no trigger receipt returned. Check `multica issue runs <issue-id> --output json` before reporting a handoff; do not repost the saved comment.")
+		}
+		return
+	}
+	for _, raw := range outcomes {
+		outcome, ok := raw.(map[string]any)
+		if !ok {
+			fmt.Fprintln(w, "Dispatch unconfirmed: invalid trigger receipt. Check issue runs before reporting a handoff.")
+			continue
+		}
+		status, _ := outcome["status"].(string)
+		target, _ := outcome["target_id"].(string)
+		reason, _ := outcome["reason_code"].(string)
+		fmt.Fprintf(w, "Mention target %s: %s (%s).\n", target, status, reason)
+		switch status {
+		case "blocked":
+			fmt.Fprintln(w, "No worker was dispatched for this target. Resolve the blocker before retrying delegation; an @mention does not bypass assignment permissions.")
+		case "queued", "coalesced", "deferred":
+			fmt.Fprintln(w, "Check `multica issue runs <issue-id> --output json` for the task ID and actual state before saying the worker is running.")
+		default:
+			fmt.Fprintln(w, "Dispatch unconfirmed: unknown trigger status. Check issue runs before reporting a handoff.")
+		}
+	}
 }
 
 func runIssueCommentUpdate(cmd *cobra.Command, args []string) error {

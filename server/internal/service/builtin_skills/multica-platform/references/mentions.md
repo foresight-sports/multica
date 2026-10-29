@@ -218,6 +218,20 @@ an unrelated issue, or an admin editing an agent's comment (manage rights, not
 invoke rights), fails closed at the deferred completion-reconcile instead of
 reusing the original run's authority.
 
+## Verify delegation before reporting progress
+
+A saved comment is not a successful dispatch. Inspect `trigger_outcomes` in the
+comment response; `blocked` means no worker was dispatched. Assignment and
+mentions enforce the same original requester's invocation permissions, so a
+mention cannot bypass a denied assignment. Report the blocker to its owner.
+
+After delegating, check `multica issue runs <issue-id> --output json` and match
+the intended agent and task ID. Queued/deferred work is waiting, not running.
+If a run has already completed, inspect its result. If there is no run, do not
+claim that work started or wait for a nonexistent worker. Missing receipts from
+older servers are unconfirmed. Check existing runs before retrying to avoid
+duplicate work; correct earlier claims and decision records when necessary.
+
 ## Incorrect to correct
 
 Incorrect: `@alice please review`
