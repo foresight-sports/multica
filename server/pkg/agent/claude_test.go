@@ -327,7 +327,7 @@ func TestBuildClaudeArgsInheritsMCPByDefault(t *testing.T) {
 		"--input-format", "stream-json",
 		"--verbose",
 		"--permission-mode", "bypassPermissions",
-		"--disallowedTools", "AskUserQuestion",
+		"--disallowedTools", "AskUserQuestion,ScheduleWakeup",
 	}
 
 	if len(args) != len(expected) {

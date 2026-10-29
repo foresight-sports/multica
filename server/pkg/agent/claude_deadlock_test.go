@@ -74,6 +74,16 @@ func TestMain(m *testing.M) {
 	case "async_launched_tool_result":
 		runFakeClaudeAsyncLaunchedToolResult()
 		os.Exit(0)
+	case "fork_text_result":
+		if os.Getenv("CLAUDE_CODE_FORK_SUBAGENT") != "0" || os.Getenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS") != "1" || os.Getenv("CLAUDE_CODE_DISABLE_CRON") != "1" {
+			fmt.Fprintln(os.Stderr, "foreground lifecycle environment missing")
+			os.Exit(42)
+		}
+		bufio.NewReader(os.Stdin).ReadString('\n')
+		fmt.Println(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"fork-1","name":"Agent","input":{"subagent_type":"fork"}}]}}`)
+		fmt.Println(`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"fork-1","content":[{"type":"text","text":"Async agent launched successfully. (internal metadata)"}]}]}}`)
+		fmt.Println(`{"type":"result","subtype":"success","is_error":false,"session_id":"sess-fork","result":"Waiting for the background investigation."}`)
+		os.Exit(0)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown CLAUDE_FAKE_MODE: %q\n", mode)
 		os.Exit(2)
@@ -388,5 +398,38 @@ func TestClaudeExecuteFailsLoudlyOnAsyncLaunchedToolResult(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for result — claude backend did not fail async_launched tool result")
+	}
+}
+
+func TestClaudeExecuteRejectsForkHandoffAsCompletion(t *testing.T) {
+	t.Parallel()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend, err := New("claude", Config{ExecutablePath: self, Logger: slog.Default(), Env: map[string]string{
+		"CLAUDE_FAKE_MODE": "fork_text_result", "IS_SANDBOX": "1",
+		"CLAUDE_CODE_FORK_SUBAGENT": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "0", "CLAUDE_CODE_DISABLE_CRON": "0",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	session, err := backend.Execute(ctx, "Investigate elevation", ExecOptions{Timeout: 8 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for range session.Messages {
+		}
+	}()
+	select {
+	case result := <-session.Result:
+		if result.Status != "failed" || !strings.Contains(result.Error, "async background task") {
+			t.Fatalf("fork handoff must not complete the task: %+v", result)
+		}
+	case <-ctx.Done():
+		t.Fatal("fork result did not settle")
 	}
 }

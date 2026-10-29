@@ -89,6 +89,12 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		cmd.Dir = opts.Cwd
 	}
 	cmd.Env = buildEnv(b.cfg.Env)
+	// A task result closes this single-turn harness. Forks and scheduled
+	// wakeups can outlive that result and lose their input/control channel.
+	// Keep Claude's work inside the task lifetime; Multica owns scheduling.
+	cmd.Env = replaceEnvValue(cmd.Env, "CLAUDE_CODE_FORK_SUBAGENT", "0")
+	cmd.Env = replaceEnvValue(cmd.Env, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
+	cmd.Env = replaceEnvValue(cmd.Env, "CLAUDE_CODE_DISABLE_CRON", "1")
 	if err := claudeRootSudoPreflight(args, cmd.Env); err != nil {
 		cancel()
 		return nil, err
@@ -201,6 +207,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		var sessionID string
 		var lastUsageResult *claudeSDKMessage
 		sawAsyncLaunch := false
+		agentCalls := make(map[string]bool)
 		usage := make(map[string]TokenUsage)
 		seenUsage := make(map[string]struct{})
 		eventCount := 0
@@ -260,6 +267,14 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 			switch msg.Type {
 			case "assistant":
+				var body claudeMessageContent
+				if json.Unmarshal(msg.Message, &body) == nil {
+					for _, block := range body.Content {
+						if block.Type == "tool_use" && (block.Name == "Agent" || block.Name == "Task") {
+							agentCalls[block.ID] = true
+						}
+					}
+				}
 				assistantEventCount++
 				turn := b.handleAssistant(msg, msgCh, usage, seenUsage)
 				toolUseCount += turn.toolUses
@@ -268,6 +283,15 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				}
 				lastAssistantText = turn.resolveFallback(lastAssistantText)
 			case "user":
+				var body claudeMessageContent
+				if json.Unmarshal(msg.Message, &body) == nil {
+					for _, block := range body.Content {
+						if block.Type == "tool_result" && agentCalls[block.ToolUseID] {
+							sawAsyncLaunch = sawAsyncLaunch || claudeAgentResultHasAsyncLaunch(block.Content)
+							delete(agentCalls, block.ToolUseID)
+						}
+					}
+				}
 				if b.handleUser(msg, msgCh) {
 					sawAsyncLaunch = true
 				}
@@ -627,6 +651,28 @@ func claudeToolResultHasAsyncLaunch(raw json.RawMessage) bool {
 		}
 	case []any:
 		return claudeArrayHasAsyncLaunchStatus(v)
+	}
+	return false
+}
+
+// Newer Agent tools return a text content block instead of async_launched.
+// Only call this for a correlated Agent/Task result, never arbitrary shell
+// output or assistant prose that might quote a transcript.
+func claudeAgentResultHasAsyncLaunch(raw json.RawMessage) bool {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return strings.HasPrefix(strings.TrimSpace(text), "Async agent launched successfully.")
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) == nil {
+		for _, block := range blocks {
+			if block.Type == "text" && strings.HasPrefix(strings.TrimSpace(block.Text), "Async agent launched successfully.") {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -1093,7 +1139,9 @@ func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
 		// answer and the agent ends up "inferring" silently — the user
 		// never sees the question (see GitHub #2588). User-facing
 		// clarification belongs in an issue comment instead.
-		"--disallowedTools", "AskUserQuestion",
+		// Native wakeups can keep the process alive beyond its terminal result.
+		// Follow-up scheduling belongs to Multica's durable task lifecycle.
+		"--disallowedTools", "AskUserQuestion,ScheduleWakeup",
 	}
 	if hasManagedMcpConfig(opts.McpConfig) {
 		// A saved agent-level config is authoritative, including an explicitly
