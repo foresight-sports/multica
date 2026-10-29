@@ -55,7 +55,7 @@ export const EMPTY_AGENT_DRAFT: AgentDraft = {
   thinkingLevel: "",
   serviceTier: "",
   skillIds: new Set(),
-  permissionScope: "private",
+  permissionScope: "workspace",
   memberIds: new Set(),
   teamIds: new Set(),
 };

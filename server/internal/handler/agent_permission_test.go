@@ -381,16 +381,22 @@ func TestUpdateAgent_WorkspaceStacksWithMembersThenNarrowed(t *testing.T) {
 // visibility "workspace"). This also covers `--permission-mode public_to`
 // alone from the CLI, which sends permission_mode without targets.
 func TestCreateAgent_EmptyPublicToNormalizesToWorkspace(t *testing.T) {
+	testCreateWorkspaceSharedAgent(t, map[string]any{"permission_mode": "public_to"})
+}
+
+func TestCreateAgent_OmittedAccessIncludesFutureMembers(t *testing.T) {
+	testCreateWorkspaceSharedAgent(t, map[string]any{})
+}
+
+func testCreateWorkspaceSharedAgent(t *testing.T, access map[string]any) {
+	t.Helper()
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 	w := httptest.NewRecorder()
-	testHandler.CreateAgent(w, newRequest("POST", "/api/agents?workspace_id="+testWorkspaceID, map[string]any{
-		"name":            "empty-public-to-agent",
-		"runtime_id":      handlerTestRuntimeID(t),
-		"permission_mode": "public_to",
-		// no invocation_targets on purpose
-	}))
+	access["name"] = "default-workspace-access-agent"
+	access["runtime_id"] = handlerTestRuntimeID(t)
+	testHandler.CreateAgent(w, newRequest("POST", "/api/agents?workspace_id="+testWorkspaceID, access))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}

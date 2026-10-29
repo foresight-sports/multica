@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, RuntimeDevice } from "../types";
 import {
+  EMPTY_AGENT_DRAFT,
   applyDraftModelChange,
   applyDraftRuntimeChange,
   buildCreateAgentRequest,
@@ -10,6 +11,10 @@ import {
   isDraftDescriptionWithinLimit,
   type AgentDraft,
 } from "./draft";
+
+it("new agent drafts grant access to the workspace rather than enumerating current members", () => {
+  expect(buildInvocationTargets(EMPTY_AGENT_DRAFT)).toEqual([{ target_type: "workspace" }]);
+});
 
 const draft = (): AgentDraft => ({
   name: "Old name",

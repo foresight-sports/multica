@@ -49,6 +49,8 @@ Root frontend commands and `make check` do not verify mobile. Docs-only changes 
 
 ## State Rules
 
+New user-facing agents default to workspace-wide invocation access in manual/AI drafts, the CLI and the create API. Workspace grants automatically include future members; instance-agent source grants propagate to bindings in each workspace. Hidden per-user system agents retain their own isolation.
+
 Comment persistence and agent dispatch are separate outcomes. Compact CLI receipts must surface blocked or unconfirmed mentions without failing an already-saved post and encouraging duplicates. Coordinators verify the intended worker's task ID and actual state before reporting a handoff; mentions never bypass the original requester's invocation permissions.
 
 Self-host deployment uses a dedicated runtime-bound agent with no portable execution profiles. Only the installed host runner may change production. Prepare exact pushed commits and image IDs, then require a matching configured human's issue-comment approval of the plan digest before starting a detached scheduled worker. Keep durable deployment state outside task worktrees, validate host/owner and unchanged configuration, back up the database and old images, and verify running image IDs plus health. Never infer approval, replay a started deployment, restore a database automatically, or bypass the runner with direct Compose commands. See deploy/self-host/README.md.

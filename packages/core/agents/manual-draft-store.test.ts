@@ -92,7 +92,7 @@ describe("manual agent drafts", () => {
     ["model", { model: "gpt-5.6-sol" }],
     ["thinking level", { thinkingLevel: "high" }],
     ["service tier", { serviceTier: "priority" }],
-    ["access scope", { permissionScope: "workspace" as const }],
+    ["access scope", { permissionScope: "private" as const }],
     ["skills", { skillIds: new Set(["skill-1"]) }],
     ["members", { memberIds: new Set(["member-1"]) }],
     ["teams", { teamIds: new Set(["team-1"]) }],

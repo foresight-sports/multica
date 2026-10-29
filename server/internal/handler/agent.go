@@ -1479,7 +1479,7 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Visibility == "" {
-		req.Visibility = "private"
+		req.Visibility = "workspace"
 	}
 	if err := defaultAndValidateAgentMaxConcurrentTasks(rawFields, &req.MaxConcurrentTasks); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
