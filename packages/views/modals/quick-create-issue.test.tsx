@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const mockIntake = vi.hoisted(() => ({data:{revision:0,defaultSquadId:"",projects:{} as Record<string,string>},isPending:false,isError:false}));
+const mockIntake = vi.hoisted(() => ({data:{revision:0,defaultSquadId:"squad-intake",projects:{} as Record<string,string>},isPending:false,isError:false}));
 vi.mock("@multica/core/workspace", () => ({useJiraSettings:()=>({query:{data:{required:false},isError:false}}),useRepositorySettings:()=>({query:{data:{repository:"org/repo",folder:"repo",revision:1,can_edit:true},isPending:false,isError:false}}),issueIntakeOptions: () => ({queryKey:["intake"]})}));
 const mockQuickCreateIssue = vi.hoisted(() => vi.fn());
 const mockCreateCommentSubIssue = vi.hoisted(() => vi.fn());
@@ -514,7 +514,7 @@ function renderPanel(props: React.ComponentProps<typeof AgentCreatePanel>) {
 describe("AgentCreatePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIntake.data = {revision:0,defaultSquadId:"",projects:{}};
+    mockIntake.data = {revision:0,defaultSquadId:"squad-intake",projects:{}};
     mockIntake.isPending = false;
     mockIntake.isError = false;
     mockQuickCreateStore.lastActorType = null;
@@ -539,7 +539,7 @@ describe("AgentCreatePanel", () => {
     });
     mockProjectsQuery.data = [];
     mockProjectsQuery.isSuccess = true;
-    mockSquadsData.list = [];
+    mockSquadsData.list = [{id:"squad-intake",name:"Intake",leader_id:"agent-1",archived_at:null}];
     mockRuntimesData.list = [{ id: "runtime-1", metadata: { cli_version: "1.2.3" } }];
     mockQuickCreateIssue.mockResolvedValue({ task_id: "creation-task", inbox_item_id: "creation-task" });
     mockCreateCommentSubIssue.mockResolvedValue({ task_id: "task-source-child" });
@@ -575,52 +575,30 @@ describe("AgentCreatePanel", () => {
     ).toHaveValue("Persisted draft prompt");
   });
 
-  it("restores unfinished actor, project, priority, and due-date selections after remount", async () => {
-    mockSquadsData.list = [
-      { id: "squad-1", name: "Frontend Squad", leader_id: "agent-1", archived_at: null },
-    ];
-    mockProjectsQuery.data = [{ id: "proj-1", title: "Web", icon: null }];
-    mockCreateSettingsStore.quickCreateFields = ["project", "priority", "due_date"];
-    const user = userEvent.setup();
+  it("blocks creation without configured intake rather than offering another actor", () => {
+    mockIntake.data.defaultSquadId = "";
+    renderPanel({onClose:vi.fn(),isExpanded:false,setIsExpanded:vi.fn()});
+    expect(screen.getByRole("button", {name:/^Create$/i})).toBeDisabled();
+    expect(screen.queryByText("Created by")).not.toBeInTheDocument();
+    expect(screen.getByText(/administrator must configure the Intake Coordinator/)).toBeInTheDocument();
+  });
 
-    const firstOpen = renderPanel({
-      onClose: vi.fn(),
-      isExpanded: false,
-      setIsExpanded: vi.fn(),
-    });
-
-    await user.click(screen.getByRole("button", { name: /Frontend Squad/ }));
-    await user.click(screen.getByTestId("project-picker"));
-    await user.click(screen.getByTestId("priority-picker"));
-    await user.click(screen.getByTestId("due-date-picker"));
-
-    expect(mockIssueDraftStore.draft.agent).toEqual(
-      expect.objectContaining({ actorType: "squad", actorId: "squad-1" }),
-    );
-    expect(mockIssueDraftStore.draft.shared).toEqual(
-      expect.objectContaining({
-        projectId: "proj-1",
-        priority: "high",
-        dueDate: "2026-08-01",
-      }),
-    );
-
-    firstOpen.unmount();
-    renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
-
-    expect(screen.getByRole("button", { name: /Frontend Squad/ })).toHaveAttribute(
-      "data-selected",
-      "true",
-    );
-    expect(screen.getByTestId("project-picker")).toHaveTextContent("Project proj-1");
-    expect(screen.getByTestId("priority-picker")).toHaveTextContent("Priority high");
-    expect(screen.getByTestId("due-date-picker")).toHaveTextContent("Due date 2026-08-01");
+  it.each(["isPending", "isError"] as const)("blocks submission when intake %s despite a saved actor", (state) => {
+    mockIntake[state] = true;
+    mockQuickCreateStore.lastActorType = "agent";
+    mockQuickCreateStore.lastActorId = "agent-1";
+    renderPanel({onClose:vi.fn(),isExpanded:false,setIsExpanded:vi.fn()});
+    expect(screen.getByRole("button", {name:/^Create$/i})).toBeDisabled();
+    expect(screen.queryByText("Created by")).not.toBeInTheDocument();
+    expect(mockQuickCreateIssue).not.toHaveBeenCalled();
   });
 
   it("locks the author to intake despite a remembered agent", async () => {
+    mockQuickCreateStore.lastActorType = "agent";
+    mockQuickCreateStore.lastActorId = "agent-1";
     mockIntake.data.defaultSquadId = "squad-intake";
     mockSquadsData.list = [{id:"squad-intake",name:"Intake",leader_id:"agent-1",archived_at:null}];
-    renderPanel({onClose:vi.fn(),isExpanded:false,setIsExpanded:vi.fn()});
+    renderPanel({onClose:vi.fn(),isExpanded:false,setIsExpanded:vi.fn(),data:{agent_id:"agent-1"}});
     expect(screen.getByText("Intake Coordinator will review this ticket and assign the work.")).toBeInTheDocument();
     expect(screen.queryByText("Created by")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", {name:/^Create$/i}));
@@ -651,13 +629,13 @@ describe("AgentCreatePanel", () => {
 
     await waitFor(() => {
       expect(mockQuickCreateIssue).toHaveBeenCalledWith({
-        agent_id: "agent-1",
+        squad_id: "squad-intake",
         prompt: "New agent prompt",
         project_id: undefined,
       });
     });
 
-    expect(mockSetLastActor).toHaveBeenCalledWith("agent", "agent-1");
+    expect(mockSetLastActor).toHaveBeenCalledWith("squad", "squad-intake");
     // A successful create ends the whole unified draft.
     expect(mockClearDraft).toHaveBeenCalled();
     expect(mockSetLastMode).toHaveBeenCalledWith("agent");
@@ -699,7 +677,7 @@ describe("AgentCreatePanel", () => {
     await waitFor(() => {
       expect(mockQuickCreateIssue).toHaveBeenCalledWith(
         expect.objectContaining({
-          agent_id: "agent-1",
+          squad_id: "squad-intake",
           priority: "high",
         }),
       );
@@ -862,7 +840,7 @@ describe("AgentCreatePanel", () => {
 
     await waitFor(() => {
       expect(mockQuickCreateIssue).toHaveBeenCalledWith({
-        agent_id: "agent-1",
+        squad_id: "squad-intake",
         prompt: "Create issue with ![image](/api/attachments/019ec09d-6222-722b-bdfa-427b105d80be/download)",
         project_id: undefined,
         parent_issue_id: undefined,
@@ -875,37 +853,6 @@ describe("AgentCreatePanel", () => {
   // `agent_id`) so the backend can resolve the squad's leader agent and
   // inject the squad-leader briefing on dispatch. The persisted preference
   // remembers the actor type so the next open defaults back to the squad.
-  it("submits squad_id when the user picks a squad in the actor picker", async () => {
-    mockSquadsData.list = [
-      { id: "squad-1", name: "Frontend Squad", leader_id: "agent-1", archived_at: null },
-    ];
-    const user = userEvent.setup();
-    const onClose = vi.fn();
-
-    renderPanel({ onClose, isExpanded: false, setIsExpanded: vi.fn() });
-
-    // The picker mock renders both sections inline as buttons; click the
-    // squad row directly.
-    await user.click(screen.getByRole("button", { name: /Frontend Squad/ }));
-
-    const editor = screen.getByPlaceholderText(
-      'Tell the agent what to do, e.g. "let Bohan fix the inbox loading slowness in the Web project"',
-    );
-    await user.clear(editor);
-    await user.type(editor, "Investigate the regression");
-
-    await user.click(screen.getByRole("button", { name: /^Create$/i }));
-
-    await waitFor(() => {
-      expect(mockQuickCreateIssue).toHaveBeenCalledWith({
-        squad_id: "squad-1",
-        prompt: "Investigate the regression",
-        project_id: undefined,
-      });
-    });
-    expect(mockSetLastActor).toHaveBeenCalledWith("squad", "squad-1");
-  });
-
   // Squads whose leader agent isn't visible (archived, private, etc.) must
   // not appear in the picker — the backend would reject the pick on
   // validateAssigneePair, and showing them invites a confusing dead path.
@@ -947,7 +894,6 @@ describe("AgentCreatePanel", () => {
 
       renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
 
-      await user.click(screen.getByRole("button", { name: /Bohan/ }));
       await user.click(screen.getByTestId("project-picker"));
       await user.type(
         screen.getByPlaceholderText(
@@ -963,7 +909,7 @@ describe("AgentCreatePanel", () => {
         );
       });
       // The actor is still remembered — only the project memory is gone.
-      expect(mockSetLastActor).toHaveBeenCalledWith("agent", "agent-1");
+      expect(mockSetLastActor).toHaveBeenCalledWith("squad", "squad-intake");
     });
   });
 
@@ -1064,7 +1010,7 @@ describe("AgentCreatePanel", () => {
 
     await waitFor(() => {
       expect(mockQuickCreateIssue).toHaveBeenCalledWith({
-        agent_id: "agent-1",
+        squad_id: "squad-intake",
         prompt: "Investigate the regression",
         project_id: undefined,
         parent_issue_id: "parent-uuid-1",
@@ -1127,7 +1073,7 @@ describe("AgentCreatePanel", () => {
         mode: "agent",
         capture_token: "sha256:preview-token",
         quick_create: expect.objectContaining({
-          agent_id: "agent-1",
+          squad_id: "squad-intake",
           prompt: "Investigate with captured context",
         }),
       },
@@ -1148,17 +1094,10 @@ describe("AgentCreatePanel", () => {
       return { release: (result: unknown) => release(result) };
     }
 
-    it("blocks Switch to Manual while an upload is in flight", async () => {
+    it("never offers manual creation, even to a legacy caller", () => {
       const onSwitchMode = vi.fn();
       renderPanel({ onClose: vi.fn(), onSwitchMode, isExpanded: false, setIsExpanded: vi.fn() });
-
-      startPendingUpload();
-
-      // The switch hands the serialized prompt to the manual panel — mid-upload
-      // that prompt has already lost the pending image.
-      const switchButton = screen.getByRole("button", { name: /Switch to Manual/i });
-      await waitFor(() => expect(switchButton).toBeDisabled());
-      fireEvent.click(switchButton);
+      expect(screen.queryByRole("button", { name: /Switch to Manual/i })).not.toBeInTheDocument();
       expect(onSwitchMode).not.toHaveBeenCalled();
     });
 
@@ -1194,7 +1133,6 @@ describe("AgentCreatePanel", () => {
 
       renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
 
-      await user.click(screen.getByRole("button", { name: /Bohan/ }));
 
       // No misleading "daemon has no CLI version" wall...
       expect(
@@ -1222,7 +1160,6 @@ describe("AgentCreatePanel", () => {
 
       renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
 
-      await user.click(screen.getByRole("button", { name: /Bohan/ }));
 
       expect(screen.getByText(/Create with agent needs ≥/i)).toBeInTheDocument();
       await user.type(
@@ -1278,12 +1215,12 @@ describe("AgentCreatePanel", () => {
     });
 
     it("keeps every footer control a direct child of the grid container", () => {
-      const switchToManual = screen.getByRole("button", { name: /Switch to Manual/i });
+      expect(screen.queryByRole("button", { name: /Switch to Manual/i })).not.toBeInTheDocument();
       const create = screen.getByRole("button", { name: /^Create$/i });
       const keepOpen = screen.getByRole("checkbox");
       const attach = screen.getByRole("button", { name: "Upload file" });
 
-      const footer = switchToManual.parentElement;
+      const footer = create.parentElement;
       expect(footer?.className).toContain("grid-cols-[auto_1fr]");
       // From `sm` up the same children lay out as the original single row.
       expect(footer?.className).toContain("sm:flex");

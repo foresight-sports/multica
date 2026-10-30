@@ -130,7 +130,7 @@ describe("CreateIssueDialog sizing", () => {
     render(
       <CreateIssueDialog
         onClose={vi.fn()}
-        initialMode="agent"
+        initialMode="manual"
         data={{ parent_issue_id: "ordinary-parent" }}
       />,
     );
@@ -138,7 +138,8 @@ describe("CreateIssueDialog sizing", () => {
     expect(screen.getByText(/agent panel · ordinary/)).toBeInTheDocument();
     expect(mockBeginIsolatedDraft).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "switch manual" }));
-    expect(screen.getByText(/manual panel · ordinary/)).toBeInTheDocument();
+    expect(screen.queryByText(/manual panel/)).not.toBeInTheDocument();
+    expect(screen.getByText(/agent panel · ordinary/)).toBeInTheDocument();
   });
 
   it("isolates source-context drafts and preserves source identity across mode switches", () => {
@@ -160,11 +161,8 @@ describe("CreateIssueDialog sizing", () => {
     expect(contentClass()).toContain("sm:!max-w-2xl");
     expect(contentClass()).not.toContain("!h-96");
     fireEvent.click(screen.getByRole("button", { name: "switch manual" }));
-    expect(screen.getByText(/manual panel · comment-source · expanded/)).toBeInTheDocument();
-    expect(contentClass()).toContain("manual-dialog-class");
-    expect(contentClass()).toContain("!h-5/6");
-    fireEvent.click(screen.getByRole("button", { name: "switch agent" }));
-    expect(screen.getByText(/agent panel · comment-source/)).toBeInTheDocument();
+    expect(screen.queryByText(/manual panel/)).not.toBeInTheDocument();
+    expect(screen.getByText(/agent panel · comment-source · expanded/)).toBeInTheDocument();
 
     view.unmount();
     expect(mockEndIsolatedDraft).toHaveBeenCalledTimes(1);

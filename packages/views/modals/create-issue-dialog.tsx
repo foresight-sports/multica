@@ -4,36 +4,13 @@ import { useLayoutEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@multica/ui/lib/utils";
 import { Dialog, DialogContent } from "@multica/ui/components/ui/dialog";
-import {
-  useCreateModeStore,
-  type CreateMode,
-} from "@multica/core/issues/stores/create-mode-store";
+import type { CreateMode } from "@multica/core/issues/stores/create-mode-store";
 import { AgentCreatePanel } from "./quick-create-issue";
-import { ManualCreatePanel, manualDialogContentClass } from "./create-issue";
 import { sourceContextPreviewOptions } from "@multica/core/issues/queries";
 import { useIssueDraftStore } from "@multica/core/issues/stores/draft-store";
 import { useWorkspaceId } from "@multica/core/hooks";
 
-/**
- * Shell that owns the single `<Dialog>` AND `<DialogContent>` for the
- * create-issue flow. Mode switching unmounts/mounts only the inner panel
- * body — the Portal, Backdrop, and Popup all stay in the DOM, so Base UI
- * never replays the open animation. That's what makes the switch feel
- * instant; an earlier version put `<DialogContent>` inside each panel and
- * the close→open animation cycle still fired on every toggle.
- *
- * `initialMode` comes from the modal registry (`quick-create-issue` →
- * agent, `create-issue` → manual). Subsequent switches are local state
- * only and never round-trip through the modal store.
- *
- * Carry payload: when a panel switches mode it can hand a payload up via
- * `onSwitchMode`; the shell stores it as the next panel's `data` so seeding
- * works exactly like a fresh open.
- *
- * Manual-mode `isExpanded` is lifted up because it drives `DialogContent`'s
- * className — the className lives here in the shell since the Popup is here,
- * but the toggle for that state lives in the manual panel body.
- */
+/** All new-issue entry points use the configured Intake Coordinator. */
 export function CreateIssueDialog({
   onClose,
   initialMode,
@@ -107,7 +84,6 @@ function SourceContextCreateIssueDialog({
 
 function CreateIssueDialogBody({
   onClose,
-  initialMode,
   data,
   sourceContextData,
   sourceContextExpanded = false,
@@ -118,23 +94,12 @@ function CreateIssueDialogBody({
   sourceContextData?: Record<string, unknown>;
   sourceContextExpanded?: boolean;
 }) {
-  const setLastMode = useCreateModeStore((s) => s.setLastMode);
-  const [mode, setMode] = useState<CreateMode>(initialMode);
-  const [panelData, setPanelData] = useState(data ?? null);
   const [isExpanded, setIsExpanded] = useState(false);
   const effectiveData = sourceContextData
-    ? { ...(panelData ?? {}), ...sourceContextData }
-    : panelData;
+    ? { ...(data ?? {}), ...sourceContextData }
+    : data;
 
-  const switchTo = (next: CreateMode) => (carry?: Record<string, unknown> | null) => {
-    setLastMode(next);
-    setPanelData(carry ?? null);
-    setMode(next);
-  };
-
-  const className =
-    mode === "agent"
-      ? cn(
+  const className = cn(
           "p-0 gap-0 flex flex-col overflow-hidden",
           "!top-1/2 !left-1/2 !-translate-x-1/2 !-translate-y-1/2",
           // Smooth size transition when switching modes — the manual mode
@@ -157,10 +122,6 @@ function CreateIssueDialogBody({
                 ? "!h-5/6 sm:!max-w-2xl"
                 : "!h-96 sm:!max-w-xl"
               : "!max-h-[80dvh] sm:!max-w-xl",
-        )
-      : cn(
-          manualDialogContentClass(isExpanded),
-          sourceContextExpanded && "!h-5/6",
         );
 
   return (
@@ -170,23 +131,13 @@ function CreateIssueDialogBody({
         showCloseButton={false}
         className={className}
       >
-        {mode === "agent" ? (
           <AgentCreatePanel
             onClose={onClose}
-            onSwitchMode={switchTo("manual")}
             data={effectiveData}
             isExpanded={isExpanded}
             setIsExpanded={setIsExpanded}
           />
-        ) : (
-          <ManualCreatePanel
-            onClose={onClose}
-            onSwitchMode={switchTo("agent")}
-            data={effectiveData}
-            isExpanded={isExpanded}
-            setIsExpanded={setIsExpanded}
-          />
-        )}
+
       </DialogContent>
     </Dialog>
   );

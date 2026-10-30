@@ -250,6 +250,7 @@
       "sub_issue_of": "Sub-issue of {{identifier}}"
     },
     "intake_routing": "Intake Coordinator will review this ticket and assign the work.",
+    "intake_required": "An administrator must configure the Intake Coordinator before you can create an issue.",
     "intake_loading": "Loading ticket routing…",
     "intake_retry": "Could not load ticket routing. Retry"
   },

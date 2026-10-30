@@ -49,6 +49,8 @@ Root frontend commands and `make check` do not verify mobile. Docs-only changes 
 
 ## State Rules
 
+The web/desktop new-issue dialog is Intake Coordinator only. Ignore saved manual-mode and actor preferences, preserve project/attachment/source context, and block submission while intake is loading, unavailable or unconfigured. Never fall back to an arbitrary agent or offer a manual-creation toggle. Keep the submitting human as the requester for delegated credentials.
+
 New user-facing agents default to workspace-wide invocation access in manual/AI drafts, the CLI and the create API. Workspace grants automatically include future members; instance-agent source grants propagate to bindings in each workspace. Hidden per-user system agents retain their own isolation.
 
 Comment persistence and agent dispatch are separate outcomes. Compact CLI receipts must surface blocked or unconfirmed mentions without failing an already-saved post and encouraging duplicates. Coordinators verify the intended worker's task ID and actual state before reporting a handoff; mentions never bypass the original requester's invocation permissions.

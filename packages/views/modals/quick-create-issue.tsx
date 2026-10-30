@@ -2,9 +2,8 @@
 import { IssueRepositoryNotice, useIssueRepositoryGate } from "./issue-repository-notice";
 import { issueIntakeOptions, useJiraSettings } from "@multica/core/workspace";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeftRight,
   CalendarDays,
   Check,
   ChevronRight,
@@ -34,10 +33,7 @@ import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { AppLink, resolveClickIntent, useNavigation } from "../navigation";
 import { agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
 import { projectListOptions } from "@multica/core/projects/queries";
-import {
-  useQuickCreateStore,
-  type QuickCreateActorType,
-} from "@multica/core/issues/stores/quick-create-store";
+import { useQuickCreateStore } from "@multica/core/issues/stores/quick-create-store";
 import {
   useIssueCreateSettingsStore,
   type QuickCreateField,
@@ -57,20 +53,12 @@ import {
   type Agent,
   type IssuePriority,
   type SourceContextPreview,
-  type Squad,
 } from "@multica/core/types";
-import { ActorAvatar } from "../common/actor-avatar";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { DueDatePicker, PriorityIcon, PriorityPicker } from "../issues/components";
 import { canAssignAgent } from "../issues/components/pickers/assignee-picker";
 import { isAgentRuntimeBound } from "@multica/core/agents";
-import {
-  PropertyPicker,
-  PickerItem,
-  PickerSection,
-  PickerEmpty,
-} from "../issues/components/pickers/property-picker";
 import { useAuthStore } from "@multica/core/auth";
 import { memberListOptions } from "@multica/core/workspace/queries";
 import {
@@ -84,7 +72,6 @@ import {
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
 import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
 import { useT } from "../i18n";
-import { matchesPinyin } from "../editor/extensions/pinyin-match";
 import { SourceContextPreviewCard, useSourceContextFailureMessage } from "./source-context-preview";
 import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
 
@@ -99,14 +86,9 @@ type ActorSelection =
 // animation flash — Base UI replays Popup enter/exit when DialogContent is
 // remounted, even inside a still-open Dialog Root.
 //
-// `onSwitchMode` is wired by the shell — the panel calls it with an optional
-// carry payload (currently `project_id`). The shared draft store carries the
-// description + agent across the agent→manual flip; project_id rides through
-// the same carry channel manual→agent uses, so the manual panel reads it
-// from `data?.project_id` without a parallel store.
+// Legacy callers may still supply `onSwitchMode`; intake-only creation ignores it.
 export function AgentCreatePanel({
   onClose,
-  onSwitchMode,
   data,
   isExpanded,
   setIsExpanded,
@@ -185,69 +167,17 @@ export function AgentCreatePanel({
     [squads, visibleAgentIds],
   );
 
-  const lastActorType = useQuickCreateStore((s) => s.lastActorType);
-  const lastActorId = useQuickCreateStore((s) => s.lastActorId);
   const setLastActor = useQuickCreateStore((s) => s.setLastActor);
   const visibleFields = useIssueCreateSettingsStore((s) => s.quickCreateFields);
   const keepOpen = useQuickCreateStore((s) => s.keepOpen);
   const setKeepOpen = useQuickCreateStore((s) => s.setKeepOpen);
   const setLastMode = useCreateModeStore((s) => s.setLastMode);
-  // The agent draft (prompt + actor) and the shared fields (project, priority,
-  // due date, attachments) live in the unified issue-create draft, so a switch
-  // to/from the manual form preserves them.
+  // Preserve prompt, project, priority, due date and attachments across reopening.
   const draft = useIssueDraftStore((s) => s.draft);
   const setShared = useIssueDraftStore((s) => s.setShared);
-  const setManual = useIssueDraftStore((s) => s.setManual);
   const setAgent = useIssueDraftStore((s) => s.setAgent);
   const setActiveMode = useIssueDraftStore((s) => s.setActiveMode);
   const clearDraft = useIssueDraftStore((s) => s.clearDraft);
-
-  // Resolve a candidate actor against the currently-visible agents / squads.
-  // Returns null when the candidate doesn't exist in this workspace right
-  // now (deleted, archived, permission revoked, etc.) so callers can fall
-  // through to the next seed in the chain.
-  const resolveActor = useCallback(
-    (
-      type: QuickCreateActorType | "agent" | "squad" | null | undefined,
-      id: string | null | undefined,
-    ): ActorSelection | null => {
-      if (!type || !id) return null;
-      if (type === "squad" && visibleSquads.some((s) => s.id === id)) {
-        return { type: "squad", id };
-      }
-      if (type === "agent" && visibleAgentIds.has(id)) {
-        return { type: "agent", id };
-      }
-      return null;
-    },
-    [visibleSquads, visibleAgentIds],
-  );
-
-  const seedActor = useCallback((): ActorSelection | null => {
-    // Caller-provided seed wins (e.g. shell pre-seeds with `agent_id` /
-    // `squad_id`), then the persisted agent draft, the last successful pick,
-    // and finally the first visible agent.
-    const dataAgent = data?.agent_id as string | undefined;
-    const dataSquad = data?.squad_id as string | undefined;
-    return (
-      resolveActor("agent", dataAgent) ||
-      resolveActor("squad", dataSquad) ||
-      resolveActor(draft.agent.actorType, draft.agent.actorId) ||
-      resolveActor(lastActorType, lastActorId) ||
-      (visibleAgents[0]
-        ? ({ type: "agent", id: visibleAgents[0].id } as const)
-        : null)
-    );
-  }, [
-    resolveActor,
-    data?.agent_id,
-    data?.squad_id,
-    draft.agent.actorType,
-    draft.agent.actorId,
-    lastActorType,
-    lastActorId,
-    visibleAgents,
-  ]);
 
   const [projectId, setProjectId] = useState<string | null>(() => {
     const seed = (data?.project_id as string | undefined) ?? draft.shared.projectId;
@@ -255,18 +185,11 @@ export function AgentCreatePanel({
   });
 
   const parentIssueId = (data?.parent_issue_id as string | undefined) ?? undefined;
-  const intake = useQuery({ ...issueIntakeOptions(wsId), enabled: !parentIssueId, retry: false });
+  const intake = useQuery({ ...issueIntakeOptions(wsId), retry: false });
   const intakeSquadId = intake.data?.projects[projectId ?? ""] ?? intake.data?.defaultSquadId;
-  const usesIntake = !parentIssueId && !!intakeSquadId;
-  const intakeUnavailable = !parentIssueId && (intake.isPending || intake.isError);
-  const [selectedActor, setActor] = useState<ActorSelection | null>(() => seedActor());
-  const actor = useMemo<ActorSelection | null>(() => usesIntake ? { type: "squad", id: intakeSquadId } : selectedActor, [usesIntake, intakeSquadId, selectedActor]);
-
-  // Re-seed once visible lists resolve (queries may be empty on first render).
-  useEffect(() => {
-    if (selectedActor && resolveActor(selectedActor.type, selectedActor.id)) return;
-    setActor(seedActor());
-  }, [selectedActor, resolveActor, seedActor]);
+  const usesIntake = !!intakeSquadId;
+  const intakeUnavailable = intake.isPending || intake.isError || !intakeSquadId;
+  const actor = useMemo<ActorSelection | null>(() => usesIntake ? { type: "squad", id: intakeSquadId } : null, [usesIntake, intakeSquadId]);
 
   const selectedAgent = useMemo<Agent | undefined>(() => {
     if (!actor) return undefined;
@@ -276,15 +199,7 @@ export function AgentCreatePanel({
     return visibleAgents.find((a) => a.id === squad.leader_id);
   }, [actor, visibleAgents, visibleSquads]);
 
-  const selectedSquad = useMemo<Squad | undefined>(() => {
-    if (actor?.type !== "squad") return undefined;
-    return visibleSquads.find((s) => s.id === actor.id);
-  }, [actor, visibleSquads]);
-
-  // Unfinished selections live in the shared issue-create draft. The
-  // last-successful actor remains a separate fallback, so closing a draft
-  // never overwrites the default established by an actual create.
-  //
+  // Unfinished fields live in the shared draft; actor selection comes only from intake.
   // Project has exactly two seeds, both carrying explicit user intent: the
   // project page (or manual panel) the modal was opened from, and the user's
   // own unfinished draft. It is deliberately NOT seeded from the last create
@@ -589,39 +504,6 @@ export function AgentCreatePanel({
   };
   const submitting = composer.submitting;
 
-  // Switch to the manual form WITHOUT destroying the agent draft. The agent
-  // slot (prompt + actor) is left untouched so a later manual→agent flip
-  // restores it verbatim. Project / priority / due date already live in the
-  // shared slot and carry across for free. Two one-time assist-inits run only
-  // when the manual slot is still empty: seed the description from the prompt
-  // and the assignee from the picked actor. The parent-issue context is not
-  // persisted (a per-invocation intent) so it rides the carry channel.
-  const switchToManual = () => {
-    // The prompt is copied into the manual description on assist-init; mid-upload
-    // that body has already lost the pending image (see switchToAgent).
-    if (gate.isBlocked()) return;
-    // Commit the shared fields to the draft so the manual panel reads them from
-    // there — local state can hold a value seeded from `data` that was never
-    // written through a picker.
-    setShared({ projectId: projectId ?? undefined, priority, dueDate });
-    if (!draft.manual.description.trim()) {
-      const md = editorRef.current?.getMarkdown() ?? "";
-      if (md) setManual({ description: md });
-    }
-    if (!draft.manual.assigneeId && actor) {
-      setManual({ assigneeType: actor.type, assigneeId: actor.id });
-    }
-    setLastMode("manual");
-    setActiveMode("manual");
-    const carry: Record<string, unknown> = {};
-    if (parentIssueId) carry.parent_issue_id = parentIssueId;
-    if (parentIssueIdentifier) carry.parent_issue_identifier = parentIssueIdentifier;
-    onSwitchMode?.(Object.keys(carry).length > 0 ? carry : null);
-  };
-
-  // Field visibility lives in Settings → Preferences → Issue creation. Persist the prompt draft
-  // before leaving so what the user typed survives the round-trip, then
-  // close — the dialog would otherwise linger over the settings page.
   const openFieldSettings = (e: React.MouseEvent) => {
     // Persist the draft either way, but only an in-place navigation closes
     // the dialog — a modifier click opens Settings in another tab and the
@@ -670,28 +552,12 @@ export function AgentCreatePanel({
 
         <IssueRepositoryNotice onConfigure={()=>{const pending=editorRef.current?.flushPendingUpdate?.();if(pending!=null)setAgent({prompt:pending});onClose();}} />
         {jiraBlocked && <p role="status" className="px-4 py-2 text-caption text-muted-foreground">{jira.query.isError ? t(($) => $.jira.load_error) : jira.query.data?.required ? t(($) => $.jira.manual_required) : t(($) => $.jira.loading)}</p>}
-        {/* Actor picker — agents and squads in one searchable list. Squads
-            route to their leader agent on the backend; the leader runs the
-            quick-create flow with the squad's Operating Protocol layered
-            on top, so a squad pick is "ask this squad to file the issue". */}
+        {/* Intake is fixed by workspace/project policy, never a user selection. */}
         <div className="px-5 pt-1 pb-2 shrink-0">
-          {usesIntake || intakeUnavailable ? (
             <div className="text-caption text-muted-foreground" role="status">
-              {intake.isError ? <button type="button" className="underline" onClick={() => void intake.refetch()}>{t(($) => $.create_issue.intake_retry)}</button> : intake.isPending ? t(($) => $.create_issue.intake_loading) : t(($) => $.create_issue.intake_routing)}
+              {intake.isError ? <button type="button" className="underline" onClick={() => void intake.refetch()}>{t(($) => $.create_issue.intake_retry)}</button> : intake.isPending ? t(($) => $.create_issue.intake_loading) : !intakeSquadId ? t(($) => $.create_issue.intake_required) : t(($) => $.create_issue.intake_routing)}
             </div>
-          ) : <ActorPicker
-            actor={actor}
-            visibleAgents={visibleAgents}
-            visibleSquads={visibleSquads}
-            selectedAgent={selectedAgent}
-            selectedSquad={selectedSquad}
-            onPick={(next) => {
-              setActor(next);
-              setAgent({ actorType: next.type, actorId: next.id });
-              setError(null);
-            }}
-            t={t}
-          />}
+
         </div>
 
         {selectedAgent && versionBlocked && (
@@ -898,18 +764,6 @@ export function AgentCreatePanel({
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={switchToManual}
-            disabled={gate.uploading}
-            aria-disabled={gate.uploading || undefined}
-            aria-busy={gate.uploading || undefined}
-            title={t(($) => $.create_issue.switch_to_manual_tooltip)}
-            className="flex shrink-0 items-center gap-1.5 justify-self-end text-caption px-2 py-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <ArrowLeftRight className="size-3.5" />
-            {t(($) => $.create_issue.switch_to_manual)}
-          </button>
           <label className="flex shrink-0 items-center gap-1.5 text-caption text-muted-foreground cursor-pointer select-none">
             <Switch
               size="sm"
@@ -964,119 +818,3 @@ export function AgentCreatePanel({
 // because it composes the generic PropertyPicker with a quick-create-shaped
 // trigger styled to match the modal header row — promoting it would invite
 // reuse pressure on a UI that's deliberately tuned for this one surface.
-function ActorPicker({
-  actor,
-  visibleAgents,
-  visibleSquads,
-  selectedAgent,
-  selectedSquad,
-  onPick,
-  t,
-}: {
-  actor: ActorSelection | null;
-  visibleAgents: Agent[];
-  visibleSquads: Squad[];
-  selectedAgent: Agent | undefined;
-  selectedSquad: Squad | undefined;
-  onPick: (next: ActorSelection) => void;
-  t: ReturnType<typeof useT<"modals">>["t"];
-}) {
-  const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState("");
-  const query = filter.trim().toLowerCase();
-
-  const filteredAgents = useMemo(
-    () => visibleAgents.filter((a) => a.name.toLowerCase().includes(query) || matchesPinyin(a.name, query)),
-    [visibleAgents, query],
-  );
-  const filteredSquads = useMemo(
-    () => visibleSquads.filter((s) => s.name.toLowerCase().includes(query) || matchesPinyin(s.name, query)),
-    [visibleSquads, query],
-  );
-
-  const displayLabel = selectedSquad?.name ?? selectedAgent?.name;
-  const displayActor: ActorSelection | null = selectedSquad
-    ? { type: "squad", id: selectedSquad.id }
-    : selectedAgent
-      ? { type: "agent", id: selectedAgent.id }
-      : null;
-
-  return (
-    <PropertyPicker
-      open={open}
-      onOpenChange={(v: boolean) => {
-        setOpen(v);
-        if (!v) setFilter("");
-      }}
-      width="w-64"
-      align="start"
-      searchable
-      searchPlaceholder={t(($) => $.create_issue.agent.search_placeholder)}
-      onSearchChange={setFilter}
-      trigger={
-        <span className="flex items-center gap-2 text-caption text-muted-foreground hover:text-foreground transition-colors">
-          <span>{t(($) => $.create_issue.agent.created_by)}</span>
-          {displayActor && displayLabel ? (
-            <span className="flex items-center gap-1.5 text-foreground">
-              <ActorAvatar
-                actorType={displayActor.type}
-                actorId={displayActor.id}
-                size="sm"
-              />
-              {displayLabel}
-            </span>
-          ) : (
-            <span>{t(($) => $.create_issue.agent.pick_an_agent)}</span>
-          )}
-        </span>
-      }
-    >
-      {filteredAgents.length === 0 && filteredSquads.length === 0 ? (
-        query ? (
-          <PickerEmpty />
-        ) : (
-          <div className="px-2 py-1.5 text-caption text-muted-foreground">
-            {t(($) => $.create_issue.agent.no_agents)}
-          </div>
-        )
-      ) : (
-        <>
-          {filteredAgents.length > 0 && (
-            <PickerSection label={t(($) => $.create_issue.agent.agents_group)}>
-              {filteredAgents.map((a) => (
-                <PickerItem
-                  key={a.id}
-                  selected={actor?.type === "agent" && actor.id === a.id}
-                  onClick={() => {
-                    onPick({ type: "agent", id: a.id });
-                    setOpen(false);
-                  }}
-                >
-                  <ActorAvatar actorType="agent" actorId={a.id} size="sm" />
-                  <span className="truncate">{a.name}</span>
-                </PickerItem>
-              ))}
-            </PickerSection>
-          )}
-          {filteredSquads.length > 0 && (
-            <PickerSection label={t(($) => $.create_issue.agent.squads_group)}>
-              {filteredSquads.map((s) => (
-                <PickerItem
-                  key={s.id}
-                  selected={actor?.type === "squad" && actor.id === s.id}
-                  onClick={() => {
-                    onPick({ type: "squad", id: s.id });
-                    setOpen(false);
-                  }}
-                >
-                  <ActorAvatar actorType="squad" actorId={s.id} size="sm" />
-                  <span className="truncate">{s.name}</span>
-                </PickerItem>
-              ))}
-            </PickerSection>
-          )}
-        </>
-      )}
-    </PropertyPicker>
-  );
-}
