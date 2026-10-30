@@ -36,7 +36,12 @@ $configPath=Join-Path $testRoot 'config.json'
 Write-DeploymentJson $configPath $cfg
 function Invoke-RestMethod {
     param($Uri,$Headers,$MaximumRedirection,$TimeoutSec)
-    if ($Uri -like '*/comments') { return @($global:multicaDeployTestApproval) }
+    if ($Uri -like '*/comments') {
+        $obsolete = [pscustomobject]@{id='old';author_type='member';author_id='owner';issue_id='test-issue';content='Approve deployment old old-digest';created_at='2020-01-01T00:00:00Z'}
+        # Match Invoke-RestMethod's non-enumerated JSON-array response.
+        Write-Output -NoEnumerate @($obsolete, $global:multicaDeployTestApproval)
+        return
+    }
     return [pscustomobject]@{workspace_id='test-workspace'}
 }
 function Invoke-WebRequest { param($Uri,$TimeoutSec,$MaximumRedirection); return [pscustomobject]@{StatusCode=200} }

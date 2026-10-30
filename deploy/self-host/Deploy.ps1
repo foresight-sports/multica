@@ -39,7 +39,9 @@ function Save-State([string]$state, [string]$message = '') {
 function Approved($plan) {
     $issueRow = Api "/api/issues/$($plan.issue)"
     if ($issueRow.workspace_id -ne $cfg.workspace_id) { throw 'Deployment issue is outside the configured workspace.' }
-    $comments = @(Api "/api/issues/$($plan.issue)/comments")
+    # Invoke-RestMethod can emit a JSON array as one pipeline object. Flatten
+    # that response before comparing each comment's scalar author and content.
+    $comments = @(Api "/api/issues/$($plan.issue)/comments" | ForEach-Object { $_ })
     Find-DeploymentApproval $plan $digest $comments $cfg.approver_ids
 }
 function Check-Plan($plan) {
