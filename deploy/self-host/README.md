@@ -4,6 +4,10 @@ The Multica Deployer agent is bound to the host runtime with **no portable execu
 
 The host installs `Deploy.ps1` and `Deployment.ps1` outside agent worktrees with a local `config.json`. Configuration pins the Windows host and owner SID, Multica workspace, allowed human approver IDs, repository/branch, absolute tool paths, production Compose/env files, database container and health URLs. It contains paths to existing login files, not copied credentials. Keep its state directory owner/SYSTEM-only: backups contain production data and the previous environment.
 
+## Direct operator deployment
+
+An explicit human deployment instruction in Codex authorizes an operator-managed deployment without another issue-comment approval. Record the conversation authorization separately from automated approval receipts. Preserve exact image/configuration validation, an exclusive deployment lock, database and image backups, and post-deployment health/image verification. Never fabricate an approval comment. Autonomous Multica deployments still require the workflow below.
+
 ## Workflow
 
 The deployer must post the generated `approval-request.md` block in its own agent-authored comment alongside the plan and validation details. The UI renders **Approve deployment** for listed human approvers. Clicking it posts the exact approval phrase as that signed-in human's reply, waking the authoring deployer through normal comment routing. Requests in descriptions or human-authored comments cannot do this. The card is presentation only; the host still independently validates its configured approvers and immutable plan. A saved approval is not execution confirmation: inspect actual task and runner status before reporting progress.
