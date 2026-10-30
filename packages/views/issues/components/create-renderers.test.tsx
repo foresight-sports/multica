@@ -123,7 +123,7 @@ describe("issue renderer create entrypoints", () => {
     const onCreateIssue = vi.fn();
     const { container } = render(<>
       <BoardColumn group={{ id: "status:retired", title: "Retired", status: "retired" }}
-        issueIds={[]} issueMap={new Map()} onCreateIssue={onCreateIssue} />
+        issueIds={[]} issueMap={new Map()} />
       <ListView issues={[]} visibleStatuses={["retired"]} statusPagination={emptyStatusPagination()}
         onCreateIssue={onCreateIssue} />
     </>);
@@ -131,31 +131,22 @@ describe("issue renderer create entrypoints", () => {
     expect(onCreateIssue).not.toHaveBeenCalled();
   });
 
-  it.each(["todo", "in_review", "awaiting_response"])("creates in the exact board column %s", (status) => {
-    const onCreateIssue = vi.fn();
-
-    render(
+  it.each(["todo", "in_review", "awaiting_response"])("keeps only the column menu in board status %s", (status) => {
+    const { container } = render(
       <BoardColumn
         group={{
           id: status,
           title: status,
           status,
-          createData: { status },
         }}
         issueIds={[]}
         issueMap={new Map()}
-        projectId="project-1"
-        onCreateIssue={onCreateIssue}
       />,
     );
 
-    const buttons = screen.getAllByRole("button");
-    fireEvent.click(buttons[buttons.length - 1]!);
-
-    expect(onCreateIssue).toHaveBeenCalledWith({
-      status,
-      project_id: "project-1",
-    });
+    expect(container.querySelector(".lucide-plus")).toBeNull();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.getByRole("button").getAttribute("aria-haspopup")).toBe("menu");
     expect(openModal).not.toHaveBeenCalled();
   });
 

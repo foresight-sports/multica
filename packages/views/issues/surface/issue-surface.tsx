@@ -338,8 +338,6 @@ function IssueSurfaceContent({
                 onMoveIssue={controller.moveIssue}
                 childProgressMap={controller.childProgressMap}
                 projectMap={controller.projectMap}
-                projectId={controller.projectId}
-                onCreateIssue={openCreateIssue}
                 statusPagination={controller.statusPagination}
                 groupBranches={controller.groupBranches}
               />

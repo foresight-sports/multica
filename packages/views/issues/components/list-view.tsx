@@ -69,7 +69,6 @@ function buildListGroups(visibleStatuses: IssueStatus[]): BoardColumnGroup[] {
     id: statusGroupId(status),
     title: status,
     status,
-    createData: { status: status },
   }));
 }
 
