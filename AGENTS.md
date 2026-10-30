@@ -49,6 +49,8 @@ Root frontend commands and `make check` do not verify mobile. Docs-only changes 
 
 ## State Rules
 
+Task CLI API requests use the daemon's loopback gateway when supplied through managed task environment. The gateway accepts only currently active task tokens, preserves that token upstream, binds the workspace to the task, and injects Cloudflare credentials only in the daemon. Never copy host credentials into task worktrees, substitute the owner's API token, or weaken the task sandbox to enable API access.
+
 Deployment approval buttons render only structured requests in live agent comments, bound to the current issue/workspace. They post the canonical plan-bound phrase as the signed-in human's reply to wake the requesting deployer. The host remains the authorization boundary. Never label a saved approval as a running deployment. Resolve Compose images and verify their IDs before replacing containers; remove process overrides rather than setting them to empty strings.
 
 The web/desktop new-issue dialog is Intake Coordinator only. Ignore saved manual-mode and actor preferences, preserve project/attachment/source context, and block submission while intake is loading, unavailable or unconfigured. Never fall back to an arbitrary agent or offer a manual-creation toggle. Keep the submitting human as the requester for delegated credentials.

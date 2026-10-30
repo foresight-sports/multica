@@ -197,7 +197,7 @@ func NewAPIClient(baseURL, workspaceID, token string) *APIClient {
 		BaseURL:     strings.TrimRight(baseURL, "/"),
 		WorkspaceID: workspaceID,
 		Token:       token,
-		HTTPClient:  &http.Client{Timeout: httpTimeout(), Transport: accessclient.Transport(nil)},
+		HTTPClient:  &http.Client{Timeout: httpTimeout(), Transport: accessclient.TaskTransport(baseURL)},
 	}
 }
 

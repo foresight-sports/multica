@@ -180,20 +180,21 @@ func taskScopedAuthToken(task Task) (string, error) {
 
 func taskMulticaEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
 	return map[string]string{
-		"MULTICA_TOKEN":        token,
-		cli.TaskConfigRootEnv:  configRoot,
-		TaskWorkspacesRootEnv:  workspacesRoot,
-		"MULTICA_SERVER_URL":   serverURL,
-		"MULTICA_DAEMON_PORT":  strconv.Itoa(healthPort),
-		"MULTICA_WORKSPACE_ID": task.WorkspaceID,
-		"MULTICA_AGENT_NAME":   agentName,
-		"MULTICA_AGENT_ID":     task.AgentID,
-		"MULTICA_TASK_ID":      task.ID,
-		"MULTICA_RUNTIME_ID":   task.RuntimeID,
-		"MULTICA_TASK_SLOT":    strconv.Itoa(slot),
-		"TMPDIR":               tempDir,
-		"TMP":                  tempDir,
-		"TEMP":                 tempDir,
+		"MULTICA_TOKEN":          token,
+		cli.TaskConfigRootEnv:    configRoot,
+		TaskWorkspacesRootEnv:    workspacesRoot,
+		"MULTICA_SERVER_URL":     serverURL,
+		"MULTICA_TASK_API_PROXY": fmt.Sprintf("http://127.0.0.1:%d/task-api", healthPort),
+		"MULTICA_DAEMON_PORT":    strconv.Itoa(healthPort),
+		"MULTICA_WORKSPACE_ID":   task.WorkspaceID,
+		"MULTICA_AGENT_NAME":     agentName,
+		"MULTICA_AGENT_ID":       task.AgentID,
+		"MULTICA_TASK_ID":        task.ID,
+		"MULTICA_RUNTIME_ID":     task.RuntimeID,
+		"MULTICA_TASK_SLOT":      strconv.Itoa(slot),
+		"TMPDIR":                 tempDir,
+		"TMP":                    tempDir,
+		"TEMP":                   tempDir,
 	}
 }
 
@@ -8885,7 +8886,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{Status: "completed", Comment: "", WorkDir: env.WorkDir, EnvRoot: env.RootDir}, nil
 	}
 
-	// Authenticate the localhost repo-checkout endpoint with the same
+	// Authenticate the localhost repo-checkout and API endpoints with the same
 	// task-scoped token the child receives. The endpoint derives identity and
 	// branch ownership from this in-memory record instead of trusting request
 	// fields or ambient process environment. Register only for the provider

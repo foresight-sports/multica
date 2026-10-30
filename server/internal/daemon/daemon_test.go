@@ -555,6 +555,7 @@ func TestTaskMulticaEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 		"MULTICA_TASK_WORKSPACES_ROOT": workspacesRoot,
 		"MULTICA_SERVER_URL":           "https://task.example",
 		"MULTICA_DAEMON_PORT":          "19514",
+		"MULTICA_TASK_API_PROXY":       "http://127.0.0.1:19514/task-api",
 		"MULTICA_WORKSPACE_ID":         "workspace-test",
 		"MULTICA_AGENT_NAME":           "agent-name",
 		"MULTICA_AGENT_ID":             "agent-test",
