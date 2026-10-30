@@ -28,7 +28,7 @@ function Docker([string[]]$Arguments) { Invoke-DeploymentCommand $cfg.docker $Ar
 function Compose([string[]]$Arguments) {
     # Shell variables outrank --env-file. Use only the reviewed production file.
     foreach ($key in @('MULTICA_BACKEND_IMAGE','MULTICA_BACKEND_IMAGE_TAG','MULTICA_WEB_IMAGE','MULTICA_WEB_IMAGE_TAG','MULTICA_IMAGE_TAG','COMPOSE_FILE','COMPOSE_PROFILES')) {
-        [Environment]::SetEnvironmentVariable($key,$null,'Process')
+        Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
     }
     Docker (@('compose','--project-name',$cfg.compose_project,'--project-directory',$cfg.compose_directory,'--env-file',$cfg.env_file,'-f',$cfg.compose_file) + $Arguments)
 }
@@ -104,6 +104,10 @@ if ($Action -eq 'Prepare') {
         Write-DeploymentJson (Join-Path $dir 'plan.json') $plan
         Save-State 'awaiting_approval'
         $digest = (Get-FileHash -LiteralPath (Join-Path $dir 'plan.json')).Hash.ToLowerInvariant()
+        $request = @{deployment=$Deployment;issue=$Issue;workspace_id=$cfg.workspace_id;commit=$Commit;plan_sha256=$digest;host=$cfg.host;prepared_at=$plan.prepared_at;approver_ids=@($cfg.approver_ids)}
+        $card = '```multica-deployment-approval' + "`n" + ($request | ConvertTo-Json -Depth 4) + "`n" + '```'
+        Write-DeploymentText (Join-Path $dir 'approval-request.md') $card
+        Write-Output 'Post approval-request.md verbatim in YOUR agent-authored issue comment, alongside plan and validation details. The approval button replies to that comment to wake you.'
         Write-Output "Prepared $Deployment at commit $Commit. Review plan.json and build logs."
         Write-Output "Approval comment required on $Issue from a configured human approver:"
         Write-Output "Approve deployment $Deployment $digest"
@@ -177,6 +181,15 @@ try {
         $envText = Set-DeploymentEnvValue $envText "${prefix}_IMAGE_TAG" $tag
     }
     Write-DeploymentText $cfg.env_file $envText
+    # Resolve the actual Compose model before replacing any container. Empty
+    # process variables also override --env-file and can select upstream defaults.
+    $model = (Compose @('config','--format','json') | Out-String) | ConvertFrom-Json
+    foreach ($image in $plan.images) {
+        $resolved = $model.services.($image.service).image
+        if ($resolved -ne $image.tag -or (ImageID $resolved) -ne $image.id) {
+            throw 'Compose image does not match the approved plan; containers were not replaced.'
+        }
+    }
     Compose (@('up','-d','--no-deps','--pull','never') + @($plan.images | ForEach-Object {$_.service})) | Out-Null
     Save-State 'verifying'
     Wait-Healthy $plan

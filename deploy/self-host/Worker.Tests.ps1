@@ -9,6 +9,12 @@ $fakeDocker = Join-Path $testRoot 'docker.ps1'
 @'
 $a = $args
 $line = $a -join ' '
+if ($a[0] -eq 'compose' -and (Test-Path Env:MULTICA_BACKEND_IMAGE)) { throw 'Compose override was not removed from the process environment' }
+if ($line -match ' config --format json') {
+    if ($env:MULTICA_DEPLOY_WRONG_IMAGE -eq '1') { '{"services":{"backend":{"image":"upstream:latest"}}}' }
+    else { '{"services":{"backend":{"image":"multica-approved-backend:test"}}}' }
+    exit 0
+}
 if ($a[0] -eq 'image') { 'sha256:approved'; exit 0 }
 if ($a[0] -eq 'inspect') { 'sha256:approved'; exit 0 }
 if ($a[0] -eq 'tag') { exit 0 }
@@ -57,6 +63,13 @@ try {
     if (-not $failed -or (Test-Path (Join-Path $testRoot 'deployed'))) { throw 'Failed backup did not block deployment' }
     $env:MULTICA_DEPLOY_FAIL_BACKUP='0'
     New-TestPlan
+    $env:MULTICA_DEPLOY_WRONG_IMAGE='1'
+    $failed=$false
+    try { & "$PSScriptRoot/Deploy.ps1" -Action Run -Config $configPath -Deployment $id } catch { $failed=$true }
+    if (-not $failed -or (Test-Path (Join-Path $testRoot 'deployed'))) { throw 'Wrong Compose image did not block deployment' }
+    Remove-Item Env:MULTICA_DEPLOY_WRONG_IMAGE
+    New-TestPlan
+    $env:MULTICA_BACKEND_IMAGE=''
     & "$PSScriptRoot/Deploy.ps1" -Action Run -Config $configPath -Deployment $id
     $state=Get-Content (Join-Path $dir 'status.json') -Raw | ConvertFrom-Json
     if ($state.state -ne 'succeeded') { throw "Unexpected final state: $($state.state)" }
@@ -68,6 +81,6 @@ try {
     if ($state.state -ne 'succeeded') { throw 'Duplicate invocation overwrote terminal state' }
     Write-Output 'PASS: worker rejects agent approval, blocks on backup failure, deploys approved images, saves recovery artifacts, verifies health, and prevents replay.'
 } finally {
-    Remove-Item Env:MULTICA_DEPLOY_TEST,Env:MULTICA_DEPLOY_FAIL_BACKUP -ErrorAction SilentlyContinue
+    Remove-Item Env:MULTICA_DEPLOY_TEST,Env:MULTICA_DEPLOY_FAIL_BACKUP,Env:MULTICA_DEPLOY_WRONG_IMAGE,Env:MULTICA_BACKEND_IMAGE -ErrorAction SilentlyContinue
     Write-Output "Isolated test artifacts: $testRoot"
 }

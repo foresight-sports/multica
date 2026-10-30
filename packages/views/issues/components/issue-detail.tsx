@@ -1,6 +1,7 @@
 "use client";
 
 import { IssueWorkPanel } from "./issue-work-panel";
+import { DeploymentApprovals } from "./deployment-approval";
 import { JiraBlockerPanel } from "./jira-blocker-panel";
 import {
   issueBehavesAs,
@@ -2947,6 +2948,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           Self-contained; owns its own collapse state and WS subscriptions.
           Hides itself when there are no runs to show. */}
       <IssueWorkPanel issueId={id} />
+      <DeploymentApprovals issueId={id} timeline={timeline} currentUserId={user?.id} />
       <ExecutionLogSection issueId={id} identifier={issue.identifier} issueTitle={issue.title} />
 
       {/* Details — creator and timestamps. Sits below the execution log

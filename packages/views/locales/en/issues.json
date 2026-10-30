@@ -1,4 +1,13 @@
 {
+  "deployment": {
+    "title": "Deployment approval",
+    "plan": "Plan digest",
+    "review": "Review deployment plan and validation",
+    "approve": "Approve deployment",
+    "recorded": "Approval recorded. Waiting for the deployer to verify and report execution status.",
+    "expired": "This plan has expired. Ask the deployer to prepare a new plan.",
+    "restricted": "Waiting for a configured deployment approver."
+  },
   "inline_run": {
     "label": "{{name}} run",
     "stop": "Stop",
