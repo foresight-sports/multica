@@ -36,7 +36,6 @@ import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
 import { ListLoadMoreFooter } from "./list-load-more-footer";
 import type { ChildProgress } from "./list-row";
-import type { IssueCreateDefaults } from "../surface/types";
 import type {
   IssueStatusPageState,
   IssueStatusPagination,
@@ -108,7 +107,6 @@ function projectColumn(
     projectId,
     project,
     totalCount,
-    createData: { project_id: projectId },
   };
 }
 
@@ -151,7 +149,6 @@ function buildGroups(
       id: statusGroupId(status),
       title: status,
       status,
-      createData: { status: status },
     }));
   }
 
@@ -208,10 +205,6 @@ function buildGroups(
         title: getActorName(issue.assignee_type, issue.assignee_id),
         assigneeType: issue.assignee_type,
         assigneeId: issue.assignee_id,
-        createData: {
-          assignee_type: issue.assignee_type,
-          assignee_id: issue.assignee_id,
-        },
       });
       continue;
     }
@@ -221,10 +214,6 @@ function buildGroups(
       title: noAssigneeLabel,
       assigneeType: null,
       assigneeId: null,
-      createData: {
-        assignee_type: null,
-        assignee_id: null,
-      },
     });
   }
 
@@ -253,8 +242,6 @@ function BoardViewImpl({
   onMoveIssue,
   childProgressMap = EMPTY_PROGRESS_MAP,
   projectMap,
-  projectId,
-  onCreateIssue,
   statusPagination,
   groupBranches,
 }: {
@@ -264,9 +251,6 @@ function BoardViewImpl({
   onMoveIssue: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
-  /** When set, the per-column "+" pre-fills the project on the create form. */
-  projectId?: string;
-  onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   statusPagination?: IssueStatusPagination;
   groupBranches?: IssueGroupBranches;
 }) {
@@ -358,10 +342,6 @@ function BoardViewImpl({
           assigneeType: actor?.type ?? null,
           assigneeId: actor?.id ?? null,
           totalCount: descriptor.count,
-          createData: {
-            assignee_type: actor?.type ?? null,
-            assignee_id: actor?.id ?? null,
-          },
         }];
       });
     }
@@ -750,8 +730,6 @@ function BoardViewImpl({
                 childProgressMap={childProgressMap}
                 projectMap={projectMap}
                 page={statusPagination?.[group.status]}
-                projectId={projectId}
-                onCreateIssue={onCreateIssue}
                 sortLabel={sortLabel}
               />
             ) : (
@@ -764,8 +742,6 @@ function BoardViewImpl({
                   childProgressMap={childProgressMap}
                   projectMap={projectMap}
                   page={groupPagination[group.id]!}
-                  projectId={projectId}
-                  onCreateIssue={onCreateIssue}
                   sortLabel={sortLabel}
                 />
               ) : (
@@ -776,8 +752,6 @@ function BoardViewImpl({
                   issueMap={issueMapRef.current}
                   childProgressMap={childProgressMap}
                   projectMap={projectMap}
-                  projectId={projectId}
-                  onCreateIssue={onCreateIssue}
                   totalCount={group.totalCount}
                   sortLabel={sortLabel}
                 />
@@ -830,8 +804,6 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
   childProgressMap,
   projectMap,
   page,
-  projectId,
-  onCreateIssue,
   sortLabel,
 }: {
   group: BoardColumnGroup;
@@ -840,8 +812,6 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   page?: IssueStatusPageState | IssueGroupPageState;
-  projectId?: string;
-  onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   sortLabel?: string | null;
 }) {
   const footer = page ? (
@@ -862,8 +832,6 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
       childProgressMap={childProgressMap}
       projectMap={projectMap}
       totalCount={page?.total ?? group.totalCount}
-      projectId={projectId}
-      onCreateIssue={onCreateIssue}
       sortLabel={sortLabel}
       footer={footer}
     />

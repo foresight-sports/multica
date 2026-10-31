@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { EyeOff, FolderMinus, MoreHorizontal, Plus, UserMinus } from "lucide-react";
+import { EyeOff, FolderMinus, MoreHorizontal, UserMinus } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type {
@@ -31,9 +31,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useRestoredScrollOffset, useRestoredScrollRef } from "../../platform";
 import { DeferredPopup } from "../../common/deferred-popup";
-import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { VirtuosoSeed } from "../../common/virtuoso-seed";
-import type { IssueCreateDefaults } from "../surface/types";
 
 // Insertion-position prediction intentionally omitted. The server's
 // ORDER BY uses PostgreSQL's en_US.utf8 collation (glibc), which
@@ -93,7 +91,6 @@ export interface BoardColumnGroup {
   propertyOptionId?: string | null;
   propertyOptionColor?: string;
   totalCount?: number;
-  createData?: IssueCreateDefaults;
 }
 
 export const BoardColumn = memo(function BoardColumn({
@@ -104,8 +101,6 @@ export const BoardColumn = memo(function BoardColumn({
   projectMap,
   totalCount,
   footer,
-  projectId,
-  onCreateIssue,
   sortLabel,
 }: {
   group: BoardColumnGroup;
@@ -115,9 +110,6 @@ export const BoardColumn = memo(function BoardColumn({
   projectMap?: Map<string, Project>;
   totalCount?: number;
   footer?: ReactNode;
-  /** When set, the per-column "+" pre-fills the project on the create form. */
-  projectId?: string;
-  onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   sortLabel?: string | null;
 }) {
   const status = group.status;
@@ -196,12 +188,12 @@ export const BoardColumn = memo(function BoardColumn({
       <div className="mb-2 flex items-center justify-between px-1.5">
         <BoardGroupHeading group={group} count={totalCount ?? issueIds.length} />
 
-        {/* Right: add + menu */}
+        {/* Column menu */}
         <div className="flex items-center gap-1">
           {/* Column-header popups mount lazily: a board/swimlane renders one
-              header per column and almost none of these menus/tooltips are
+              header per column and almost none of these menus are
               ever opened — eagerly mounting them dominated surface mount
-              cost (DeferredPopup / DeferredTooltip). */}
+              cost (DeferredPopup). */}
           {status && (
             <DeferredPopup
               ariaHasPopup="menu"
@@ -233,27 +225,6 @@ export const BoardColumn = memo(function BoardColumn({
                 </DropdownMenu>
               )}
             </DeferredPopup>
-          )}
-          {onCreateIssue && !archived && (
-            <DeferredTooltip
-              content={t(($) => $.board.add_issue_tooltip)}
-              trigger={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="rounded-full text-muted-foreground"
-                  onClick={() => {
-                    const data = {
-                      ...(group.createData ?? {}),
-                      ...(projectId ? { project_id: projectId } : {}),
-                    };
-                    onCreateIssue(data);
-                  }}
-                >
-                  <Plus className="size-3.5" />
-                </Button>
-              }
-            />
           )}
         </div>
       </div>
