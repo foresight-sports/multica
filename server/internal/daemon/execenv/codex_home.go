@@ -279,13 +279,18 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	// opted into a native windows.sandbox; see codex_sandbox.go for the full
 	// rationale. On Windows, resolve the native-sandbox state across the copied
 	// config and the effective custom args so an explicit user opt-in is honored
-	// and an undecidable config fails closed instead of loosening.
+	// and an undecidable config fails closed instead of loosening. A valid
+	// explicit sandbox_mode from the original host-user config takes precedence
+	// over the implementation-derived default (windows.sandbox is not a mode).
 	configFile := filepath.Join(codexHome, "config.toml")
 	winState := windowsSandboxAbsent
 	if resolveGOOS(opts.GOOS) == "windows" {
 		winState = resolveWindowsSandboxState(configFile, configSyncErr, statSharedCodexConfig(sharedHome), opts.CodexCustomArgs, logger)
 	}
 	policy := codexSandboxPolicyForConfig(opts.GOOS, opts.CodexVersion, winState)
+	if resolveGOOS(opts.GOOS) == "windows" && configSyncErr == nil && winState != windowsSandboxUndecidable {
+		policy = codexWindowsUserSandboxPolicy(filepath.Join(sharedHome, "config.toml"), policy)
+	}
 	if err := ensureCodexSandboxConfig(configFile, policy, opts.CodexVersion, logger); err != nil {
 		// The managed block is the authoritative on-disk sandbox policy. If it
 		// can't be written, config.toml keeps whatever it already had — on a

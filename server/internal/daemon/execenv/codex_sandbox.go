@@ -88,9 +88,11 @@ func resolveGOOS(goos string) string {
 //     reaches the daemon's auto-approver. danger-full-access sidesteps that.
 //     Enabling the native sandbox is tracked as separate follow-up work. See
 //     MUL-4957. A user who has opted into windows.sandbox (via config.toml or a
-//     `-c` custom arg) keeps workspace-write instead of this fallback, and an
-//     undecidable config fails closed; that logic lives in
-//     codexSandboxPolicyForConfig / resolveWindowsSandboxState.
+//     `-c` custom arg) defaults to workspace-write instead of this fallback,
+//     unless their original host config explicitly selects an access mode.
+//     An undecidable config fails closed; that logic lives in
+//     codexSandboxPolicyForConfig / resolveWindowsSandboxState, followed by
+//     codexWindowsUserSandboxPolicy for an explicit host-user selection.
 //   - darwin with a version at or above CodexDarwinNetworkAccessFixedVersion:
 //     workspace-write with network access (upstream bug fixed).
 //   - darwin otherwise (including when the version is unknown): fall back to
@@ -136,6 +138,34 @@ func codexSandboxPolicyFor(goos, detectedVersion string) codexSandboxPolicy {
 // closed — the daemon never loosens to danger-full-access when it cannot
 // confirm the user's intent. See MUL-4957.
 type windowsSandboxConfig int
+
+// windows.sandbox selects the implementation, not whether sandboxing is
+// enabled. Honor an explicit access mode from the host user's original config.
+// Never infer that choice from a task copy or a previous daemon-managed block.
+// Call only after the config sync and native-sandbox checks have succeeded;
+// unreadable or ambiguous configuration must retain the fail-closed policy.
+func codexWindowsUserSandboxPolicy(sharedConfig string, fallback codexSandboxPolicy) codexSandboxPolicy {
+	data, err := os.ReadFile(sharedConfig)
+	if err != nil {
+		return fallback
+	}
+	var user struct {
+		Mode string `toml:"sandbox_mode"`
+	}
+	if err := toml.Unmarshal([]byte(managedBlockRe.ReplaceAllString(string(data), "")), &user); err != nil {
+		return fallback
+	}
+	switch user.Mode {
+	case "danger-full-access", "read-only", "workspace-write":
+		return codexSandboxPolicy{
+			Mode:          user.Mode,
+			NetworkAccess: user.Mode == "workspace-write" && fallback.NetworkAccess,
+			Reason:        "codex on windows: honoring the host user's explicit sandbox_mode",
+		}
+	default:
+		return fallback
+	}
+}
 
 const (
 	// windowsSandboxAbsent: confidently no native sandbox is selected anywhere,
