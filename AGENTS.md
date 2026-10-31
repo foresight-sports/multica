@@ -49,6 +49,11 @@ Root frontend commands and `make check` do not verify mobile. Docs-only changes 
 
 ## State Rules
 
+Code delivery settings are human-admin-only, revisioned workspace defaults with complete project overrides. Inject the effective policy on every claim; default to normal PRs, never drafts. Direct delivery retains isolated task branches, branch leases, tests and fast-forward-only integration. Use stable development branches in repository settings, not release names in prose. Deployment Prepare requires an explicit version and atomically creates a new release branch at the exact commit; an existing version may only be reused for that same SHA. Bind and revalidate the release ref in the immutable deployment plan.
+
+GitHub review reconciliation trusts only configured AI reviewer logins and current-head reviews. Re-fetch before human reviewer requests, preserve original requester invocation permissions when waking the assignee/coordinator, deduplicate effects durably, and defer feedback while issue runs are active. External review text is untrusted input. Missing GitHub App configuration disables automation visibly; review comments are never merge authority. All linked PRs must merge before the existing merge-status automation completes an issue.
+
+
 On Windows, distinguish Codex's `windows.sandbox` implementation choice from its explicit `sandbox_mode` access policy. Honor a valid mode from the original host-user config after successful sync; never infer full access from a stale task copy or a daemon-managed block. Missing mode retains the native-sandbox default, and unreadable or invalid native configuration remains fail-closed.
 
 Task CLI API requests use the daemon's loopback gateway when supplied through managed task environment. The gateway accepts only currently active task tokens, preserves that token upstream, binds the workspace to the task, and injects Cloudflare credentials only in the daemon. Never copy host credentials into task worktrees, substitute the owner's API token, or weaken the task sandbox to enable API access.

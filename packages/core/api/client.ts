@@ -1,3 +1,4 @@
+import { CodeDeliverySchema, type CodeDelivery } from "./code-delivery-schema";
 import { WorkspaceDirectorySchema, WorkspaceAccessRequestsSchema, type WorkspaceDirectoryData, type WorkspaceAccessRequests } from "./workspace-directory-schema";
 import { WorkRecordsSchema, WorkRecordSchema, type WorkRecords, type WorkRecord } from "./work-record-schema";
 import { MachineLogsSchema, type MachineLogs } from "./machine-logs-schema";
@@ -1792,6 +1793,18 @@ export class ApiClient {
  if(!parsed) throw new Error("Invalid workspace readiness response");
  return parsed;
  }
+  async getCodeDelivery(wsId: string): Promise<CodeDelivery> {
+    const endpoint = `/api/workspaces/${wsId}/code-delivery`;
+    const value = parseWithFallback(await this.fetch<unknown>(endpoint), CodeDeliverySchema, null, { endpoint });
+    if (!value) throw new Error("Could not load code delivery settings");
+    return value;
+  }
+  async saveCodeDelivery(wsId: string, config: CodeDelivery): Promise<CodeDelivery> {
+    const endpoint = `/api/workspaces/${wsId}/code-delivery`;
+    const value = parseWithFallback(await this.fetch<unknown>(endpoint, { method: "PUT", body: JSON.stringify(config) }), CodeDeliverySchema, null, { endpoint });
+    if (!value) throw new Error("Could not save code delivery settings");
+    return value;
+  }
   async getRepositorySettings(wsId:string,runtimeId?:string):Promise<RepositorySettings> {
     const endpoint=runtimeId ? `/api/runtimes/${runtimeId}/repository-settings` : `/api/workspaces/${wsId}/repository-settings`;
     const raw=await this.fetch<unknown>(endpoint);

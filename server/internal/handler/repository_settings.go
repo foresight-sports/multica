@@ -161,6 +161,11 @@ func (h *Handler) applyWorkspaceRepository(ctx context.Context, resp *AgentTaskR
 	resp.ProjectResources = append(filtered, ProjectResourceData{ID: resp.WorkspaceID, ResourceType: "local_directory", ResourceRef: ref, Label: c.Folder})
 	resp.Repos = nil // Preparation owns cloning; task execution never chooses another directory.
 	resp.WorkspaceContext += "\n\n## Workspace repository\nGitHub repository: " + c.Repository + "\nRepository directory on this machine: " + localPath + "\nUse this repository as the workspace. In isolated mode, the task's assigned Git worktree is also an authorized working directory. Other repositories under the machine's repositories folder are outside this workspace. Follow the instance filesystem instructions; this setting does not grant write access to the repositories parent folder.\n"
+	delivery, err := h.readCodeDelivery(ctx, resp.WorkspaceID)
+	if err != nil {
+		return fmt.Errorf("load code delivery policy: %w", err)
+	}
+	resp.WorkspaceContext += delivery.Effective(resp.ProjectID).Instructions(c.Repository, c.BaseBranch)
 	// A prior session from a different configuration must never resume elsewhere.
 	resp.PriorWorkDir = ""
 	resp.PriorSessionID = ""

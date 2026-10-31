@@ -1746,6 +1746,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/", h.GetWorkspace)
 					r.Get("/issue-intake", h.GetIssueIntake)
 					r.Get("/repository-settings", h.RepositorySettings)
+					r.Get("/code-delivery", h.CodeDeliverySettings)
 					r.Get("/jira-settings", h.JiraSettings)
 					r.With(handler.RequireHumanActor).Put("/jira-settings", h.JiraSettings)
 					r.Get("/members", h.ListMembersWithUser)
@@ -1785,6 +1786,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/", h.UpdateWorkspace)
 					r.Put("/issue-intake", h.UpdateIssueIntake)
 					r.With(handler.RequireHumanActor).Put("/repository-settings", h.RepositorySettings)
+					r.With(handler.RequireHumanActor).Put("/code-delivery", h.CodeDeliverySettings)
 					r.Patch("/", h.UpdateWorkspace)
 					r.Post("/members", h.CreateInvitation)
 					r.Route("/members/{memberId}", func(r chi.Router) {

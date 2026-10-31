@@ -30,3 +30,30 @@ function Set-DeploymentEnvValue([string]$Text, [string]$Key, [string]$Value) {
     if ([regex]::IsMatch($Text,$pattern)) { return [regex]::Replace($Text,$pattern,"$Key=$Value") }
     return $Text.TrimEnd() + "`n$Key=$Value`n"
 }
+
+function Get-DeploymentReleaseBranch([string]$Prefix, [string]$Version) {
+    if ($Version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$') { throw 'Provide an explicit release version, for example 1.2.3 or 1.2.3-rc.1.' }
+    if ([string]::IsNullOrWhiteSpace($Prefix)) { throw 'Configure release_branch_prefix on the deployment host.' }
+    $branch = $Prefix.TrimEnd('/') + '/' + $Version
+    if ($branch -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$' -or $branch.Contains('..') -or $branch.Contains('//') -or $branch.EndsWith('.') -or $branch.EndsWith('.lock') -or $branch.Contains('/.')) { throw 'Invalid release branch prefix.' }
+    return $branch
+}
+function Assert-DeploymentRelease([string]$Git, [string]$Repository, [string]$Branch, [string]$Commit) {
+    $ref = "refs/heads/$Branch"
+    $rows = @(Invoke-DeploymentCommand $Git @('ls-remote','--heads',$Repository,$ref))
+    if ($rows.Count -ne 1 -or $rows[0] -cne "$Commit`t$ref") { throw 'Release branch is missing or no longer points to the prepared commit. Prepare a new plan.' }
+}
+function New-DeploymentRelease([string]$Git, [string]$Source, [string]$Branch, [string]$Commit) {
+    Invoke-DeploymentCommand $Git @('check-ref-format',"refs/heads/$Branch") | Out-Null
+    $ref = "refs/heads/$Branch"
+    $rows = @(Invoke-DeploymentCommand $Git @('-C',$Source,'ls-remote','--heads','origin',$ref))
+    if ($rows.Count -gt 0) {
+        if ($rows.Count -eq 1 -and $rows[0] -ceq "$Commit`t$ref") { return }
+        throw 'Release version already belongs to another commit. Choose a new version; existing releases are immutable.'
+    }
+    # An empty expected lease is atomic create-only, never permission to
+    # rewrite an existing branch, including a concurrent release preparation.
+    Invoke-DeploymentCommand $Git @('-C',$Source,'push',"--force-with-lease=${ref}:",'origin',"${Commit}:$ref") | Out-Null
+    $remote = (Invoke-DeploymentCommand $Git @('-C',$Source,'remote','get-url','origin') | Select-Object -Last 1).Trim()
+    Assert-DeploymentRelease $Git $remote $Branch $Commit
+}

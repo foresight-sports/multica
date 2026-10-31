@@ -1,3 +1,4 @@
+import { CodeDeliverySection } from "./code-delivery-section";
 "use client";
 import { RepositorySettingsSection } from "./repository-settings-section";
 import { JiraSettingsSection } from "./jira-settings-section";
@@ -310,6 +311,7 @@ export function WorkspaceTab() {
   return (
     <SettingsTab title={t(($) => $.page.tabs.general)} scope="workspace">
       {readOnly ? <SettingsReadOnlyNotice wsId={workspace.id} /> : null}
+      <CodeDeliverySection key={`delivery-${workspace.id}`} wsId={workspace.id} />
       <RepositorySettingsSection key={`repository-${workspace.id}`} wsId={workspace.id} />
       <JiraSettingsSection key={`jira-${workspace.id}`} wsId={workspace.id} />
       <IssueIntakeSection key={workspace.id} workspaceId={workspace.id} canManage={canManageWorkspace}/>

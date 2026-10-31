@@ -50,6 +50,14 @@ function New-TestPlan {
     $script:dir=Join-Path $cfg.state_root $id
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $plan=@{deployment=$id;host=$cfg.host;workspace_id=$cfg.workspace_id;issue='test-issue';commit=('a'*40);prepared_at=[DateTime]::UtcNow.AddMinutes(-1).ToString('o');images=@(@{service='backend';tag='multica-approved-backend:test';id='sha256:approved'});config_hash=(Get-FileHash $configPath).Hash;compose_hash=(Get-FileHash $cfg.compose_file).Hash;env_hash=(Get-FileHash $cfg.env_file).Hash;runner_hash=(Get-FileHash "$PSScriptRoot/Deploy.ps1").Hash;library_hash=(Get-FileHash "$PSScriptRoot/Deployment.ps1").Hash}
+    $fakeGit = Join-Path $testRoot 'git.ps1'
+    Write-DeploymentText $fakeGit "('a'*40) + [char]9 + 'refs/heads/releases/1.2.3'; exit 0"
+    $cfg.git = $fakeGit
+    Write-DeploymentJson $configPath $cfg
+    $plan.config_hash = (Get-FileHash $configPath).Hash
+    $plan.repository = 'https://invalid.test/repo'
+    $plan.release_branch = 'releases/1.2.3'
+    $plan.release_version = '1.2.3'
     Write-DeploymentJson (Join-Path $dir 'plan.json') $plan
     Write-DeploymentJson (Join-Path $dir 'status.json') @{state='awaiting_approval'}
     $digest=(Get-FileHash (Join-Path $dir 'plan.json')).Hash.ToLowerInvariant()

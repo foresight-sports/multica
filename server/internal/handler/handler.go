@@ -421,8 +421,9 @@ type Handler struct {
 	// trigger is a no-op) when GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY are unset,
 	// so the feature degrades cleanly on deployments without a private key.
 	// Wired in cmd/server/router.go after New.
-	PRRefresh *ghsnapshot.Manager
-	cfg       Config
+	PRRefresh    *ghsnapshot.Manager
+	ReviewClient CodeReviewClient
+	cfg          Config
 }
 
 func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
@@ -541,6 +542,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		// Malformed key is operator-actionable; the pipeline stays disabled.
 		slog.Warn("github: PR snapshot pipeline disabled (invalid App private key)", "err", err)
 	}
+	h.ReviewClient = ghClient
 	h.PRRefresh = ghsnapshot.NewManager(ghClient, queries, txStarter, h.broadcastPRSnapshotApplied)
 
 	return h

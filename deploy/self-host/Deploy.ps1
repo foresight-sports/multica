@@ -4,6 +4,7 @@ param(
     [ValidateSet('Prepare','Start','Run','Status','Check')][string]$Action = 'Check',
     [Parameter(Mandatory)][string]$Config,
     [string]$Commit,
+    [string]$ReleaseVersion,
     [string]$Issue,
     [string]$Deployment,
     [ValidateSet('backend','frontend','both')][string]$Component = 'both'
@@ -50,6 +51,7 @@ function Check-Plan($plan) {
     if ((Get-FileHash -LiteralPath $scriptPath).Hash -ne $plan.runner_hash -or (Get-FileHash -LiteralPath "$PSScriptRoot/Deployment.ps1").Hash -ne $plan.library_hash) { throw 'Deployment runner changed; prepare a new plan.' }
     if ((Get-FileHash -LiteralPath $cfg.env_file).Hash -ne $plan.env_hash) { throw 'Production environment changed; prepare a new plan.' }
     if (([DateTimeOffset]::UtcNow - [DateTimeOffset]$plan.prepared_at).TotalHours -gt 24) { throw 'Deployment plan expired; prepare again.' }
+    Assert-DeploymentRelease $cfg.git $plan.repository $plan.release_branch $plan.commit
     foreach ($image in $plan.images) { if ((ImageID $image.tag) -ne $image.id) { throw 'Prepared image changed; prepare a new plan.' } }
 }
 function Wait-Healthy($plan) {
@@ -80,6 +82,8 @@ if ($Action -eq 'Check') {
 }
 if ($Action -eq 'Prepare') {
     if ($Commit -cnotmatch '^[a-f0-9]{40}$' -or $Issue -notmatch '^[a-f0-9-]{36}$') { throw 'Provide an exact 40-character commit SHA and issue UUID.' }
+    $releaseBranch = Get-DeploymentReleaseBranch $cfg.release_branch_prefix $ReleaseVersion
+    if ($releaseBranch -eq $cfg.branch) { throw 'Release and development branches must differ.' }
     $issueRow = Api "/api/issues/$Issue"
     if ($issueRow.workspace_id -ne $cfg.workspace_id) { throw 'Issue belongs to another workspace.' }
     $Deployment = [guid]::NewGuid().ToString()
@@ -97,12 +101,13 @@ if ($Action -eq 'Prepare') {
         foreach ($service in $services) {
             $tag = "multica-approved-${service}:$Deployment"
             $dockerfile = if ($service -eq 'backend') { 'Dockerfile' } else { 'Dockerfile.web' }
-            $buildArgs = if ($service -eq 'backend') { @('--build-arg',"VERSION=0.6.1-foresight.$($Commit.Substring(0,12))",'--build-arg',"COMMIT=$Commit") } else { @('--build-arg',"NEXT_PUBLIC_APP_VERSION=0.6.1-foresight.$($Commit.Substring(0,12))") }
+            $buildArgs = if ($service -eq 'backend') { @('--build-arg',"VERSION=$ReleaseVersion",'--build-arg',"COMMIT=$Commit") } else { @('--build-arg',"NEXT_PUBLIC_APP_VERSION=$ReleaseVersion") }
             Docker (@('build','--label',"org.opencontainers.image.revision=$Commit",'-f',(Join-Path $source $dockerfile),'-t',$tag) + $buildArgs + @($source)) | Out-File (Join-Path $dir "$service-build.log")
             $images += @{service=$service;tag=$tag;id=(ImageID $tag)}
         }
+        New-DeploymentRelease $cfg.git $source $releaseBranch $Commit
         $migrations = @(Get-ChildItem -LiteralPath (Join-Path $source 'server/migrations') -Filter '*.up.sql' | Sort-Object Name | ForEach-Object { @{file=$_.Name;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash} })
-        $plan = [ordered]@{deployment=$Deployment;host=$cfg.host;workspace_id=$cfg.workspace_id;issue=$Issue;commit=$Commit;branch=$cfg.branch;repository=$cfg.repository;prepared_at=[DateTime]::UtcNow.ToString('o');images=$images;migrations=$migrations;config_hash=(Get-FileHash -LiteralPath $configPath).Hash;runner_hash=(Get-FileHash -LiteralPath $scriptPath).Hash;library_hash=(Get-FileHash -LiteralPath "$PSScriptRoot/Deployment.ps1").Hash;compose_hash=(Get-FileHash -LiteralPath $cfg.compose_file).Hash;env_hash=(Get-FileHash -LiteralPath $cfg.env_file).Hash;rollback='Previous images and database backup retained. Database rollback is manual; image rollback requires review of migration compatibility.'}
+        $plan = [ordered]@{deployment=$Deployment;host=$cfg.host;workspace_id=$cfg.workspace_id;issue=$Issue;commit=$Commit;branch=$cfg.branch;release_version=$ReleaseVersion;release_branch=$releaseBranch;repository=$cfg.repository;prepared_at=[DateTime]::UtcNow.ToString('o');images=$images;migrations=$migrations;config_hash=(Get-FileHash -LiteralPath $configPath).Hash;runner_hash=(Get-FileHash -LiteralPath $scriptPath).Hash;library_hash=(Get-FileHash -LiteralPath "$PSScriptRoot/Deployment.ps1").Hash;compose_hash=(Get-FileHash -LiteralPath $cfg.compose_file).Hash;env_hash=(Get-FileHash -LiteralPath $cfg.env_file).Hash;rollback='Previous images and database backup retained. Database rollback is manual; image rollback requires review of migration compatibility.'}
         Write-DeploymentJson (Join-Path $dir 'plan.json') $plan
         Save-State 'awaiting_approval'
         $digest = (Get-FileHash -LiteralPath (Join-Path $dir 'plan.json')).Hash.ToLowerInvariant()
@@ -110,7 +115,7 @@ if ($Action -eq 'Prepare') {
         $card = '```multica-deployment-approval' + "`n" + ($request | ConvertTo-Json -Depth 4) + "`n" + '```'
         Write-DeploymentText (Join-Path $dir 'approval-request.md') $card
         Write-Output 'Post approval-request.md verbatim in YOUR agent-authored issue comment, alongside plan and validation details. The approval button replies to that comment to wake you.'
-        Write-Output "Prepared $Deployment at commit $Commit. Review plan.json and build logs."
+        Write-Output "Prepared $Deployment release $ReleaseVersion ($releaseBranch) at commit $Commit. Review plan.json and build logs."
         Write-Output "Approval comment required on $Issue from a configured human approver:"
         Write-Output "Approve deployment $Deployment $digest"
     } catch { Save-State 'prepare_failed' $_.Exception.Message; throw }
