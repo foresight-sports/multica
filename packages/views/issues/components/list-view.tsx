@@ -4,7 +4,7 @@ import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { useWorkspaceId } from "@multica/core/hooks";
 
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Accordion } from "@base-ui/react/accordion";
 import {
   DndContext,
@@ -19,7 +19,6 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { Virtuoso } from "react-virtuoso";
-import { Button } from "@multica/ui/components/ui/button";
 import type { Issue, IssueStatus, Project } from "@multica/core/types";
 import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import { StatusHeading } from "./status-heading";
@@ -42,13 +41,11 @@ import {
 import type { BoardColumnGroup } from "./board-column";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
 import { useIssuePeekActions } from "../surface/peek-context";
-import type { IssueCreateDefaults } from "../surface/types";
 import type {
   IssueStatusPageState,
   IssueStatusPagination,
 } from "../surface/use-issue-status-branches";
 import { VirtuosoSeed, VIRTUOSO_SEED_COUNT } from "../../common/virtuoso-seed";
-import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { useRestoredScrollRef } from "../../platform";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
 import { toast } from "sonner";
@@ -79,9 +76,7 @@ function ListViewImpl({
   childProgressMap = EMPTY_PROGRESS_MAP,
   projectMap,
   statusPagination,
-  projectId,
   onMoveIssue,
-  onCreateIssue,
 }: {
   issues: Issue[];
   visibleStatuses: IssueStatus[];
@@ -89,9 +84,7 @@ function ListViewImpl({
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   statusPagination: IssueStatusPagination;
-  projectId?: string;
   onMoveIssue?: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
-  onCreateIssue?: (defaults: IssueCreateDefaults) => void;
 }) {
   const listCollapsedStatuses = useViewStore(
     (s) => s.listCollapsedStatuses
@@ -412,8 +405,6 @@ function ListViewImpl({
               childProgressMap={childProgressMap}
               projectMap={projectMap}
               page={statusPagination[status] ?? EMPTY_STATUS_PAGE}
-              projectId={projectId}
-              onCreateIssue={onCreateIssue}
               dragEnabled={dragEnabled}
               isExpanded={isExpanded}
               sortLabel={sortLabel}
@@ -480,8 +471,6 @@ function StatusAccordionItem({
   childProgressMap,
   projectMap,
   page,
-  projectId,
-  onCreateIssue,
   dragEnabled,
   isExpanded,
   sortLabel,
@@ -494,8 +483,6 @@ function StatusAccordionItem({
   childProgressMap: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   page: IssueStatusPageState;
-  projectId?: string;
-  onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   dragEnabled: boolean;
   isExpanded: boolean;
   sortLabel: string | null;
@@ -634,30 +621,6 @@ function StatusAccordionItem({
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
           <StatusHeading status={status} count={page.total} />
         </Accordion.Trigger>
-        {onCreateIssue && !statusCatalog.entryOf(status)?.archived_at && (
-          <div className="pr-2">
-            {/* Lazy-mounted tooltip machinery — see DeferredTooltip. */}
-            <DeferredTooltip
-              content={t(($) => $.list.add_issue_tooltip)}
-              trigger={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="rounded-full text-muted-foreground opacity-0 group-hover/header:opacity-100 transition-opacity"
-                  onClick={() => {
-                    const defaults = {
-                      status: status,
-                      ...(projectId ? { project_id: projectId } : {}),
-                    };
-                    onCreateIssue(defaults);
-                  }}
-                >
-                  <Plus className="size-3.5" />
-                </Button>
-              }
-            />
-          </div>
-        )}
       </Accordion.Header>
       <Accordion.Panel>
         {issues.length > 0 ? (
