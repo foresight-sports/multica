@@ -1,5 +1,6 @@
-import { CodeDeliverySection } from "./code-delivery-section";
 "use client";
+
+import { CodeDeliverySection } from "./code-delivery-section";
 import { RepositorySettingsSection } from "./repository-settings-section";
 import { JiraSettingsSection } from "./jira-settings-section";
 import { IssueIntakeSection } from "./issue-intake-section";
