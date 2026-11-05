@@ -283,6 +283,50 @@ func (q *Queries) ListInstanceAgents(ctx context.Context) ([]InstanceAgent, erro
 	return items, nil
 }
 
+const listInstanceIntakeTemplates = `-- name: ListInstanceIntakeTemplates :many
+SELECT s.id, s.workspace_id, s.name, s.description, s.leader_id, s.creator_id, s.created_at, s.updated_at, s.archived_at, s.archived_by, s.avatar_url, s.instructions FROM squad s
+JOIN instance_agent i ON i.source_agent_id = s.leader_id
+JOIN agent a ON a.id = i.source_agent_id AND a.workspace_id = s.workspace_id
+JOIN workspace w ON w.id = s.workspace_id
+WHERE w.issue_intake->>'default_squad_id' = s.id::text
+  AND s.archived_at IS NULL AND a.archived_at IS NULL AND a.kind = 'user'
+`
+
+// Only the central source agent's configured intake squad is a template.
+// Workspace bindings and unrelated squads must never become implicit templates.
+func (q *Queries) ListInstanceIntakeTemplates(ctx context.Context) ([]Squad, error) {
+	rows, err := q.db.Query(ctx, listInstanceIntakeTemplates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Squad{}
+	for rows.Next() {
+		var i Squad
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Description,
+			&i.LeaderID,
+			&i.CreatorID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+			&i.ArchivedBy,
+			&i.AvatarUrl,
+			&i.Instructions,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const provisionInstanceAgents = `-- name: ProvisionInstanceAgents :many
 INSERT INTO agent (workspace_id, instance_agent_id, instance_source_agent_id, name, description, instructions,
     runtime_mode, runtime_config, visibility, permission_mode, max_concurrent_tasks,

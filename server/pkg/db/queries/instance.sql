@@ -84,3 +84,13 @@ SELECT a.workspace_id, source.workspace_id AS source_workspace_id FROM agent a
 JOIN instance_agent i ON i.id = a.instance_agent_id AND i.source_agent_id = a.instance_source_agent_id
 JOIN agent source ON source.id = i.source_agent_id AND source.instance_agent_id = i.id
 WHERE a.id = $1;
+
+-- name: ListInstanceIntakeTemplates :many
+-- Only the central source agent's configured intake squad is a template.
+-- Workspace bindings and unrelated squads must never become implicit templates.
+SELECT s.* FROM squad s
+JOIN instance_agent i ON i.source_agent_id = s.leader_id
+JOIN agent a ON a.id = i.source_agent_id AND a.workspace_id = s.workspace_id
+JOIN workspace w ON w.id = s.workspace_id
+WHERE w.issue_intake->>'default_squad_id' = s.id::text
+  AND s.archived_at IS NULL AND a.archived_at IS NULL AND a.kind = 'user';

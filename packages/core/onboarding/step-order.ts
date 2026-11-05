@@ -24,12 +24,9 @@ import type { OnboardingStep } from "./types";
  *   - "role" / "use_case" merged into the single "about_you" step so
  *     related personalization inputs stay together.
  *
- * Runtime is the final form step. A connected path provisions Mika and opens
- * the interactive onboarding chat as part of the runtime step's submit action;
- * that chat is the product experience itself, not another progress-screen step.
+ * Workspace is the final step; shared instance setup is provisioned by the server.
  */
 export const ONBOARDING_STEP_ORDER: readonly OnboardingStep[] = [
   "about_you",
   "workspace",
-  "runtime",
 ] as const;

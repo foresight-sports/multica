@@ -1,12 +1,26 @@
-vi.mock("../workspace/workspace-directory", () => ({ WorkspaceDirectory: ({onOpen}: {onOpen: (id: string) => void}) => state.ready ? <button onClick={() => onOpen("ws-1")}>Open Existing</button> : <p role="status">Loading your workspaces</p> }));
+vi.mock("../workspace/workspace-directory", () => ({
+  WorkspaceDirectory: ({ onOpen }: { onOpen: (id: string) => void }) =>
+    state.ready ? (
+      <button onClick={() => onOpen("ws-1")}>Open Existing</button>
+    ) : (
+      <p role="status">Loading your workspaces</p>
+    ),
+}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enOnboarding from "../locales/en/onboarding.json";
 import enWorkspace from "../locales/en/workspace.json";
 
-const state = vi.hoisted(() => ({ canCreate: true, ready: true, unavailable: false, complete: vi.fn(), workspaces: [{ id: "ws-1", name: "Existing", slug: "existing" }] }));
+const state = vi.hoisted(() => ({
+  canCreate: true,
+  ready: true,
+  unavailable: false,
+  complete: vi.fn(),
+  create: vi.fn(),
+  workspaces: [{ id: "ws-1", name: "Existing", slug: "existing" }],
+}));
 const TEST_RESOURCES = {
   en: { common: enCommon, onboarding: enOnboarding, workspace: enWorkspace },
 };
@@ -15,22 +29,34 @@ vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 
 vi.mock("@multica/core/config", () => ({
   useConfigStore: (
-    selector: (s: { workspaceCreationDisabled: boolean; daemonAppUrl: string }) => unknown,
+    selector: (s: {
+      workspaceCreationDisabled: boolean;
+      daemonAppUrl: string;
+    }) => unknown,
   ) => selector({ workspaceCreationDisabled: false, daemonAppUrl: "" }),
 }));
 
 vi.mock("@multica/core/api", () => ({
-  api: { getBaseUrl: () => "https://multica.ai", getWorkspace: () => Promise.resolve(state.workspaces[0]) },
+  api: {
+    getBaseUrl: () => "https://multica.ai",
+    getWorkspace: () => Promise.resolve(state.workspaces[0]),
+  },
 }));
 
 vi.mock("@multica/core/workspace/mutations", () => ({
-  useCreateWorkspace: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateWorkspace: () => ({ mutate: state.create, isPending: false }),
 }));
 
 vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector: (s: { user: unknown }) => unknown) =>
-      selector({ user: { id: "u-1", onboarding_questionnaire: {}, permissions: { create_workspaces: state.canCreate } } }),
+      selector({
+        user: {
+          id: "u-1",
+          onboarding_questionnaire: {},
+          permissions: { create_workspaces: state.canCreate },
+        },
+      }),
     { getState: () => ({ user: { id: "u-1" } }) },
   ),
 }));
@@ -50,7 +76,11 @@ vi.mock("@multica/core/onboarding", async () => {
   const actual = await vi.importActual<Record<string, unknown>>(
     "@multica/core/onboarding",
   );
-  return { ...actual, completeOnboarding: state.complete, useBootstrapMika: () => ({ mutateAsync: vi.fn() }) };
+  return {
+    ...actual,
+    completeOnboarding: state.complete,
+    useBootstrapMika: () => ({ mutateAsync: vi.fn() }),
+  };
 });
 
 import { OnboardingFlow } from "./onboarding-flow";
@@ -92,7 +122,12 @@ describe("OnboardingFlow — new-workspace mode", () => {
   });
 });
 
-beforeEach(() => { state.canCreate = true; state.ready = true; state.complete.mockReset(); state.complete.mockResolvedValue(undefined); });
+beforeEach(() => {
+  state.canCreate = true;
+  state.ready = true;
+  state.complete.mockReset();
+  state.complete.mockResolvedValue(undefined);
+});
 describe("web onboarding membership entry", () => {
   it("opens an existing workspace without creation or runtime setup", async () => {
     const done = vi.fn();
@@ -106,13 +141,58 @@ describe("web onboarding membership entry", () => {
   it("does not offer creation while memberships are loading", () => {
     state.ready = false;
     renderFlow({ runtimeInstructions: <div>CLI setup</div> });
-    expect(screen.getByRole("status")).toHaveTextContent("Loading your workspaces");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading your workspaces",
+    );
     expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
   });
 });
 it("offers the directory when an unauthorized user opens the creation route", () => {
- state.canCreate = false;
- renderFlow({ mode: "new_workspace" });
- expect(screen.getByRole("button", { name: "Open Existing" })).toBeInTheDocument();
- expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+  state.canCreate = false;
+  renderFlow({ mode: "new_workspace" });
+  expect(
+    screen.getByRole("button", { name: "Open Existing" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+});
+
+describe("workspace creation completion", () => {
+  beforeEach(() => {
+    state.create.mockReset();
+    state.create.mockImplementation((_body, callbacks) =>
+      callbacks.onSuccess({ id: "new-ws", name: "New Team", slug: "new-team" }),
+    );
+  });
+  async function createWorkspace() {
+    fireEvent.change(screen.getByLabelText("Workspace name"), {
+      target: { value: "New Team" },
+    });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create New Team" })); });
+  }
+  it("finishes without Mika, runtime setup or guide signals", async () => {
+    const done = vi.fn();
+    renderFlow({ mode: "new_workspace", onComplete: done });
+    await createWorkspace();
+    await waitFor(() =>
+      expect(done).toHaveBeenCalledWith({
+        id: "new-ws",
+        name: "New Team",
+        slug: "new-team",
+      }),
+    );
+    expect(state.complete).toHaveBeenCalledWith("runtime_skipped", "new-ws");
+    expect(screen.queryByText(/Meet Mika/)).not.toBeInTheDocument();
+  });
+  it("retries completion against the created workspace without another create", async () => {
+    state.complete.mockRejectedValueOnce(new Error("Connection interrupted"));
+    const done = vi.fn();
+    renderFlow({ mode: "new_workspace", onComplete: done });
+    await createWorkspace();
+    const open = await screen.findByRole("button", { name: "Open New Team" });
+    await waitFor(() => expect(open).not.toBeDisabled());
+    fireEvent.click(open);
+    await waitFor(() => expect(done).toHaveBeenCalledOnce());
+    expect(state.create).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+  });
 });

@@ -21,10 +21,7 @@ import { matchLocale } from "@multica/core/i18n";
 import { useConfigStore } from "@multica/core/config";
 import { workspaceUrlHost } from "@multica/core/workspace/workspace-url";
 import { useLogout } from "../../auth";
-import {
-  StepFooter,
-  StepHeading,
-} from "../components/step-shell";
+import { StepFooter, StepHeading } from "../components/step-shell";
 import { RadioMark } from "../components/option-card";
 import { WorkspaceAvatar } from "../../workspace/workspace-avatar";
 import { useT } from "../../i18n";
@@ -84,15 +81,22 @@ function issuePrefix(slug: string): string {
 // settings tab applies, and the same shape the server now validates
 // (`^[A-Z0-9]{1,10}$`).
 function normalizePrefix(raw: string): string {
-  return raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+  return raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 10);
 }
 
 export function StepWorkspace({
   existing,
   onCreated,
   onBusyChange,
+  created = false,
+  completing = false,
 }: {
   existing?: Workspace | null;
+  created?: boolean;
+  completing?: boolean;
   onCreated: (workspace: Workspace) => void | Promise<void>;
   /** Reports the create request's in-flight state to the flow, which owns
    *  the shell: Back and the rail have to lock while a workspace is being
@@ -101,16 +105,21 @@ export function StepWorkspace({
 }) {
   const { t, i18n } = useT("onboarding");
   const locale = matchLocale([i18n.resolvedLanguage ?? i18n.language]);
-  const instanceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
-  const hasCreatePermission = useAuthStore((s) => s.user?.permissions?.create_workspaces === true);
-  const workspaceCreationDisabled = instanceCreationDisabled || !hasCreatePermission;
+  const instanceCreationDisabled = useConfigStore(
+    (s) => s.workspaceCreationDisabled,
+  );
+  const hasCreatePermission = useAuthStore(
+    (s) => s.user?.permissions?.create_workspaces === true,
+  );
+  const workspaceCreationDisabled =
+    instanceCreationDisabled || !hasCreatePermission;
   const urlHost = workspaceUrlHost(useConfigStore((s) => s.daemonAppUrl));
   // Single source of truth for "can the user reach the create path on this
   // instance?" — drives the resume-mode picker, the eyebrow/headline/lede
   // copy and the footer CTA so the disabled state can't
   // leak a clickable create affordance even if /api/config arrives late
   // (#3433 review feedback).
-  const workspaceCreationAllowed = !workspaceCreationDisabled;
+  const workspaceCreationAllowed = !workspaceCreationDisabled && !created;
   const logout = useLogout();
 
   const reusing = existing ?? null;
@@ -125,8 +134,7 @@ export function StepWorkspace({
   );
   const pickExisting = () =>
     setMode((m) => (m === "existing" ? null : "existing"));
-  const pickCreate = () =>
-    setMode((m) => (m === "create" ? null : "create"));
+  const pickCreate = () => setMode((m) => (m === "create" ? null : "create"));
 
   // Form state for the create path. Mirrors CreateWorkspaceForm's
   // internals: slug auto-fills from name until the user manually edits
@@ -237,13 +245,13 @@ export function StepWorkspace({
   // when this instance has DISABLE_WORKSPACE_CREATION=true, in which
   // case the create path is unreachable and a no-reusing user falls
   // through to the disabled notice (rendered separately below).
-  const isCreating = createWorkspace.isPending;
+  const isCreating = createWorkspace.isPending || completing;
   useEffect(() => {
-    onBusyChange?.(isCreating);
+    onBusyChange?.(createWorkspace.isPending);
     // Clear on unmount: a successful create advances the flow immediately, so
     // without this the shell would stay locked on the next step.
     return () => onBusyChange?.(false);
-  }, [isCreating, onBusyChange]);
+  }, [createWorkspace.isPending, onBusyChange]);
   const creatingActive =
     workspaceCreationAllowed && (!reusing || mode === "create");
   const existingActive = Boolean(reusing) && mode === "existing";
@@ -268,7 +276,9 @@ export function StepWorkspace({
       onContinue = () => {};
     } else if (canCreate) {
       hint = t(($) => $.step_workspace.hint_creating, { name: name.trim() });
-      continueLabel = t(($) => $.step_workspace.cta_create_named, { name: name.trim() });
+      continueLabel = t(($) => $.step_workspace.cta_create_named, {
+        name: name.trim(),
+      });
       continueDisabled = false;
       onContinue = handleCreate;
     } else {
@@ -402,8 +412,12 @@ export function StepWorkspace({
           title={
             reusing
               ? workspaceCreationAllowed
-                ? t(($) => $.step_workspace.headline_resume, { name: reusing.name })
-                : t(($) => $.step_workspace.creation_disabled_headline_resume, { name: reusing.name })
+                ? t(($) => $.step_workspace.headline_resume, {
+                    name: reusing.name,
+                  })
+                : t(($) => $.step_workspace.creation_disabled_headline_resume, {
+                    name: reusing.name,
+                  })
               : workspaceCreationAllowed
                 ? t(($) => $.step_workspace.headline_first)
                 : t(($) => $.step_workspace.creation_disabled_headline)
@@ -446,7 +460,6 @@ export function StepWorkspace({
             createFields
           )}
         </div>
-
       </div>
 
       {!(workspaceCreationDisabled && !reusing) && (
@@ -505,7 +518,11 @@ function ExistingWorkspaceCard({
           : "hover:border-foreground/20 hover:bg-accent/30",
       )}
     >
-      <WorkspaceAvatar name={workspace.name} avatarUrl={workspace.avatar_url} size="lg" />
+      <WorkspaceAvatar
+        name={workspace.name}
+        avatarUrl={workspace.avatar_url}
+        size="lg"
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="truncate text-body font-medium text-foreground">
           {workspace.name}

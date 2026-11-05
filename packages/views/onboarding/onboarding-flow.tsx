@@ -9,21 +9,18 @@ import {
   completeOnboarding,
   ONBOARDING_STEP_ORDER,
   saveQuestionnaire,
-  useBootstrapMika,
   useWelcomeStore,
   type OnboardingStep,
   type QuestionnaireAnswers,
 } from "@multica/core/onboarding";
 import { useWorkspaceList } from "@multica/core/workspace";
-import type { AgentRuntime, Workspace } from "@multica/core/types";
+import type { Workspace } from "@multica/core/types";
 import { StepWelcome } from "./steps/step-welcome";
 import { StepShell } from "./components/step-shell";
 
 import { StepAboutYou } from "./steps/step-about-you";
 import { StepWorkspace } from "./steps/step-workspace";
-import { StepRuntimeConnect } from "./steps/step-runtime-connect";
 import { OnboardingLogoutButton } from "./components/onboarding-logout-button";
-import { getMikaOnboarding, pickContentLang } from "./templates";
 import { useT } from "../i18n";
 
 const EMPTY_QUESTIONNAIRE: QuestionnaireAnswers = {
@@ -81,25 +78,7 @@ function mergeQuestionnaire(
   };
 }
 
-/**
- * Shell's onComplete contract carries the workspace plus an optional
- * destination. Runtime-connected onboarding opens the real Mika conversation
- * started by the final step; other exits land on the workspace issue list.
- *
- * Three exit shapes feed onComplete:
- *   - Skip-existing (Welcome): completeOnboarding marks onboarded; navigate
- *     to the existing workspace's issue list.
- *   - Runtime-skipped (no runtime on Step 3): completeOnboarding marks
- *     onboarded; we push a {choice:"skip"} welcome signal and navigate
- *     to the workspace. The welcome hook in the workspace shell creates
- *     one install-runtime guide issue on landing.
- *   - Runtime-connected: create or repair the workspace's Mika on the selected
- *     runtime, start one hidden onboarding kickoff, mark onboarding complete,
- *     and open Mika's real chat. No fixed specialist team is created.
- *
- * This file never touches createAgent / createIssue. The runtime-skipped
- * guide flow remains in `packages/views/workspace/welcome-after-onboarding.tsx`.
- */
+/** Workspace creation finishes onboarding without provisioning runtime content. */
 interface OnboardingFlowProps {
   onComplete: (
     workspace?: Workspace,
@@ -115,14 +94,8 @@ interface OnboardingFlowProps {
    *  to change their mind and return to where they were. */
   onCancel?: () => void;
   runtimeInstructions?: React.ReactNode;
-  /** Desktop wires this to restart the bundled daemon so a freshly
-   *  installed agent CLI gets picked up on the runtime step. Web omits
-   *  it — its CLI install flow already runs on the user's machine and
-   *  the embedded picker reacts to daemon:register events. */
+  /** Retained for shell compatibility; onboarding no longer configures runtimes. */
   onRuntimeRefresh?: () => void | Promise<void>;
-  /** Desktop wires this to the local daemon's live status so the runtime
-   *  step doesn't flash "no runtime found" while the daemon is still booting
-   *  or probing CLI versions (MUL-5119). Web omits it. */
   runtimesPending?: boolean;
 }
 
@@ -135,10 +108,8 @@ function OnboardingStepFlow({
   mode = "first_run",
   onCancel,
   runtimeInstructions,
-  onRuntimeRefresh,
-  runtimesPending,
 }: OnboardingFlowProps) {
-  const { t, i18n } = useT("onboarding");
+  const { t } = useT("onboarding");
   const user = useAuthStore((s) => s.user);
   if (!user) {
     throw new Error("OnboardingFlow requires an authenticated user");
@@ -149,7 +120,8 @@ function OnboardingStepFlow({
   // state persisted across sessions — which step the user is on is
   // deliberately not saved, so every entry starts at Welcome.
   const storedQuestionnaire = mergeQuestionnaire(user.onboarding_questionnaire);
-  const [answers, setAnswers] = useState<QuestionnaireAnswers>(storedQuestionnaire);
+  const [answers, setAnswers] =
+    useState<QuestionnaireAnswers>(storedQuestionnaire);
 
   const [createRequested, setCreateRequested] = useState(false);
   const isNewWorkspace = mode === "new_workspace";
@@ -161,7 +133,7 @@ function OnboardingStepFlow({
   // Raised by whichever step has a request in flight; locks Back and the
   // rail. Only the workspace step sets it today.
   const [stepBusy, setStepBusy] = useState(false);
-  const bootstrapMika = useBootstrapMika(workspace?.id ?? "");
+  const [completing, setCompleting] = useState(false);
 
   // Fetched at Step 0 + Step 2. Step 2 uses it to detect a pre-existing
   // workspace from an earlier abandoned onboarding (so StepWorkspace shows
@@ -182,11 +154,14 @@ function OnboardingStepFlow({
   // inserting/reordering a persisted step only requires editing the
   // canonical array. Returns null if `from` is the last persisted step
   // or not in the array (callers fall back to bespoke routing).
-  const nextStep = useCallback((from: OnboardingStep): OnboardingStep | null => {
-    const idx = ONBOARDING_STEP_ORDER.indexOf(from);
-    if (idx < 0 || idx >= ONBOARDING_STEP_ORDER.length - 1) return null;
-    return ONBOARDING_STEP_ORDER[idx + 1]!;
-  }, []);
+  const nextStep = useCallback(
+    (from: OnboardingStep): OnboardingStep | null => {
+      const idx = ONBOARDING_STEP_ORDER.indexOf(from);
+      if (idx < 0 || idx >= ONBOARDING_STEP_ORDER.length - 1) return null;
+      return ONBOARDING_STEP_ORDER[idx + 1]!;
+    },
+    [],
+  );
 
   const advanceFrom = useCallback(
     (from: OnboardingStep) => {
@@ -207,18 +182,15 @@ function OnboardingStepFlow({
   // it. We never block UI on the request — the next step's render is
   // what matters; a transient save failure surfaces as a toast but
   // does not roll the user back.
-  const applyAnswers = useCallback(
-    (patch: Partial<QuestionnaireAnswers>) => {
-      setAnswers((a) => {
-        const next = { ...a, ...patch };
-        void saveQuestionnaire(next).catch((err) => {
-          if (err instanceof Error) toast.error(err.message);
-        });
-        return next;
+  const applyAnswers = useCallback((patch: Partial<QuestionnaireAnswers>) => {
+    setAnswers((a) => {
+      const next = { ...a, ...patch };
+      void saveQuestionnaire(next).catch((err) => {
+        if (err instanceof Error) toast.error(err.message);
       });
-    },
-    [],
-  );
+      return next;
+    });
+  }, []);
 
   // "I've done this before" path — returning user who already has a
   // workspace and just wants to land there. Marks onboarding complete
@@ -243,129 +215,82 @@ function OnboardingStepFlow({
       await completeOnboarding("skip_existing", ws.id);
       onComplete(ws);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t(($) => $.errors.skip_failed));
+      toast.error(
+        err instanceof Error ? err.message : t(($) => $.errors.skip_failed),
+      );
       setStepBusy(false);
     }
   };
 
   const handleWorkspaceCreated = useCallback(
-    (ws: Workspace) => {
+    async (ws: Workspace) => {
       setWorkspace(ws);
-      // Deliberately NOT setCurrentWorkspace: that singleton is also written by
-      // the desktop tab system, which reclaims it whenever the new workspace
-      // has no tab group yet. Racing it sent the rest of this flow — Mika, the
-      // session, the kickoff — into the previously-active workspace. Every call
-      // from here on names its target workspace instead, and the switch happens
-      // once, on the navigation in onComplete.
-      advanceFrom("workspace");
-    },
-    [advanceFrom],
-  );
-
-  const handleRuntimeNext = useCallback(
-    async (rt: AgentRuntime | null, model?: string) => {
-      if (!workspace) return;
-      // A connected runtime provisions only Mika and immediately opens the
-      // real interactive onboarding conversation. Specialists are created
-      // later, only when the member's actual workflow justifies them.
-      if (rt) {
-        const contentLang = pickContentLang(i18n.language);
-        try {
-          // The earlier questionnaire saves are deliberately optimistic. Flush
-          // the latest snapshot here so the server-authored kickoff can read
-          // reliable role/use-case context instead of racing the last PATCH.
-          await saveQuestionnaire(answers);
-          const result = await bootstrapMika.mutateAsync({
-            workspaceSlug: workspace.slug,
-            runtimeId: rt.id,
-            model,
-            ...getMikaOnboarding(contentLang),
-          });
-          await completeOnboarding("full", workspace.id);
-          onComplete(workspace, {
-            kind: "chat",
-            sessionId: result.chatSession.id,
-          });
-        } catch (err) {
-          toast.error(
-            err instanceof Error
-              ? err.message
-              : t(($) => $.errors.mika_setup_failed),
-          );
-          throw err;
-        }
-        return;
-      }
+      setCompleting(true);
       try {
-        await completeOnboarding("runtime_skipped", workspace.id);
+        await completeOnboarding("runtime_skipped", ws.id);
+        useWelcomeStore.getState().reset();
+        onComplete(ws);
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : t(($) => $.errors.skip_failed),
         );
-        return;
+      } finally {
+        setCompleting(false);
       }
-      useWelcomeStore.getState().set({
-        workspaceId: workspace.id,
-        choice: "skip",
-      });
-      onComplete(workspace, undefined);
     },
-    [answers, bootstrapMika, i18n.language, workspace, onComplete, t],
+    [onComplete, t],
   );
 
-  const handleBack = useCallback((from: OnboardingStep) => {
-    // The workspace step is the entry point in new-workspace mode, so its
-    // back affordance leaves the flow instead of walking into a step this
-    // mode deliberately skips. Only reachable before the workspace exists —
-    // see `runtimeStepBack` for why there is no way back into this step
-    // afterwards.
-    if (isNewWorkspace && from === "workspace") {
-      onCancel?.();
-      return;
-    }
-    const idx = ONBOARDING_STEP_ORDER.indexOf(from);
-    if (idx <= 0) {
-      // About you (the first persisted step) returns to Welcome.
-      setStep("welcome");
-      return;
-    }
-    const prev = ONBOARDING_STEP_ORDER[idx - 1]!;
-    setStep(prev);
-  }, [isNewWorkspace, onCancel]);
+  const handleBack = useCallback(
+    (from: OnboardingStep) => {
+      // The workspace step is the entry point in new-workspace mode, so its
+      // back affordance leaves the flow instead of walking into a step this
+      // mode deliberately skips. Back is hidden once the workspace exists.
+      if (isNewWorkspace && from === "workspace") {
+        onCancel?.();
+        return;
+      }
+      const idx = ONBOARDING_STEP_ORDER.indexOf(from);
+      if (idx <= 0) {
+        // About you (the first persisted step) returns to Welcome.
+        setStep("welcome");
+        return;
+      }
+      const prev = ONBOARDING_STEP_ORDER[idx - 1]!;
+      setStep(prev);
+    },
+    [isNewWorkspace, onCancel],
+  );
 
-  // Once a workspace exists there is nothing left to cancel, so new-workspace
-  // mode drops the back affordance on the runtime step. Walking back would
-  // reach the workspace step, whose own back button means "leave" — and
-  // leaving there would strand a workspace with no runtime, no Mika, and no
-  // guidance. The remaining exits both end somewhere coherent: Skip runs the
-  // runtime-skipped path (guide issue + land in the new workspace), and
-  // continuing provisions Mika.
-  // Log out lives at the foot of the progress rail rather than pinned to the
-  // window corner: pinned put it outside the measure and above Back, which
-  // read as a second header row.
   const headerTrailing = <OnboardingLogoutButton inline />;
 
-  const runtimeStepBack = isNewWorkspace
-    ? undefined
-    : () => handleBack("runtime");
-
-  // The rail only ever walks backwards — it renders earlier steps as links and
-  // later ones as plain text, because moving forward has to run the current
-  // step's validation and submit. New-workspace mode gets no rail navigation
-  // at all: it enters at the workspace step and, once that workspace exists,
-  // every step behind it is gone. Same invariant `runtimeStepBack` enforces.
   const handleStepChange = isNewWorkspace || isWeb ? undefined : setStep;
 
   // New accounts discover teams before creation; the API decides whether the
   // creation button is available. Approval never provisions runtime or agents.
-  if (step === "workspace" && !workspace && (!isNewWorkspace || user.permissions?.create_workspaces !== true) && !createRequested) {
-    return <div className="mx-auto w-full max-w-3xl space-y-6 p-6 sm:p-10">
-      <WorkspaceDirectory busy={stepBusy} onCreate={() => setCreateRequested(true)} onOpen={(id) => {
-        setStepBusy(true);
-        void api.getWorkspace(id).then(openExistingWorkspace).catch(() => toast.error(t(($) => $.workspace_entry.retry))).finally(() => setStepBusy(false));
-      }} />
-      <OnboardingLogoutButton inline />
-    </div>;
+  if (
+    step === "workspace" &&
+    !workspace &&
+    (!isNewWorkspace || user.permissions?.create_workspaces !== true) &&
+    !createRequested
+  ) {
+    return (
+      <div className="mx-auto w-full max-w-3xl space-y-6 p-6 sm:p-10">
+        <WorkspaceDirectory
+          busy={stepBusy}
+          onCreate={() => setCreateRequested(true)}
+          onOpen={(id) => {
+            setStepBusy(true);
+            void api
+              .getWorkspace(id)
+              .then(openExistingWorkspace)
+              .catch(() => toast.error(t(($) => $.workspace_entry.retry)))
+              .finally(() => setStepBusy(false));
+          }}
+        />
+        <OnboardingLogoutButton inline />
+      </div>
+    );
   }
   // ONE shell for the whole flow, rendered here rather than by each step.
   // Every step used to render its own <StepShell>, and because each step is a
@@ -392,15 +317,17 @@ function OnboardingStepFlow({
     step === "about_you"
       ? () => handleBack("about_you")
       : step === "workspace"
-        ? (isWeb && !isNewWorkspace ? () => setCreateRequested(false) : () => handleBack("workspace"))
-        : runtimeStepBack;
+        ? isWeb && !isNewWorkspace
+          ? () => setCreateRequested(false)
+          : () => handleBack("workspace")
+        : undefined;
 
   return (
     <StepShell
       currentStep={step}
-      onBack={stepBack}
+      onBack={workspace ? undefined : stepBack}
       backDisabled={stepBusy}
-      onStepChange={handleStepChange}
+      onStepChange={workspace ? undefined : handleStepChange}
       chromeFooter={headerTrailing}
     >
       {step === "about_you" && (
@@ -414,25 +341,14 @@ function OnboardingStepFlow({
 
       {step === "workspace" && (
         <StepWorkspace
+          key={workspace?.id ?? "create"}
           existing={existingWorkspace}
+          created={!!workspace}
+          completing={completing}
           onCreated={handleWorkspaceCreated}
-          onBusyChange={setStepBusy}
+          onBusyChange={workspace ? undefined : setStepBusy}
         />
       )}
-
-      {/* New workspaces can use an existing runtime or skip setup. The web
-          flow never redirects members to install the desktop application. */}
-      {step === "runtime" &&
-        workspace &&
-        (
-          <StepRuntimeConnect
-            wsId={workspace.id}
-            wsSlug={workspace.slug}
-            onNext={handleRuntimeNext}
-            onRefresh={onRuntimeRefresh}
-            runtimesPending={runtimesPending}
-          />
-        )}
     </StepShell>
   );
 }
