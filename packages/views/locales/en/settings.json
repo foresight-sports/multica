@@ -1608,5 +1608,20 @@
     "saving": "Saving…",
     "saved": "Saved",
     "reload": "Reload"
+  },
+  "linked_workspaces": {
+    "title": "Linked workspaces",
+    "description": "Let agents request information or work from another workspace. Its Intake Coordinator handles the request and sends updates back to the originating ticket.",
+    "permissions": "You must administer both workspaces to link them. Requesters must belong to both. Linking does not grant repository access or permission to make changes. Unlinking stops new requests and follow-ups.",
+    "loading": "Loading workspaces…",
+    "load_error": "Could not load workspace links. Try again.",
+    "save_error": "Could not change the link. Refresh and check your administrator access in both workspaces.",
+    "retry": "Try again",
+    "empty": "Join another workspace to link it here.",
+    "linked": "Linked · requests work in both directions",
+    "not_linked": "Not linked",
+    "link": "Link",
+    "unlink": "Unlink",
+    "admin_required": "Administrator access required in both"
   }
 }

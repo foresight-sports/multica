@@ -104,6 +104,10 @@ type IssueCreateParams struct {
 // IssueCreateOpts groups optional knobs for IssueService.Create. Most
 // callers leave it zero-valued.
 type IssueCreateOpts struct {
+	// AttachDependency commits server-owned cross-workspace coordination with
+	// the issue and queued intake task. Failure rolls all three back.
+	AttachDependency func(context.Context, pgx.Tx, db.Issue) error
+
 	// BroadcastPayload, if non-nil, is invoked after the issue row is
 	// created and attachments are linked. Its return value is sent as
 	// the EventIssueCreated payload via the event bus. The HTTP handler
@@ -525,6 +529,12 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		assignedTask, err = s.TaskService.createDeferredChannelIssueTaskWithQueries(ctx, qtx, issue, fireAt)
 		if err != nil {
 			return IssueCreateResult{}, fmt.Errorf("create deferred channel issue task: %w", err)
+		}
+	}
+
+	if opts.AttachDependency != nil {
+		if err := opts.AttachDependency(ctx, tx, issue); err != nil {
+			return IssueCreateResult{}, err
 		}
 	}
 

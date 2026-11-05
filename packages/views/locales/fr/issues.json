@@ -1476,5 +1476,9 @@
     "reload": "Recharger",
     "unavailable": "La connexion Jira est indisponible. Contactez l’administrateur de votre instance.",
     "resumed": "Travail Jira repris"
+  },
+  "linked_requests": {
+    "title": "Demandes entre espaces",
+    "load_error": "Impossible de charger les demandes liées."
   }
 }

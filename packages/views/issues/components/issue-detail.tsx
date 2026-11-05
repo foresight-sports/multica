@@ -1,5 +1,6 @@
 "use client";
 
+import { WorkspaceRequestsSection } from "./workspace-requests-section";
 import { IssueWorkPanel } from "./issue-work-panel";
 import { DeploymentApprovals } from "./deployment-approval";
 import { JiraBlockerPanel } from "./jira-blocker-panel";
@@ -3547,6 +3548,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </button>
             </div>
           )}
+          <WorkspaceRequestsSection issueId={issue.id} workspaceId={issue.workspace_id} />
           {childIssues.length > 0 && (() => {
             const doneCount = childIssues.filter((c) => issueBehavesAs(c, "done")).length;
             return (

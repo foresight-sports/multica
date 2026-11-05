@@ -1578,5 +1578,20 @@
     "confirm": "Déconnecter Jira ? Les nouveaux appels Jira de vos tâches en cours seront bloqués.",
     "cancel": "Annuler",
     "retry": "Réessayer"
+  },
+  "linked_workspaces": {
+    "title": "Espaces liés",
+    "description": "Les agents peuvent demander des informations ou du travail dans un autre espace. Son coordinateur traite la demande et transmet les mises à jour au ticket initial.",
+    "permissions": "Vous devez administrer les deux espaces pour les lier. Le demandeur doit appartenir aux deux. Le lien ne donne aucun accès au dépôt ni autorisation de modification. Supprimer le lien arrête les nouvelles demandes et les suivis.",
+    "loading": "Chargement des espaces…",
+    "load_error": "Impossible de charger les liens. Réessayez.",
+    "save_error": "Impossible de modifier le lien. Actualisez et vérifiez vos droits dans les deux espaces.",
+    "retry": "Réessayer",
+    "empty": "Rejoignez un autre espace pour le lier ici.",
+    "linked": "Liés · demandes dans les deux sens",
+    "not_linked": "Non liés",
+    "link": "Lier",
+    "unlink": "Délier",
+    "admin_required": "Droits administrateur requis dans les deux espaces"
   }
 }

@@ -1834,6 +1834,14 @@ type WorkspaceInvitation struct {
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
 }
 
+type WorkspaceLink struct {
+	WorkspaceA pgtype.UUID        `json:"workspace_a"`
+	WorkspaceB pgtype.UUID        `json:"workspace_b"`
+	Enabled    bool               `json:"enabled"`
+	UpdatedBy  pgtype.UUID        `json:"updated_by"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
 type WorkspaceMcpServer struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
@@ -1842,6 +1850,21 @@ type WorkspaceMcpServer struct {
 	CreatedBy   pgtype.UUID        `json:"created_by"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WorkspaceRequest struct {
+	ID                pgtype.UUID        `json:"id"`
+	SourceIssueID     pgtype.UUID        `json:"source_issue_id"`
+	TargetIssueID     pgtype.UUID        `json:"target_issue_id"`
+	SourceWorkspaceID pgtype.UUID        `json:"source_workspace_id"`
+	TargetWorkspaceID pgtype.UUID        `json:"target_workspace_id"`
+	RequesterID       pgtype.UUID        `json:"requester_id"`
+	RequestKey        string             `json:"request_key"`
+	LastSignature     string             `json:"last_signature"`
+	LastTaskID        pgtype.UUID        `json:"last_task_id"`
+	LastError         string             `json:"last_error"`
+	CheckedAt         pgtype.Timestamptz `json:"checked_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 type WorkspaceShareLink struct {

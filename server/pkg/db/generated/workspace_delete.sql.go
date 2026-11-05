@@ -72,6 +72,8 @@ func (q *Queries) DeleteTaskTokensByAgent(ctx context.Context, agentID pgtype.UU
 
 const deleteWorkspaceAdministration = `-- name: DeleteWorkspaceAdministration :exec
 WITH
+deleted_workspace_links AS (DELETE FROM workspace_link WHERE workspace_a=$1 OR workspace_b=$1),
+deleted_workspace_requests AS (DELETE FROM workspace_request WHERE source_workspace_id=$1 OR target_workspace_id=$1),
 deleted_access_requests AS (DELETE FROM workspace_access_request WHERE workspace_id=$1),
 deleted_work_records AS (DELETE FROM work_record WHERE workspace_id=$1),
 deleted_repository_configuration AS (

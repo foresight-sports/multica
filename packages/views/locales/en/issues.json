@@ -1485,5 +1485,9 @@
     "reload": "Reload",
     "unavailable": "Jira sign-in is unavailable. Contact your instance administrator.",
     "resumed": "Jira work resumed"
+  },
+  "linked_requests": {
+    "title": "Linked workspace requests",
+    "load_error": "Could not load linked workspace requests."
   }
 }

@@ -1,3 +1,4 @@
+import { WorkspaceLinksSchema, WorkspaceRequestsSchema, type WorkspaceLinks, type WorkspaceRequests } from "./workspace-links-schema";
 import { CodeDeliverySchema, type CodeDelivery } from "./code-delivery-schema";
 import { WorkspaceDirectorySchema, WorkspaceAccessRequestsSchema, type WorkspaceDirectoryData, type WorkspaceAccessRequests } from "./workspace-directory-schema";
 import { WorkRecordsSchema, WorkRecordSchema, type WorkRecords, type WorkRecord } from "./work-record-schema";
@@ -1793,6 +1794,24 @@ export class ApiClient {
  if(!parsed) throw new Error("Invalid workspace readiness response");
  return parsed;
  }
+  async getWorkspaceLinks(wsId: string): Promise<WorkspaceLinks> {
+    const endpoint = `/api/workspaces/${wsId}/workspace-links`;
+    const value = parseWithFallback(await this.fetch<unknown>(endpoint), WorkspaceLinksSchema, null, { endpoint });
+    if (!value) throw new Error("Could not load linked workspaces");
+    return value;
+  }
+  async saveWorkspaceLink(wsId: string, targetId: string, enabled: boolean): Promise<WorkspaceLinks> {
+    const endpoint = `/api/workspaces/${wsId}/workspace-links`;
+    const value = parseWithFallback(await this.fetch<unknown>(endpoint, {method: "PUT", body: JSON.stringify({target_id: targetId, enabled})}), WorkspaceLinksSchema, null, {endpoint});
+    if (!value) throw new Error("Could not save workspace link");
+    return value;
+  }
+  async listWorkspaceRequests(issueId: string): Promise<WorkspaceRequests> {
+    const endpoint = `/api/issues/${issueId}/workspace-requests`;
+    const value = parseWithFallback(await this.fetch<unknown>(endpoint), WorkspaceRequestsSchema, null, {endpoint});
+    if (!value) throw new Error("Could not load linked requests");
+    return value;
+  }
   async getCodeDelivery(wsId: string): Promise<CodeDelivery> {
     const endpoint = `/api/workspaces/${wsId}/code-delivery`;
     const value = parseWithFallback(await this.fetch<unknown>(endpoint), CodeDeliverySchema, null, { endpoint });

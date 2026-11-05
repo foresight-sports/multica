@@ -1429,5 +1429,9 @@
     "reload": "새로고침",
     "unavailable": "Jira 로그인을 사용할 수 없습니다. 인스턴스 관리자에게 문의하세요.",
     "resumed": "Jira 작업 재개됨"
+  },
+  "linked_requests": {
+    "title": "연결된 워크스페이스 요청",
+    "load_error": "연결된 요청을 불러오지 못했습니다."
   }
 }

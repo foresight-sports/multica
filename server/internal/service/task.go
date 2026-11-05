@@ -38,6 +38,8 @@ import (
 )
 
 type TaskService struct {
+	deferEnqueueNotifications bool
+
 	Queries   *db.Queries
 	TxStarter TxStarter
 	Hub       *realtime.Hub
@@ -1381,6 +1383,9 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		"force_fresh_session", forceFreshSession,
 	)
 	if fireAt.Valid {
+		return task, nil
+	}
+	if s.deferEnqueueNotifications {
 		return task, nil
 	}
 	// Order matters: broadcast first, notify daemon second. notifyTaskAvailable
@@ -8278,4 +8283,15 @@ func (s *TaskService) workflowTriggerSummary(ctx context.Context, workspaceID, c
 		return pgtype.Text{String: "Continuation: " + string(r), Valid: true}
 	}
 	return s.buildCommentTriggerSummary(ctx, workspaceID, commentID)
+}
+
+// EnqueueWorkspaceRequestFollowup keeps the task and caller's durable receipt
+// atomic. The caller must notify after committing its transaction.
+func (s *TaskService) EnqueueWorkspaceRequestFollowup(ctx context.Context, tx pgx.Tx, issue db.Issue, note string, requester pgtype.UUID) (db.AgentTaskQueue, error) {
+	scoped := NewTaskService(s.Queries.WithTx(tx), tx, s.Hub, s.Bus)
+	scoped.Composio = s.Composio
+	scoped.Entitlements = s.Entitlements
+	scoped.FeatureFlags = s.FeatureFlags
+	scoped.deferEnqueueNotifications = true
+	return scoped.EnqueueTaskForIssueWithHandoff(ctx, issue, note, requester)
 }

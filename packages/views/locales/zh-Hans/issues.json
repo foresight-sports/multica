@@ -1429,5 +1429,9 @@
     "reload": "重新加载",
     "unavailable": "暂时无法登录 Jira。请联系实例管理员。",
     "resumed": "Jira 工作已继续"
+  },
+  "linked_requests": {
+    "title": "关联工作区请求",
+    "load_error": "无法加载关联工作区请求。"
   }
 }

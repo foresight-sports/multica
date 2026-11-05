@@ -1745,6 +1745,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
 					r.Get("/", h.GetWorkspace)
 					r.Get("/issue-intake", h.GetIssueIntake)
+					r.Get("/workspace-links", h.WorkspaceLinks)
+					r.With(handler.RequireHumanActor).Put("/workspace-links", h.WorkspaceLinks)
 					r.Get("/repository-settings", h.RepositorySettings)
 					r.Get("/code-delivery", h.CodeDeliverySettings)
 					r.Get("/jira-settings", h.JiraSettings)
@@ -2072,6 +2074,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/batch-delete", h.BatchDeleteIssues)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetIssue)
+					r.Get("/workspace-requests", h.WorkspaceRequests)
+					r.Post("/workspace-requests", h.WorkspaceRequests)
 					r.Put("/", h.UpdateIssue)
 					r.Post("/move", h.MoveIssue)
 					r.Delete("/", h.DeleteIssue)

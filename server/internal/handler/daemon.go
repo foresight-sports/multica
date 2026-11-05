@@ -3652,6 +3652,8 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		)
 	}
 
+	h.appendLinkedWorkspaceContext(r.Context(), *task, &resp)
+
 	// Workspace status catalog (MUL-6460): active CUSTOM statuses only, so the
 	// daemon can render them into the brief's status-command line. Read on every
 	// claim, like the agent row, so an admin's edit lands on the next task.
