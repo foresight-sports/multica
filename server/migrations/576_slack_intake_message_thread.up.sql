@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY idx_slack_intake_message_thread ON slack_intake_message(thread_id,created_at);

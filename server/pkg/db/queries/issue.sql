@@ -478,6 +478,9 @@ LIMIT 1;
 WITH target AS (
     SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
 ),
+cleared_slack_replies AS (DELETE FROM slack_intake_reply WHERE thread_id IN (SELECT id FROM slack_intake_thread WHERE issue_id IN (SELECT id FROM target))),
+cleared_slack_messages AS (DELETE FROM slack_intake_message WHERE thread_id IN (SELECT id FROM slack_intake_thread WHERE issue_id IN (SELECT id FROM target))),
+cleared_slack_threads AS (UPDATE slack_intake_thread SET issue_id=NULL,state='deleted' WHERE issue_id IN (SELECT id FROM target)),
 cleared_workspace_requests AS (
  DELETE FROM workspace_request WHERE source_issue_id IN (SELECT target.id FROM target) OR target_issue_id IN (SELECT target.id FROM target)
 ),

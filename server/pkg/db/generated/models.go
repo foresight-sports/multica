@@ -209,6 +209,13 @@ type Attachment struct {
 	SourceContextID pgtype.UUID        `json:"source_context_id"`
 }
 
+type AutomationAccount struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Autopilot struct {
 	ID                 pgtype.UUID        `json:"id"`
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
@@ -1494,6 +1501,70 @@ type SkillToLabel struct {
 	SkillID   pgtype.UUID        `json:"skill_id"`
 	LabelID   pgtype.UUID        `json:"label_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type SlackIntakeMessage struct {
+	ID        pgtype.UUID        `json:"id"`
+	ThreadID  pgtype.UUID        `json:"thread_id"`
+	RuleID    pgtype.UUID        `json:"rule_id"`
+	MessageTs string             `json:"message_ts"`
+	SenderID  string             `json:"sender_id"`
+	Body      string             `json:"body"`
+	Raw       []byte             `json:"raw"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type SlackIntakeReply struct {
+	ID         pgtype.UUID        `json:"id"`
+	ThreadID   pgtype.UUID        `json:"thread_id"`
+	Revision   int64              `json:"revision"`
+	TaskID     pgtype.UUID        `json:"task_id"`
+	Outcome    string             `json:"outcome"`
+	Confidence float64            `json:"confidence"`
+	Body       string             `json:"body"`
+	Evidence   string             `json:"evidence"`
+	State      string             `json:"state"`
+	SlackTs    pgtype.Text        `json:"slack_ts"`
+	LastError  string             `json:"last_error"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type SlackIntakeRule struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	InstallationID    pgtype.UUID        `json:"installation_id"`
+	ChannelID         string             `json:"channel_id"`
+	ChannelName       string             `json:"channel_name"`
+	Workflow          string             `json:"workflow"`
+	ServiceUserID     pgtype.UUID        `json:"service_user_id"`
+	CoordinatorID     pgtype.UUID        `json:"coordinator_id"`
+	AnalystID         pgtype.UUID        `json:"analyst_id"`
+	ComposerID        pgtype.UUID        `json:"composer_id"`
+	Audience          string             `json:"audience"`
+	StyleInstructions string             `json:"style_instructions"`
+	EscalationUserID  string             `json:"escalation_user_id"`
+	Enabled           bool               `json:"enabled"`
+	Revision          int64              `json:"revision"`
+	TimeoutMinutes    int32              `json:"timeout_minutes"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SlackIntakeThread struct {
+	ID             pgtype.UUID        `json:"id"`
+	RuleID         pgtype.UUID        `json:"rule_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	RootTs         string             `json:"root_ts"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	BacklogIssueID pgtype.UUID        `json:"backlog_issue_id"`
+	Revision       int64              `json:"revision"`
+	QueuedRevision int64              `json:"queued_revision"`
+	State          string             `json:"state"`
+	LastError      string             `json:"last_error"`
+	ReactionActive bool               `json:"reaction_active"`
+	CheckedAt      pgtype.Timestamptz `json:"checked_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Squad struct {

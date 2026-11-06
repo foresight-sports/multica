@@ -3649,6 +3649,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	}
 
 	h.appendLinkedWorkspaceContext(r.Context(), *task, &resp)
+	h.appendSupportContext(r.Context(), *task, &resp)
 	resp.WorkspaceContext += "\nJira tracking is required only when opening a pull request, never for intake, investigation, code changes or direct branch delivery. Open PRs with `multica issue pr-create <issue-id> --title <title> --body-file <file> --base <branch>`; it checks the current workspace Jira requirement before calling GitHub. Do not bypass this command with gh, MCP or direct API PR creation. If blocked for a missing key, ask the requester for the appropriate Jira ticket and record the blocker; do not invent a key or create a Jira issue without authorization. Older CLIs must update. A key may be added during the run; the PR command reads the current value.\n"
 
 	// Workspace status catalog (MUL-6460): active CUSTOM statuses only, so the

@@ -19,6 +19,11 @@ const (
 // teardown. Adding a table requires an explicit ownership decision here; the
 // handler deletion graph must then implement that decision before CI passes.
 var workspaceDeletionManifest = map[string]workspaceDeleteAction{
+	"slack_intake_rule":                  workspaceDelete,
+	"slack_intake_thread":                workspaceDelete,
+	"slack_intake_message":               workspaceDelete,
+	"slack_intake_reply":                 workspaceDelete,
+	"automation_account":                 workspaceDelete,
 	"workspace_link":                     workspaceDelete,
 	"workspace_request":                  workspaceDelete,
 	"work_record":                        workspaceDelete,

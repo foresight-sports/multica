@@ -1,3 +1,4 @@
+import { SlackIntakeRulesSchema, SlackSupportDirectorySchema, SlackSupportActivitySchema, type SlackIntakeRule, type SlackSupportDirectory, type SlackSupportActivity } from "./slack-intake-schema";
 import { WorkspaceLinksSchema, WorkspaceRequestsSchema, type WorkspaceLinks, type WorkspaceRequests } from "./workspace-links-schema";
 import { CodeDeliverySchema, type CodeDelivery } from "./code-delivery-schema";
 import { WorkspaceDirectorySchema, WorkspaceAccessRequestsSchema, type WorkspaceDirectoryData, type WorkspaceAccessRequests } from "./workspace-directory-schema";
@@ -5232,6 +5233,27 @@ export class ApiClient {
     await this.fetch(`/api/integrations/composio/connections/${connectionId}`, {
       method: "DELETE",
     });
+  }
+
+  async getSlackIntake(workspaceId: string): Promise<SlackIntakeRule[]> {
+    const endpoint=`/api/workspaces/${workspaceId}/slack/intake`;
+    const result=parseWithFallback<SlackIntakeRule[] | null>(await this.fetch<unknown>(endpoint),SlackIntakeRulesSchema,null,{endpoint});
+    if(result===null) throw new Error("Could not load Slack workflows"); return result;
+  }
+  async saveSlackIntake(workspaceId: string, value: Partial<SlackIntakeRule> & { disable_only?: boolean }): Promise<SlackIntakeRule[]> {
+    const endpoint=`/api/workspaces/${workspaceId}/slack/intake`;
+    const result=parseWithFallback<SlackIntakeRule[] | null>(await this.fetch<unknown>(endpoint,{method:"PUT",body:JSON.stringify(value)}),SlackIntakeRulesSchema,null,{endpoint});
+    if(result===null) throw new Error("Could not save Slack workflow"); return result;
+  }
+  async getSlackSupportDirectory(workspaceId: string, installationId: string): Promise<SlackSupportDirectory> {
+    const endpoint=`/api/workspaces/${workspaceId}/slack/intake-directory?installation_id=${encodeURIComponent(installationId)}`;
+    const result=parseWithFallback<SlackSupportDirectory | null>(await this.fetch<unknown>(endpoint),SlackSupportDirectorySchema,null,{endpoint});
+    if(result===null) throw new Error("Could not load Slack channel and people choices"); return result;
+  }
+  async getSlackSupportActivity(workspaceId: string): Promise<SlackSupportActivity> {
+    const endpoint=`/api/workspaces/${workspaceId}/slack/intake-activity`;
+    const result=parseWithFallback<SlackSupportActivity | null>(await this.fetch<unknown>(endpoint),SlackSupportActivitySchema,null,{endpoint});
+    if(result===null) throw new Error("Could not load Slack intake activity"); return result;
   }
 
   // Slack integration (MUL-3666)

@@ -690,6 +690,11 @@ DELETE FROM project WHERE project.workspace_id = $1;
 
 -- name: DeleteWorkspaceAdministration :exec
 WITH
+deleted_slack_replies AS (DELETE FROM slack_intake_reply WHERE thread_id IN (SELECT id FROM slack_intake_thread WHERE workspace_id=$1)),
+deleted_slack_messages AS (DELETE FROM slack_intake_message WHERE thread_id IN (SELECT id FROM slack_intake_thread WHERE workspace_id=$1)),
+deleted_slack_threads AS (DELETE FROM slack_intake_thread WHERE workspace_id=$1),
+deleted_slack_rules AS (DELETE FROM slack_intake_rule WHERE workspace_id=$1),
+deleted_automation_accounts AS (DELETE FROM automation_account WHERE workspace_id=$1),
 deleted_workspace_links AS (DELETE FROM workspace_link WHERE workspace_a=$1 OR workspace_b=$1),
 deleted_workspace_requests AS (DELETE FROM workspace_request WHERE source_workspace_id=$1 OR target_workspace_id=$1),
 deleted_access_requests AS (DELETE FROM workspace_access_request WHERE workspace_id=$1),

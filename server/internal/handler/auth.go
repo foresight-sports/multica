@@ -199,7 +199,7 @@ func (h *Handler) issueJWT(user db.User) (string, error) {
 // event fires on that edge, covering both the verification-code and Google
 // OAuth entry points.
 func (h *Handler) findOrCreateUser(ctx context.Context, email string) (user db.User, isNew bool, err error) {
-	if auth.IsTemporarilyDisabledUserEmail(email) {
+	if auth.IsTemporarilyDisabledUserEmail(email) || strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@automation.multica.invalid") {
 		return db.User{}, false, auth.ErrTemporarilyDisabledUser
 	}
 
@@ -327,7 +327,7 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "email is required")
 		return
 	}
-	if auth.IsTemporarilyDisabledUserEmail(email) {
+	if auth.IsTemporarilyDisabledUserEmail(email) || strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@automation.multica.invalid") {
 		writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
 		return
 	}
@@ -421,7 +421,7 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "email and code are required")
 		return
 	}
-	if auth.IsTemporarilyDisabledUserEmail(email) {
+	if auth.IsTemporarilyDisabledUserEmail(email) || strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@automation.multica.invalid") {
 		writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
 		return
 	}
@@ -682,7 +682,7 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if auth.IsTemporarilyDisabledUserEmail(email) {
+	if auth.IsTemporarilyDisabledUserEmail(email) || strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@automation.multica.invalid") {
 		writeErrorCode(w, http.StatusForbidden, googleLoginCodeAccountDisabled, auth.TemporarilyDisabledUserError)
 		return
 	}

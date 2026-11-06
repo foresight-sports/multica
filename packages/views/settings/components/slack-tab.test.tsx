@@ -8,6 +8,8 @@ import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
+vi.mock("./slack-intake-section", () => ({ SlackIntakeSection: () => <div data-testid="support-intake" /> }));
+
 type MemberRole = "owner" | "admin" | "member" | "guest";
 
 const membersRef = vi.hoisted(() => ({

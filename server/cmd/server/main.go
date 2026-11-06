@@ -783,6 +783,7 @@ func main() {
 	h.PRRefresh.Start(sweepCtx)
 	h.StartCodeReviewSync(sweepCtx)
 	h.StartWorkspaceRequestSync(sweepCtx)
+	h.StartSlackIntake(sweepCtx)
 
 	// Channel inbound supervisor (MUL-3620): holds the §4.4 WS lease per
 	// installation and drives each channel.Channel. It is channel-agnostic,

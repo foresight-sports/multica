@@ -1,5 +1,6 @@
 "use client";
 
+import { SlackIntakeSection } from "./slack-intake-section";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -151,6 +152,8 @@ export function SlackTab() {
           )}
         </section>
       )}
+
+      {canManage && configured && <SlackIntakeSection wsId={wsId} />}
 
       <AlertDialog
         open={!!disconnectTarget}

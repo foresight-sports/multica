@@ -35,6 +35,7 @@ type slackChannel struct {
 	botUserID string
 	appToken  string        // decrypted xapp- — authorizes the Socket Mode connection
 	botAPI    *slack.Client // bot-token client for outbound Send
+	capture   func(context.Context, channel.InboundMessage) (bool, error)
 	handler   channel.InboundHandler
 	slash     *SlashCommandProcessor // nil disables /issue and /new slash-command handling
 	logger    *slog.Logger
@@ -134,6 +135,25 @@ func (c *slackChannel) handleSocketEvent(ctx context.Context, sm *socketmode.Cli
 		if !ok {
 			return nil
 		}
+		// Monitored channels persist their receipt before ACK. Other Slack
+		// conversations retain the existing engine behavior.
+		if c.capture != nil {
+			msg, valid := c.normalizeEventsAPI(eventsAPI, mentionRe)
+			if valid {
+				captureCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				handled, err := c.capture(captureCtx, msg)
+				cancel()
+				if err != nil {
+					return err
+				}
+				if handled {
+					if evt.Request != nil {
+						return sm.Ack(*evt.Request)
+					}
+					return nil
+				}
+			}
+		}
 		// ACK first: Slack expires un-ACKed envelopes in ~3s, far below the
 		// handler's DB work. The ACK is independent of the handler outcome.
 		if evt.Request != nil {
@@ -179,22 +199,21 @@ func (c *slackChannel) handleSocketEvent(ctx context.Context, sm *socketmode.Cli
 // infrastructure failure; it propagates so the supervisor reconnects. A
 // legitimate product drop returns nil.
 func (c *slackChannel) dispatchEventsAPI(ctx context.Context, e slackevents.EventsAPIEvent, mentionRe *regexp.Regexp) error {
-	var (
-		msg channel.InboundMessage
-		ok  bool
-	)
-	switch inner := e.InnerEvent.Data.(type) {
-	case *slackevents.AppMentionEvent:
-		msg, ok = inboundFromAppMention(e, inner, c.botUserID, mentionRe)
-	case *slackevents.MessageEvent:
-		msg, ok = inboundFromMessage(e, inner, c.botUserID, mentionRe)
-	default:
-		return nil
-	}
+	msg, ok := c.normalizeEventsAPI(e, mentionRe)
 	if !ok {
 		return nil
 	}
 	return c.handler(ctx, msg)
+}
+func (c *slackChannel) normalizeEventsAPI(e slackevents.EventsAPIEvent, mentionRe *regexp.Regexp) (channel.InboundMessage, bool) {
+	switch inner := e.InnerEvent.Data.(type) {
+	case *slackevents.AppMentionEvent:
+		return inboundFromAppMention(e, inner, c.botUserID, mentionRe)
+	case *slackevents.MessageEvent:
+		return inboundFromMessage(e, inner, c.botUserID, mentionRe)
+	default:
+		return channel.InboundMessage{}, false
+	}
 }
 
 // dispatchSlashCommand processes an already-ACKed `/issue`, `/new`, or `/clear` command
@@ -218,6 +237,7 @@ func (c *slackChannel) dispatchSlashCommand(cmd slack.SlashCommand, envelopeID s
 // engine inbound handler is supplied per-build via channel.Config.Handler; the
 // Decrypter turns the installation's stored ciphertext tokens into plaintext.
 type ChannelDeps struct {
+	Capture func(context.Context, channel.InboundMessage) (bool, error)
 	Decrypt Decrypter
 	Logger  *slog.Logger
 	// Slash handles `/issue` and `/new` commands delivered over Socket Mode. Nil
@@ -261,6 +281,7 @@ func newSlackFactory(deps ChannelDeps) channel.Factory {
 			appToken:  appToken,
 			botAPI:    slack.New(botToken),
 			handler:   cfg.Handler,
+			capture:   deps.Capture,
 			slash:     deps.Slash,
 			logger:    logger,
 		}, nil

@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS slack_automation_workspace_unique;

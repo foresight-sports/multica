@@ -861,7 +861,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Socket Mode connection per active Slack installation, authenticated
 			// with that installation's OWN app-level token (xapp-, pasted at BYO
 			// install) — no deployment-level app token, no single connection.
-			slack.RegisterSlack(channelRegistry, slack.ChannelDeps{Decrypt: box.Open, Logger: slog.Default(), Slash: slackSlash})
+			h.SlackSupport = &slack.SupportClient{Decrypt: box.Open}
+			slack.RegisterSlack(channelRegistry, slack.ChannelDeps{Decrypt: box.Open, Logger: slog.Default(), Slash: slackSlash, Capture: h.CaptureSlackIntake})
 
 			// BYO self-serve install (paste bot token + app-level token). The
 			// InstallService needs only the at-rest encryption key — there is no
@@ -1890,6 +1891,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// and is registered outside this workspace group.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Get("/slack/intake", h.SlackIntakeRules)
+					r.Get("/slack/intake-directory", h.SlackSupportDirectory)
+					r.Get("/slack/intake-activity", h.SlackSupportActivity)
+					r.With(handler.RequireHumanActor).Put("/slack/intake", h.SlackIntakeRules)
 					r.Get("/slack/installations", h.ListSlackInstallations)
 					r.Get("/wecom/installations", h.ListWecomInstallations)
 				})
@@ -2074,6 +2079,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/batch-delete", h.BatchDeleteIssues)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetIssue)
+					r.Get("/support-context", h.SupportContext)
+					r.Post("/support-reply", h.SupportReply)
+					r.Get("/support-files/{fileId}", h.SupportFile)
 					r.Get("/pull-request-check", h.CheckIssuePullRequest)
 					r.Get("/workspace-requests", h.WorkspaceRequests)
 					r.Post("/workspace-requests", h.WorkspaceRequests)
