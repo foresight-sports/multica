@@ -2406,10 +2406,6 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		_, _ = h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task)
 		return resp, nil, nil, 0, 0, &claimBuildFailure{status: 409, message: "Waiting for installation approval or original machine"}
 	}
-	allowed, jiraErr := h.Queries.TaskJiraAllowed(r.Context(), db.TaskJiraAllowedParams{Column1: task.IssueID, Column2: task.AgentID, Column3: task.Context})
-	if jiraErr != nil || !allowed {
-		return resp, nil, nil, 0, 0, &claimBuildFailure{outcome: "jira_ticket_required", status: http.StatusConflict, message: "JIRA ticket ID is required before agent work can start"}
-	}
 	if task.IssueID.Valid {
 		key, err := h.Queries.GetIssueJiraKey(r.Context(), task.IssueID)
 		if err != nil {
@@ -3653,6 +3649,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	}
 
 	h.appendLinkedWorkspaceContext(r.Context(), *task, &resp)
+	resp.WorkspaceContext += "\nJira tracking is required only when opening a pull request, never for intake, investigation, code changes or direct branch delivery. Open PRs with `multica issue pr-create <issue-id> --title <title> --body-file <file> --base <branch>`; it checks the current workspace Jira requirement before calling GitHub. Do not bypass this command with gh, MCP or direct API PR creation. If blocked for a missing key, ask the requester for the appropriate Jira ticket and record the blocker; do not invent a key or create a Jira issue without authorization. Older CLIs must update. A key may be added during the run; the PR command reads the current value.\n"
 
 	// Workspace status catalog (MUL-6460): active CUSTOM statuses only, so the
 	// daemon can render them into the brief's status-command line. Read on every

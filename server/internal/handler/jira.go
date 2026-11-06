@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -72,4 +73,33 @@ func normalizeJiraKey(value string) (string, error) {
 		return "", errors.New("JIRA ticket ID must be a key such as FS-123")
 	}
 	return value, nil
+}
+
+// Pull requests revalidate tracking at the moment of publication, independently
+// of when the task was claimed or its cached Jira context.
+func (h *Handler) CheckIssuePullRequest(w http.ResponseWriter, r *http.Request) {
+	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+	if _, err := h.linkedRequester(r, &issue); err != nil {
+		writeError(w, 403, "PR checks require a human or the issue's active task")
+		return
+	}
+	prop, err := h.Queries.GetJiraProperty(r.Context(), issue.WorkspaceID)
+	if err != nil {
+		writeError(w, 503, "could not check Jira PR policy")
+		return
+	}
+	key, err := h.Queries.GetIssueJiraKey(r.Context(), issue.ID)
+	if err != nil {
+		writeError(w, 503, "could not read Jira ticket ID")
+		return
+	}
+	required := parsePropertyConfig(prop.Config).Required
+	if required && !jiraKeyPattern.MatchString(key) {
+		writeError(w, 409, "A Jira ticket ID is required before opening a PR. Add the appropriate key to this issue, then retry. Investigation and other work may continue.")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"allowed": true, "required": required, "jira_ticket_id": key})
 }

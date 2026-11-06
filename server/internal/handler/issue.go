@@ -2764,14 +2764,6 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if prop, err := h.Queries.GetJiraProperty(r.Context(), wsUUID); err != nil {
-		writeError(w, 500, "could not check workspace JIRA requirement")
-		return
-	} else if parsePropertyConfig(prop.Config).Required {
-		writeError(w, 409, "Create the issue manually and set its JIRA ticket ID before starting agent work")
-		return
-	}
-
 	if err := workspacerepo.RequireConfigured(r.Context(), h.Queries, workspaceID); err != nil {
 		writeError(w, 409, err.Error())
 		return

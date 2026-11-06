@@ -1,6 +1,6 @@
 "use client";
 import { IssueRepositoryNotice, useIssueRepositoryGate } from "./issue-repository-notice";
-import { issueIntakeOptions, useJiraSettings } from "@multica/core/workspace";
+import { issueIntakeOptions } from "@multica/core/workspace";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -111,8 +111,6 @@ export function AgentCreatePanel({
   const navigation = useNavigation();
   const wsId = useWorkspaceId();
   const repositoryGate=useIssueRepositoryGate();
-  const jira = useJiraSettings(wsId);
-  const jiraBlocked = !jira.query.data || jira.query.isError || jira.query.data.required;
   const anchorCommentId = typeof data?.anchor_comment_id === "string" ? data.anchor_comment_id : null;
   const sourcePreview = data?.source_context_preview as SourceContextPreview | undefined;
   const sourceContextLoading = data?.source_context_loading === true;
@@ -347,7 +345,7 @@ export function AgentCreatePanel({
     editorRef,
     uploadGate: gate,
     onSubmit: async (md): Promise<boolean> => {
-      if (intakeUnavailable || repositoryGate.blocked || jiraBlocked) return false;
+      if (intakeUnavailable || repositoryGate.blocked) return false;
       // The button already disables on !actor / versionBlocked, but the
       // ⌘+Enter path bypasses it — re-guard here and keep the draft in place.
       if (!actor || versionBlocked || (anchorCommentId && !sourcePreview)) return false;
@@ -499,7 +497,7 @@ export function AgentCreatePanel({
     },
   });
   const submit = () => {
-    if (intakeUnavailable || repositoryGate.blocked || jiraBlocked) return;
+    if (intakeUnavailable || repositoryGate.blocked) return;
     void composer.submit();
   };
   const submitting = composer.submitting;
@@ -551,7 +549,6 @@ export function AgentCreatePanel({
         </div>
 
         <IssueRepositoryNotice onConfigure={()=>{const pending=editorRef.current?.flushPendingUpdate?.();if(pending!=null)setAgent({prompt:pending});onClose();}} />
-        {jiraBlocked && <p role="status" className="px-4 py-2 text-caption text-muted-foreground">{jira.query.isError ? t(($) => $.jira.load_error) : jira.query.data?.required ? t(($) => $.jira.manual_required) : t(($) => $.jira.loading)}</p>}
         {/* Intake is fixed by workspace/project policy, never a user selection. */}
         <div className="px-5 pt-1 pb-2 shrink-0">
             <div className="text-caption text-muted-foreground" role="status">
@@ -775,7 +772,7 @@ export function AgentCreatePanel({
           <Button
             size="sm"
             onClick={submit}
-            disabled={jiraBlocked || repositoryGate.blocked || intakeUnavailable || !hasContent || !actor || submitting || versionBlocked || gate.uploading || (!!anchorCommentId && !sourcePreview)}
+            disabled={repositoryGate.blocked || intakeUnavailable || !hasContent || !actor || submitting || versionBlocked || gate.uploading || (!!anchorCommentId && !sourcePreview)}
             aria-disabled={gate.uploading || undefined}
             // Sending is a busy state too, not just uploading.
             aria-busy={gate.uploading || submitting || undefined}

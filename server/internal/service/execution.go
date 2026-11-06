@@ -394,13 +394,6 @@ func (s *TaskService) ConstrainExecutionToTask(ctx context.Context, task db.Agen
 		}
 		return candidates
 	}
-	allowed, jiraErr := s.Queries.TaskJiraAllowed(ctx, db.TaskJiraAllowedParams{Column1: task.IssueID, Column2: task.AgentID, Column3: task.Context})
-	if jiraErr != nil {
-		return block("JIRA requirement could not be checked")
-	}
-	if !allowed {
-		return block("JIRA ticket ID is required before agent work can start")
-	}
 	a, e := s.Queries.GetAgent(ctx, task.AgentID)
 	if e != nil {
 		return block("Agent context unavailable")

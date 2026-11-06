@@ -4260,13 +4260,6 @@ func (s *TaskService) validateTaskExecutionStart(ctx context.Context, current db
 	if workflowErr != nil || !workflowAllowed {
 		return fmt.Errorf("installation approval or original machine is required")
 	}
-	allowed, jiraErr := s.Queries.TaskJiraAllowed(ctx, db.TaskJiraAllowedParams{Column1: current.IssueID, Column2: current.AgentID, Column3: current.Context})
-	if jiraErr != nil {
-		return jiraErr
-	}
-	if !allowed {
-		return fmt.Errorf("JIRA ticket ID is required before agent work can start")
-	}
 	if selection := execution.ParseSelection(current.ExecutionSelection); selection.State != "" {
 		if selection.State != "selected" {
 			return fmt.Errorf("task is awaiting execution profile selection")

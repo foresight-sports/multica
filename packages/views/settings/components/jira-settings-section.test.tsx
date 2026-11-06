@@ -8,7 +8,7 @@ vi.mock("@multica/core/workspace",()=>({useJiraSettings:()=>({query:{data:state.
 afterEach(()=>{cleanup();state.mutate.mockClear();state.data.can_edit=true;});
 it("saves the requirement with the current revision",()=>{
  renderWithI18n(<JiraSettingsSection wsId="workspace"/>);
- fireEvent.click(screen.getByRole("switch",{name:"Require JIRA ticket ID before agent work"}));
+ fireEvent.click(screen.getByRole("switch",{name:"Require Jira ticket ID before opening a PR"}));
  expect(state.mutate).toHaveBeenCalledWith({...state.data,required:true});
 });
 it("does not let workspace members change the requirement",()=>{

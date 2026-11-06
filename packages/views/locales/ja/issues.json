@@ -1417,7 +1417,7 @@
     "agent_record": "Recorded by an agent"
   },
   "jira": {
-    "required_notice": "Agent work is waiting for a JIRA ticket ID. Set a key such as FS-123."
+    "required_notice": "PR の作成前に Jira チケット ID が必要です。調査やその他の作業は続行できます。"
   },
   "jira_blocker": {
     "title": "Jira への接続が必要です",

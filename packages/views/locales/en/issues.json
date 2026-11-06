@@ -1453,7 +1453,7 @@
     "group_comment_by": "Comment by {{name}}"
   },
   "jira": {
-    "required_notice": "Agent work is waiting for a JIRA ticket ID. Set a key such as FS-123."
+    "required_notice": "A Jira ticket ID is needed before opening a PR. Investigation and other work can continue."
   },
   "work": {
     "title": "Work and approvals",

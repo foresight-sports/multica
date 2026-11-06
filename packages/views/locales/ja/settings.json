@@ -1549,8 +1549,8 @@
   "jira": {
     "title": "JIRA tracking",
     "description": "Every issue has a JIRA ticket ID field. Agents use it in branch names, pull requests, commit references, and changelogs.",
-    "require": "Require JIRA ticket ID before agent work",
-    "require_description": "Runs wait until a valid key, such as FS-123, is supplied. Tickets remain editable. New subtasks inherit their parent's key. Existing running tasks are not interrupted.",
+    "require": "PR 作成前に Jira チケット ID を必須にする",
+    "require_description": "調査や作業には Jira キーは不要です。プルリクエストを作成する前にのみ有効なキーが必要です。",
     "loading": "Loading JIRA settings…"
   },
   "jira_connection": {
