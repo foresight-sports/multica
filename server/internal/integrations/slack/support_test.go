@@ -37,3 +37,40 @@ func TestSupportReplyEscapesMentionsAndKeepsReceipt(t *testing.T) {
 		t.Fatal(string(raw))
 	}
 }
+
+func TestSupportDirectoryListsBotMembershipsInsteadOfWholeWorkspace(t *testing.T) {
+	pages := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		r.ParseForm()
+		switch r.URL.Path {
+		case "/users.conversations":
+			pages++
+			if r.Form.Get("user") != "" {
+				t.Error("directory must use authenticated bot identity")
+			}
+			if pages == 1 {
+				w.Write([]byte(`{"ok":true,"channels":[{"id":"CONE","name":"support"}],"response_metadata":{"next_cursor":"next"}}`))
+			} else {
+				if r.Form.Get("cursor") != "next" {
+					t.Error("lost pagination cursor")
+				}
+				w.Write([]byte(`{"ok":true,"channels":[{"id":"CTWO","name":"other"}],"response_metadata":{"next_cursor":""}}`))
+			}
+		case "/users.list":
+			w.Write([]byte(`{"ok":true,"members":[{"id":"UKODY","real_name":"Kody Peterson"},{"id":"UBOT","is_bot":true},{"id":"UGONE","deleted":true}]}`))
+		default:
+			t.Errorf("unexpected directory endpoint %s", r.URL.Path)
+			w.Write([]byte(`{"ok":false,"error":"unexpected_endpoint"}`))
+		}
+	}))
+	defer server.Close()
+	c := SupportClient{APIURL: server.URL + "/"}
+	out, err := c.Directory(context.Background(), []byte(replierConfigJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pages != 2 || len(out.Channels) != 2 || len(out.People) != 1 || out.People[0].ID != "UKODY" {
+		t.Fatalf("wrong directory %+v, pages %d", out, pages)
+	}
+}

@@ -305,7 +305,7 @@ func (h *Handler) SlackSupportDirectory(w http.ResponseWriter, r *http.Request) 
 	defer cancel()
 	out, e := h.SlackSupport.Directory(ctx, inst.Config)
 	if e != nil {
-		writeError(w, 502, e.Error())
+		writeError(w, 400, e.Error())
 		return
 	}
 	writeJSON(w, 200, out)

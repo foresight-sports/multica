@@ -116,21 +116,21 @@ func (s *SupportClient) Directory(ctx context.Context, raw json.RawMessage) (Sup
 	}
 	cursor := ""
 	for page := 0; page < 10; page++ {
-		chs, next, e := c.GetConversationsContext(ctx, &slack.GetConversationsParameters{Cursor: cursor, Limit: 200, ExcludeArchived: true, Types: []string{"public_channel", "private_channel"}})
+		chs, next, e := c.GetConversationsForUserContext(ctx, &slack.GetConversationsForUserParameters{Cursor: cursor, Limit: 200, ExcludeArchived: true, Types: []string{"public_channel", "private_channel"}})
 		if e != nil {
-			return out, fmt.Errorf("cannot load Slack channels; check channel read scopes")
+			return out, fmt.Errorf("cannot load joined Slack channels; check channels:read and groups:read")
 		}
+		// users.conversations already restricts results to the bot's memberships;
+		// its channel objects need not include conversations.list's is_member flag.
 		for _, ch := range chs {
-			if ch.IsMember {
-				out.Channels = append(out.Channels, SupportChoice{ch.ID, "#" + ch.Name})
-			}
+			out.Channels = append(out.Channels, SupportChoice{ch.ID, "#" + ch.Name})
 		}
 		if next == "" {
 			break
 		}
 		cursor = next
 		if page == 9 {
-			return out, fmt.Errorf("too many channels; narrow app membership")
+			return out, fmt.Errorf("joined Slack channel directory exceeded the pagination limit")
 		}
 	}
 	users, e := c.GetUsersContext(ctx)

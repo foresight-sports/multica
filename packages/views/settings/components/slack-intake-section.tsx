@@ -162,7 +162,7 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
         )}
         {directory.isError && (
           <div role="alert">
-            <p>{t(($) => $.slack_intake.directory_error)}</p>
+            <p>{directory.error instanceof Error ? directory.error.message : t(($) => $.slack_intake.directory_error)}</p>
             <Button
               type="button"
               variant="outline"
