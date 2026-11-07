@@ -43,7 +43,24 @@ func init() {
 				if !cmd.Flags().Changed("confidence") {
 					return fmt.Errorf("--confidence is required")
 				}
-				e = client.PostJSON(ctx, "/api/issues/"+issue.ID+"/support-reply", map[string]any{"revision": revision, "confidence": confidence, "outcome": outcome, "body": body, "evidence": evidence}, &out)
+				if !cmd.Flags().Changed("defect-confidence") && (cmd.Flags().Changed("defect-evidence") || cmd.Flags().Changed("defect-evidence-file") || cmd.Flags().Changed("defect-evidence-stdin")) {
+					return fmt.Errorf("--defect-evidence requires --defect-confidence")
+				}
+				payload := map[string]any{"revision": revision, "confidence": confidence, "outcome": outcome, "body": body, "evidence": evidence}
+				if cmd.Flags().Changed("response-confidence") {
+					score, _ := cmd.Flags().GetFloat64("response-confidence")
+					payload["response_confidence"] = score
+				}
+				if cmd.Flags().Changed("defect-confidence") {
+					score, _ := cmd.Flags().GetFloat64("defect-confidence")
+					detail, _, err := resolveTextFlag(cmd, "defect-evidence")
+					if err != nil {
+						return err
+					}
+					payload["defect_confidence"] = score
+					payload["defect_evidence"] = detail
+				}
+				e = client.PostJSON(ctx, "/api/issues/"+issue.ID+"/support-reply", payload, &out)
 			case "file":
 				id, _ := cmd.Flags().GetString("file-id")
 				dest, _ := cmd.Flags().GetString("output")
@@ -76,12 +93,14 @@ func init() {
 			return cli.PrintJSON(cmd.OutOrStdout(), out)
 		}}
 		if kind == "reply" {
-			for _, flag := range []string{"body", "evidence"} {
+			for _, flag := range []string{"body", "evidence", "defect-evidence"} {
 				cmd.Flags().String(flag, "", flag)
 				cmd.Flags().String(flag+"-file", "", "Read "+flag+" from file")
 				cmd.Flags().Bool(flag+"-stdin", false, "Read "+flag+" from stdin")
 			}
 			cmd.Flags().Int64("revision", 0, "Conversation revision from support-context")
+			cmd.Flags().Float64("response-confidence", 0, "Confidence in clarification observations and questions, independent of diagnosis")
+			cmd.Flags().Float64("defect-confidence", 0, "Independent confidence in the specific defect; requires defect evidence")
 			cmd.Flags().Float64("confidence", 0, "Evidence-based confidence from 0 to 1")
 			cmd.Flags().String("outcome", "", "answer, clarify, defect or escalate")
 		}

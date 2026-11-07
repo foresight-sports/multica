@@ -10,6 +10,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/dbid"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 	"log/slog"
 	"time"
 )
@@ -264,6 +265,49 @@ func (h *Handler) finishSupportReaction(ctx context.Context, t supportThread, ou
 	if outcome == "escalate" {
 		state = "escalated"
 	}
-	_, e := h.DB.Exec(ctx, `UPDATE slack_intake_thread SET state=CASE WHEN revision=$3 THEN $2 ELSE state END,reaction_active=false WHERE id=$1`, t.ID, state, t.Revision)
-	return e
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Lock both records so a new Slack revision or human status change cannot
+	// be overwritten by completion of an older delivery.
+	var previousStatus string
+	if err = tx.QueryRow(ctx, `SELECT status FROM issue WHERE id=$1 AND workspace_id=$2 FOR UPDATE`, t.IssueID, parseUUID(t.Rule.WorkspaceID)).Scan(&previousStatus); err != nil {
+		return err
+	}
+	var revision int64
+	if err = tx.QueryRow(ctx, `SELECT revision FROM slack_intake_thread WHERE id=$1 FOR UPDATE`, t.ID).Scan(&revision); err != nil {
+		return err
+	}
+	if revision != t.Revision {
+		return nil
+	}
+	var delivered bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM slack_intake_reply WHERE thread_id=$1 AND revision=$2 AND state='sent' AND outcome=$3)`, t.ID, t.Revision, outcome).Scan(&delivered); err != nil {
+		return err
+	}
+	if !delivered {
+		return fmt.Errorf("support reply is not confirmed delivered")
+	}
+	var updated *db.Issue
+	if previousStatus == "in_progress" {
+		issue, e := h.Queries.WithTx(tx).UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{ID: t.IssueID, WorkspaceID: parseUUID(t.Rule.WorkspaceID), Status: "in_review"})
+		if e != nil {
+			return e
+		}
+		updated = &issue
+	}
+	if _, err = tx.Exec(ctx, `UPDATE slack_intake_thread SET state=$2,reaction_active=false WHERE id=$1`, t.ID, state); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if updated != nil {
+		response := issueToResponse(*updated, h.getIssuePrefix(ctx, updated.WorkspaceID))
+		h.fillStatusCategory(ctx, updated.WorkspaceID, &response)
+		h.publish(protocol.EventIssueUpdated, t.Rule.WorkspaceID, "system", "", map[string]any{"issue": response, "status_changed": true, "prev_status": previousStatus})
+	}
+	return nil
 }

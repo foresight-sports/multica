@@ -308,3 +308,155 @@ func TestSlackSupportMissingIntakeDoesNotUseLegacyAgent(t *testing.T) {
 		t.Fatal("missing coordinator fell back to channel agent")
 	}
 }
+
+func TestSlackSupportPartialDefectConfidence(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		score   float64
+		pending bool
+		want    int
+		backlog bool
+	}{
+		{"confirmed partial finding", .95, false, 200, true},
+		{"uncertain defect", .7, false, 200, false},
+		{"delegation still running", .95, true, 409, false},
+		{"invalid score", 1.1, false, 400, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSupportFixture(t)
+			task := dbfx.Task(t, f.coord, testutil.Cols{"issue_id": f.issue, "status": "running", "originator_user_id": testUserID, "accountable_user_id": testUserID, "runtime_id": testRuntimeID})
+			if tc.pending {
+				dbfx.Task(t, f.analyst, testutil.Cols{"issue_id": f.issue, "status": "running", "originator_user_id": testUserID, "accountable_user_id": testUserID, "runtime_id": testRuntimeID})
+			}
+			call := func() {
+				w := httptest.NewRecorder()
+				r := withURLParam(newRequest("POST", "/support-reply", map[string]any{"revision": 1, "outcome": "defect", "confidence": .7, "defect_confidence": tc.score, "defect_evidence": "Source confirms dropped disconnect notifications; not hardware reproduced.", "body": "Connection status can remain stale. What time were the missing shots taken?", "evidence": "The foreground shot loss remains unexplained."}), "id", f.issue)
+				r.Header.Set("X-Actor-Source", "task_token")
+				r.Header.Set("X-Task-ID", task)
+				r.Header.Set("X-Agent-ID", f.coord)
+				testHandler.SupportReply(w, r)
+				if w.Code != tc.want {
+					t.Fatalf("want %d got %d: %s", tc.want, w.Code, w.Body.String())
+				}
+			}
+			call()
+			if tc.want != 200 {
+				return
+			}
+			call() // An identical retry must not create a second backlog item or reply.
+			var outcome, body, evidence string
+			dbfx.QueryRow(t, `SELECT outcome,body,evidence FROM slack_intake_reply WHERE thread_id=$1`, f.thread).Scan(&outcome, &body, &evidence)
+			if outcome != "escalate" {
+				t.Fatal("unresolved diagnosis did not escalate")
+			}
+			var backlog string
+			dbfx.QueryRow(t, `SELECT COALESCE(backlog_issue_id::text,'') FROM slack_intake_thread WHERE id=$1`, f.thread).Scan(&backlog)
+			if (backlog != "") != tc.backlog {
+				t.Fatalf("unexpected backlog %q", backlog)
+			}
+			if tc.backlog {
+				t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue WHERE id=$1`, backlog) })
+				if !strings.Contains(body, "What time") || !strings.Contains(body, "backlog") || !strings.Contains(evidence, "Defect confidence: 0.95") {
+					t.Fatal("lost reviewed findings or confidence audit")
+				}
+				var status, description string
+				dbfx.QueryRow(t, `SELECT status,description FROM issue WHERE id=$1`, backlog).Scan(&status, &description)
+				if status != "backlog" || strings.Contains(description, "foreground shot loss") {
+					t.Fatal("backlog mixed uncertain symptoms with confirmed defect")
+				}
+				var tasks int
+				dbfx.QueryRow(t, `SELECT count(*) FROM agent_task_queue WHERE issue_id=$1`, backlog).Scan(&tasks)
+				if tasks != 0 {
+					t.Fatal("support started implementation")
+				}
+			} else if strings.Contains(body, "Connection status") {
+				t.Fatal("uncertain finding published")
+			}
+		})
+	}
+}
+
+func TestSlackSupportReviewedClarification(t *testing.T) {
+	for _, score := range []float64{.95, .6} {
+		t.Run(fmt.Sprint(score), func(t *testing.T) {
+			f := newSupportFixture(t)
+			task := dbfx.Task(t, f.coord, testutil.Cols{"issue_id": f.issue, "status": "running", "originator_user_id": testUserID, "accountable_user_id": testUserID, "runtime_id": testRuntimeID})
+			w := httptest.NewRecorder()
+			r := withURLParam(newRequest("POST", "/support-reply", map[string]any{"revision": 1, "outcome": "clarify", "confidence": .7, "response_confidence": score, "body": "Retry succeeded in the recorded sessions. Did the latest retry fail?", "evidence": "Five retries succeeded in logs; the latest reported failure is not captured."}), "id", f.issue)
+			r.Header.Set("X-Actor-Source", "task_token")
+			r.Header.Set("X-Task-ID", task)
+			r.Header.Set("X-Agent-ID", f.coord)
+			testHandler.SupportReply(w, r)
+			if w.Code != 200 {
+				t.Fatalf("%d %s", w.Code, w.Body.String())
+			}
+			var result struct {
+				Outcome, Body string
+				DeliveryState string `json:"delivery_state"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Outcome != "escalate" || result.DeliveryState != "pending" {
+				t.Fatalf("wrong receipt: %+v", result)
+			}
+			if strings.Contains(result.Body, "Did the latest retry fail?") != (score >= .9) {
+				t.Fatal("clarification confidence not enforced")
+			}
+			var body string
+			dbfx.QueryRow(t, `SELECT body FROM slack_intake_reply WHERE thread_id=$1`, f.thread).Scan(&body)
+			if result.Body != body {
+				t.Fatal("receipt does not match actual queued wording")
+			}
+		})
+	}
+}
+
+func TestSlackSupportDeliveryMovesIssueToReview(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, outcome string
+		newer                 bool
+		want                  string
+	}{
+		{"escalation", "in_progress", "escalate", false, "in_review"},
+		{"clarification", "in_progress", "clarify", false, "in_review"},
+		{"answer awaits review", "in_progress", "answer", false, "in_review"},
+		{"closed by human", "done", "escalate", false, "done"},
+		{"blocked by human", "blocked", "escalate", false, "blocked"},
+		{"new conversation", "in_progress", "escalate", true, "in_progress"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSupportFixture(t)
+			dbfx.Exec(t, `UPDATE issue SET status=$2 WHERE id=$1`, f.issue, tc.status)
+			dbfx.Insert(t, "slack_intake_reply", testutil.Cols{"id": uuidToString(dbid.NewV7()), "thread_id": f.thread, "revision": 1, "outcome": tc.outcome, "confidence": .7, "body": "Reviewed response", "evidence": "Reviewed evidence", "state": "sent"})
+			current, err := testHandler.loadSupportThread(t.Context(), parseUUID(f.thread))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.newer {
+				dbfx.Exec(t, `UPDATE slack_intake_thread SET revision=2,state='diagnosing' WHERE id=$1`, f.thread)
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"ok":true}`))
+			}))
+			defer srv.Close()
+			prior := testHandler.SlackSupport
+			testHandler.SlackSupport = &slack.SupportClient{APIURL: srv.URL + "/"}
+			defer func() { testHandler.SlackSupport = prior }()
+			for n := 0; n < 2; n++ {
+				if err := testHandler.finishSupportReaction(t.Context(), current, tc.outcome); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var status, state string
+			dbfx.QueryRow(t, `SELECT i.status,t.state FROM issue i JOIN slack_intake_thread t ON t.issue_id=i.id WHERE t.id=$1`, f.thread).Scan(&status, &state)
+			if status != tc.want {
+				t.Fatalf("want %s got %s", tc.want, status)
+			}
+			if tc.newer && state != "diagnosing" {
+				t.Fatal("old delivery overwrote new conversation")
+			}
+		})
+	}
+}
