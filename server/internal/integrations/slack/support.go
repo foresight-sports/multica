@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const supportProcessingEmoji = "male-detective"
+
 // SupportClient uses only the installation's encrypted bot credentials. Agent
 // tasks never receive Slack tokens or a general-purpose posting capability.
 type SupportClient struct {
@@ -81,9 +83,9 @@ func (s *SupportClient) Reaction(ctx context.Context, raw json.RawMessage, ch, t
 	}
 	item := slack.ItemRef{Channel: ch, Timestamp: ts}
 	if active {
-		e = c.AddReactionContext(ctx, "robot_face", item)
+		e = c.AddReactionContext(ctx, supportProcessingEmoji, item)
 	} else {
-		e = c.RemoveReactionContext(ctx, "robot_face", item)
+		e = c.RemoveReactionContext(ctx, supportProcessingEmoji, item)
 	}
 	if e != nil && (e.Error() == "already_reacted" || e.Error() == "no_reaction") {
 		return nil
