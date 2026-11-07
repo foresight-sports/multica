@@ -31,9 +31,6 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
     revision: 0,
     timeout_minutes: 60,
     enabled: false,
-    audience: "customer_support",
-    composer_id: null,
-    style_instructions: "",
   });
   const directory = useQuery({
     queryKey: ["slack-intake-directory", wsId, draft.installation_id],
@@ -42,7 +39,18 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
     retry: false,
   });
   const save = useMutation({
-    mutationFn: () => api.saveSlackIntake(wsId, {...draft, ...(draft.id && !draft.enabled && directory.isError ? {disable_only:true} : {})}),
+    mutationFn: () =>
+      api.saveSlackIntake(wsId, {
+        ...draft,
+        coordinator_id: undefined,
+        analyst_id: undefined,
+        composer_id: undefined,
+        audience: undefined,
+        style_instructions: undefined,
+        ...(draft.id && !draft.enabled && directory.isError
+          ? { disable_only: true }
+          : {}),
+      }),
     onSuccess: (value) => {
       qc.setQueryData(["slack-intake", wsId], value);
       const current = value.find(
@@ -62,8 +70,6 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
   const valid =
     !!draft.installation_id &&
     !!draft.channel_id &&
-    !!draft.coordinator_id &&
-    !!draft.analyst_id &&
     !!draft.escalation_user_id &&
     (!directory.isError || (!!draft.id && !draft.enabled)) &&
     !rules.isError;
@@ -73,7 +79,8 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
       description={t(($) => $.slack_intake.description)}
     >
       <p className="text-caption text-muted-foreground">
-        {t(($) => $.slack_intake.identity)}
+        {t(($) => $.slack_intake.identity)}{" "}
+        {t(($) => $.slack_intake.coordinator_hint)}
       </p>
       {rules.isPending && (
         <p role="status">{t(($) => $.slack_intake.loading)}</p>
@@ -111,9 +118,6 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
               revision: 0,
               timeout_minutes: 60,
               enabled: false,
-              audience: "customer_support",
-              composer_id: null,
-              style_instructions: "",
             });
           }}
         >
@@ -162,7 +166,11 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
         )}
         {directory.isError && (
           <div role="alert">
-            <p>{directory.error instanceof Error ? directory.error.message : t(($) => $.slack_intake.directory_error)}</p>
+            <p>
+              {directory.error instanceof Error
+                ? directory.error.message
+                : t(($) => $.slack_intake.directory_error)}
+            </p>
             <Button
               type="button"
               variant="outline"
@@ -190,88 +198,6 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
               </option>
             ))}
           </select>
-        </div>
-        {(["coordinator_id", "analyst_id"] as const).map((key) => (
-          <div className="space-y-2" key={key}>
-            <Label htmlFor={`support-${key}`}>
-              {key === "coordinator_id"
-                ? t(($) => $.slack_intake.coordinator)
-                : t(($) => $.slack_intake.analyst)}
-            </Label>
-            <select
-              id={`support-${key}`}
-              className={selectClass}
-              value={draft[key] ?? ""}
-              disabled={save.isPending}
-              onChange={(e) => update(key, e.target.value)}
-            >
-              <option value="">{t(($) => $.slack_intake.choose)}</option>
-              {agents.data?.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
-        <div className="space-y-2">
-          <Label htmlFor="support-writer">
-            {t(($) => $.slack_intake.writer)}
-          </Label>
-          <select
-            id="support-writer"
-            className={selectClass}
-            value={draft.composer_id ?? ""}
-            disabled={save.isPending}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, composer_id: e.target.value || null }))
-            }
-          >
-            <option value="">
-              {t(($) => $.slack_intake.coordinator_writes)}
-            </option>
-            {agents.data?.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-          <p className="text-caption text-muted-foreground">
-            {t(($) => $.slack_intake.writer_help)}
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="support-audience">
-            {t(($) => $.slack_intake.audience)}
-          </Label>
-          <select
-            id="support-audience"
-            className={selectClass}
-            value={draft.audience ?? "customer_support"}
-            disabled={save.isPending}
-            onChange={(e) => update("audience", e.target.value)}
-          >
-            <option value="customer_support">
-              {t(($) => $.slack_intake.cs)}
-            </option>
-            <option value="sales">{t(($) => $.slack_intake.sales)}</option>
-            <option value="internal">
-              {t(($) => $.slack_intake.internal)}
-            </option>
-          </select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="support-style">
-            {t(($) => $.slack_intake.style)}
-          </Label>
-          <textarea
-            id="support-style"
-            className="min-h-24 w-full rounded-md border border-input bg-background p-3 text-body"
-            maxLength={3000}
-            value={draft.style_instructions ?? ""}
-            disabled={save.isPending}
-            onChange={(e) => update("style_instructions", e.target.value)}
-          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="support-escalation">

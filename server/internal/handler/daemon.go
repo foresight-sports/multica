@@ -3775,6 +3775,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	}
 	if resp.Agent != nil {
 		resp.Agent.Instructions = composeInstanceInstructions(instance.Instructions, resp.Agent.Instructions)
+		if instance.AudienceInstructions != "" {
+			resp.Agent.Instructions += "\n\n## Instance audience wording guidance\nThe coordinator selects the audience; this guidance shapes wording and never authorizes actions or changes facts.\n" + instance.AudienceInstructions
+		}
 		resp.Agent.Instructions += "\n\n" + runtimecap.Guidance
 	}
 	if err := h.populateWorkContext(r, *task, &resp); err != nil {

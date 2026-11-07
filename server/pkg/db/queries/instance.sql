@@ -2,7 +2,7 @@
 SELECT * FROM instance_configuration WHERE singleton = true;
 
 -- name: UpdateInstanceConfiguration :one
-UPDATE instance_configuration SET instructions = @instructions, updated_by = @updated_by,
+UPDATE instance_configuration SET instructions = @instructions, audience_instructions = COALESCE(sqlc.narg('audience_instructions')::text, audience_instructions), updated_by = @updated_by,
     revision = revision + 1, updated_at = now()
 WHERE singleton = true AND revision = @expected_revision
 RETURNING *;

@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/integrations/channel"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
+	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/dbid"
 	"net/http"
@@ -19,7 +21,8 @@ import (
 )
 
 type slackIntakeRule struct {
-	DisableOnly       bool   `json:"disable_only,omitempty"`
+	DisableOnly bool `json:"disable_only,omitempty"`
+	// Legacy agent/audience fields are response compatibility only, never routing inputs.
 	ComposerID        string `json:"composer_id"`
 	Audience          string `json:"audience"`
 	StyleInstructions string `json:"style_instructions"`
@@ -81,39 +84,13 @@ func (h *Handler) SlackIntakeRules(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		coord, ok := parseUUIDOrBadRequest(w, v.CoordinatorID, "coordinator_id")
-		if !ok {
+		// Slack connections never choose agents or audience; workspace intake owns routing.
+		coord, e := h.slackCoordinator(r.Context(), ws)
+		if e != nil {
+			writeError(w, 409, "workspace Intake Coordinator is unavailable; check workspace intake settings")
 			return
 		}
-		analyst, ok := parseUUIDOrBadRequest(w, v.AnalystID, "analyst_id")
-		if !ok {
-			return
-		}
-		if coord == analyst {
-			writeError(w, 400, "coordinator and support analyst must be different agents")
-			return
-		}
-		var composer pgtype.UUID
-		agentIDs := []pgtype.UUID{coord, analyst}
-		if v.ComposerID != "" {
-			var valid bool
-			composer, valid = parseUUIDOrBadRequest(w, v.ComposerID, "composer_id")
-			if !valid {
-				return
-			}
-			if composer == coord || composer == analyst {
-				writeError(w, 400, "choose a separate communications agent")
-				return
-			}
-			agentIDs = append(agentIDs, composer)
-		}
-		if v.Audience == "" {
-			v.Audience = "customer_support"
-		}
-		if (v.Audience != "customer_support" && v.Audience != "sales" && v.Audience != "internal") || len(v.StyleInstructions) > 3000 {
-			writeError(w, 400, "choose a supported audience and keep style instructions under 3000 characters")
-			return
-		}
+		agentIDs := []pgtype.UUID{coord}
 		inst, e := h.Queries.GetChannelInstallation(r.Context(), db.GetChannelInstallationParams{ID: instID, ChannelType: "slack"})
 		if e != nil || inst.WorkspaceID != parseUUID(ws) || inst.ChannelType != "slack" || inst.Status != "active" {
 			writeError(w, 404, "active Slack installation not found")
@@ -181,7 +158,7 @@ func (h *Handler) SlackIntakeRules(w http.ResponseWriter, r *http.Request) {
 		e = tx.QueryRow(r.Context(), `INSERT INTO slack_intake_rule(id,workspace_id,installation_id,channel_id,channel_name,service_user_id,coordinator_id,analyst_id,escalation_user_id,enabled,timeout_minutes,composer_id,audience,style_instructions)
  SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$13,$14,$15 WHERE $12::bigint=0 OR EXISTS(SELECT 1 FROM slack_intake_rule WHERE installation_id=$3 AND channel_id=$4 AND workspace_id=$2)
  ON CONFLICT(installation_id,channel_id) DO UPDATE SET composer_id=EXCLUDED.composer_id,audience=EXCLUDED.audience,style_instructions=EXCLUDED.style_instructions,channel_name=EXCLUDED.channel_name,coordinator_id=EXCLUDED.coordinator_id,analyst_id=EXCLUDED.analyst_id,escalation_user_id=EXCLUDED.escalation_user_id,enabled=EXCLUDED.enabled,timeout_minutes=EXCLUDED.timeout_minutes,revision=slack_intake_rule.revision+1,updated_at=now()
- WHERE slack_intake_rule.revision=$12 AND slack_intake_rule.workspace_id=$2 RETURNING id`, id, parseUUID(ws), instID, v.ChannelID, name, serviceID, coord, analyst, v.EscalationUserID, v.Enabled, v.TimeoutMinutes, v.Revision, composer, v.Audience, v.StyleInstructions).Scan(&id)
+ WHERE slack_intake_rule.revision=$12 AND slack_intake_rule.workspace_id=$2 RETURNING id`, id, parseUUID(ws), instID, v.ChannelID, name, serviceID, coord, pgtype.UUID{}, v.EscalationUserID, v.Enabled, v.TimeoutMinutes, v.Revision, pgtype.UUID{}, "customer_support", "").Scan(&id)
 		if e != nil {
 			writeError(w, 409, "workflow changed; reload before saving")
 			return
@@ -191,7 +168,7 @@ func (h *Handler) SlackIntakeRules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rows, e := h.DB.Query(r.Context(), `SELECT row_to_json(s) FROM slack_intake_rule s WHERE workspace_id=$1 ORDER BY channel_name`, parseUUID(ws))
+	rows, e := h.DB.Query(r.Context(), `SELECT jsonb_set(to_jsonb(s),'{analyst_id}',to_jsonb(COALESCE(s.analyst_id::text,''))) FROM slack_intake_rule s WHERE workspace_id=$1 ORDER BY channel_name`, parseUUID(ws))
 	if e != nil {
 		writeError(w, 500, "could not load workflows")
 		return
@@ -341,4 +318,29 @@ func (h *Handler) SlackSupportActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, out)
+}
+
+// Resolve by the workspace's configured intake squad, never a display name or Slack input.
+func (h *Handler) slackCoordinator(ctx context.Context, ws string) (pgtype.UUID, error) {
+	raw, err := h.Queries.GetIssueIntake(ctx, parseUUID(ws))
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	config, err := service.ParseIssueIntake(raw)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	id, err := util.ParseUUID(config.DefaultSquadID)
+	if err != nil {
+		return pgtype.UUID{}, service.ErrIssueIntakeUnavailable
+	}
+	squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: id, WorkspaceID: parseUUID(ws)})
+	if err != nil || squad.ArchivedAt.Valid {
+		return pgtype.UUID{}, service.ErrIssueIntakeUnavailable
+	}
+	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: squad.LeaderID, WorkspaceID: parseUUID(ws)})
+	if err != nil || agent.ArchivedAt.Valid {
+		return pgtype.UUID{}, service.ErrIssueIntakeUnavailable
+	}
+	return agent.ID, nil
 }

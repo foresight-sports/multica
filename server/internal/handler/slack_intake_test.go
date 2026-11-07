@@ -24,6 +24,13 @@ func newSupportFixture(t *testing.T) supportFixture {
 		*dest = dbfx.Agent(t, fmt.Sprintf("Support test %d", i), testRuntimeID, testutil.Cols{"permission_mode": "public_to"})
 		dbfx.InsertNoID(t, "agent_invocation_target", testutil.Cols{"agent_id": *dest, "target_type": "workspace", "target_id": testWorkspaceID}, "agent_id=$1", *dest)
 	}
+	var previous []byte
+	dbfx.QueryRow(t, `SELECT issue_intake FROM workspace WHERE id=$1`, testWorkspaceID).Scan(&previous)
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `UPDATE workspace SET issue_intake=$2 WHERE id=$1`, testWorkspaceID, previous)
+	})
+	squad := dbfx.Squad(t, "Support intake", f.coord)
+	dbfx.Exec(t, `UPDATE workspace SET issue_intake=jsonb_build_object('revision',1,'default_squad_id',$2::text) WHERE id=$1`, testWorkspaceID, squad)
 	f.install = dbfx.Insert(t, "channel_installation", testutil.Cols{"workspace_id": testWorkspaceID, "agent_id": f.coord, "installer_user_id": testUserID, "channel_type": "slack", "status": "active", "config": testutil.Raw(`'{"app_id":"ASUPPORT","team_id":"TSUPPORT","bot_token_encrypted":"eG94Yi10ZXN0"}'::jsonb`)})
 	f.rule = dbfx.Insert(t, "slack_intake_rule", testutil.Cols{"id": uuidToString(dbid.NewV7()), "workspace_id": testWorkspaceID, "installation_id": f.install, "channel_id": "CSUPPORT", "channel_name": "support", "service_user_id": testUserID, "coordinator_id": f.coord, "analyst_id": f.analyst, "composer_id": f.writer, "escalation_user_id": "UKODY01", "enabled": true})
 	f.issue = dbfx.Issue(t, "Slack support", testutil.Cols{"creator_id": testUserID, "creator_type": "member", "assignee_type": "agent", "assignee_id": f.coord})
@@ -79,7 +86,7 @@ func TestSlackIntakeCaptureDeduplicatesAndScopes(t *testing.T) {
 		t.Fatal("deleted thread resurrected")
 	}
 }
-func TestSlackSupportWriterCannotPublishAndCoordinatorWaits(t *testing.T) {
+func TestSlackSupportCoordinatorChoosesDelegationAndWaits(t *testing.T) {
 	f := newSupportFixture(t)
 	task := dbfx.Task(t, f.coord, testutil.Cols{"issue_id": f.issue, "status": "running", "originator_user_id": testUserID, "accountable_user_id": testUserID, "runtime_id": testRuntimeID})
 	writerTask := dbfx.Task(t, f.writer, testutil.Cols{"issue_id": f.issue, "status": "running", "originator_user_id": testUserID, "accountable_user_id": testUserID, "runtime_id": testRuntimeID})
@@ -148,7 +155,7 @@ func TestSlackIntakeServiceIdentityAndDisableOffline(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id IN(SELECT user_id FROM automation_account WHERE workspace_id=$1)`, testWorkspaceID)
 		testPool.Exec(context.Background(), `DELETE FROM automation_account WHERE workspace_id=$1`, testWorkspaceID)
 	})
-	payload := map[string]any{"installation_id": f.install, "channel_id": "CNEW001", "coordinator_id": f.coord, "analyst_id": f.analyst, "composer_id": f.writer, "workflow": "support_diagnosis", "escalation_user_id": "UKODY01", "enabled": true, "revision": 0, "timeout_minutes": 60}
+	payload := map[string]any{"installation_id": f.install, "channel_id": "CNEW001", "coordinator_id": f.writer, "analyst_id": "invalid-legacy-value", "composer_id": "invalid-legacy-value", "workflow": "support_diagnosis", "escalation_user_id": "UKODY01", "enabled": true, "revision": 0, "timeout_minutes": 60}
 	call := func(want int) {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -158,6 +165,11 @@ func TestSlackIntakeServiceIdentityAndDisableOffline(t *testing.T) {
 		}
 	}
 	call(200)
+	var routed string
+	dbfx.QueryRow(t, `SELECT coordinator_id::text FROM slack_intake_rule WHERE workspace_id=$1 AND channel_id='CNEW001'`, testWorkspaceID).Scan(&routed)
+	if routed != f.coord {
+		t.Fatal("Slack payload overrode workspace intake coordinator")
+	}
 	var id, serviceID, name, email string
 	dbfx.QueryRow(t, `SELECT r.id::text,r.service_user_id::text,u.name,u.email FROM slack_intake_rule r JOIN "user" u ON u.id=r.service_user_id WHERE r.workspace_id=$1 AND r.channel_id='CNEW001'`, testWorkspaceID).Scan(&id, &serviceID, &name, &email)
 	if serviceID == testUserID || name != "FS Caddie" || !strings.HasSuffix(email, "@automation.multica.invalid") {
@@ -227,7 +239,8 @@ func TestSlackSupportWorkerCreatesOneAttributedInvestigation(t *testing.T) {
 
 func TestSlackSupportUncertainDeliveryReconcilesWithoutReposting(t *testing.T) {
 	f := newSupportFixture(t)
-	reply := dbfx.Insert(t, "slack_intake_reply", testutil.Cols{"id": uuidToString(dbid.NewV7()), "thread_id": f.thread, "revision": 1, "outcome": "answer", "confidence": .95, "body": "Finding", "evidence": "Evidence"})
+	task := dbfx.Task(t, f.coord, testutil.Cols{"issue_id": f.issue, "status": "completed", "runtime_id": testRuntimeID, "originator_user_id": testUserID, "accountable_user_id": testUserID})
+	reply := dbfx.Insert(t, "slack_intake_reply", testutil.Cols{"task_id": task, "id": uuidToString(dbid.NewV7()), "thread_id": f.thread, "revision": 1, "outcome": "answer", "confidence": .95, "body": "Finding", "evidence": "Evidence"})
 	posts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -262,5 +275,36 @@ func TestSlackSupportUncertainDeliveryReconcilesWithoutReposting(t *testing.T) {
 	}
 	if posts != 1 {
 		t.Fatal("disabled workflow posted")
+	}
+}
+
+func TestSlackSupportNoFixedAnalystWriterOrAudience(t *testing.T) {
+	f := newSupportFixture(t)
+	// Legacy selections can be unavailable: the coordinator owns replacement/delegation decisions.
+	dbfx.Exec(t, `UPDATE agent SET archived_at=now() WHERE id IN($1,$2)`, f.analyst, f.writer)
+	dbfx.Exec(t, `UPDATE slack_intake_rule SET coordinator_id=$2,audience='sales',style_instructions='obsolete channel wording' WHERE id=$1`, f.rule, f.writer)
+	current, err := testHandler.loadSupportThread(t.Context(), parseUUID(f.thread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Rule.CoordinatorID != f.coord || current.Rule.AnalystID != "" || current.Rule.ComposerID != "" || current.Rule.Audience != "" || current.Rule.StyleInstructions != "" {
+		t.Fatal("legacy channel settings still control loop")
+	}
+	task := dbfx.Task(t, f.coord, testutil.Cols{"issue_id": f.issue, "status": "running", "runtime_id": testRuntimeID, "originator_user_id": testUserID, "accountable_user_id": testUserID})
+	w := httptest.NewRecorder()
+	r := withURLParam(newRequest("POST", "/support-reply", map[string]any{"revision": 1, "outcome": "clarify", "confidence": .95, "body": "Which app version reproduced the issue?", "evidence": "The report lacks its app version; coordinator identified the specific missing fact."}), "id", f.issue)
+	r.Header.Set("X-Actor-Source", "task_token")
+	r.Header.Set("X-Task-ID", task)
+	r.Header.Set("X-Agent-ID", f.coord)
+	testHandler.SupportReply(w, r)
+	if w.Code != 200 {
+		t.Fatalf("coordinator required fixed agents: %d %s", w.Code, w.Body.String())
+	}
+}
+func TestSlackSupportMissingIntakeDoesNotUseLegacyAgent(t *testing.T) {
+	f := newSupportFixture(t)
+	dbfx.Exec(t, `UPDATE workspace SET issue_intake='{}' WHERE id=$1`, testWorkspaceID)
+	if _, err := testHandler.loadSupportThread(t.Context(), parseUUID(f.thread)); err == nil {
+		t.Fatal("missing coordinator fell back to channel agent")
 	}
 }

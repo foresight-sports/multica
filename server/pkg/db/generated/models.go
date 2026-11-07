@@ -808,11 +808,12 @@ type InstanceAgent struct {
 }
 
 type InstanceConfiguration struct {
-	Singleton    bool               `json:"singleton"`
-	Instructions string             `json:"instructions"`
-	Revision     int64              `json:"revision"`
-	UpdatedBy    pgtype.UUID        `json:"updated_by"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	Singleton            bool               `json:"singleton"`
+	Instructions         string             `json:"instructions"`
+	Revision             int64              `json:"revision"`
+	UpdatedBy            pgtype.UUID        `json:"updated_by"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	AudienceInstructions string             `json:"audience_instructions"`
 }
 
 type InstanceTelemetryState struct {

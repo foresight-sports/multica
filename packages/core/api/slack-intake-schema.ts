@@ -8,12 +8,10 @@ export const SlackIntakeRuleSchema = z.object({
   workflow: z.literal("support_diagnosis"),
   service_user_id: z.string(),
   composer_id: z.string().nullable().default(null),
-  audience: z
-    .enum(["customer_support", "sales", "internal"])
-    .default("customer_support"),
+  audience: z.string().optional(),
   style_instructions: z.string().default(""),
-  coordinator_id: z.string(),
-  analyst_id: z.string(),
+  coordinator_id: z.string().nullable().optional(),
+  analyst_id: z.string().nullable().optional(),
   escalation_user_id: z.string(),
   enabled: z.boolean(),
   revision: z.number().int(),

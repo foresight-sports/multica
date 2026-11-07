@@ -20,8 +20,9 @@ import (
 const maxInstanceInstructions = 100000
 
 type InstanceConfigurationResponse struct {
-	Instructions string `json:"instructions"`
-	Revision     int64  `json:"revision"`
+	AudienceInstructions string `json:"audience_instructions"`
+	Instructions         string `json:"instructions"`
+	Revision             int64  `json:"revision"`
 }
 
 type InstanceAgentResponse struct {
@@ -50,7 +51,7 @@ func (h *Handler) GetInstanceConfiguration(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, InstanceConfigurationResponse{cfg.Instructions, cfg.Revision})
+	writeJSON(w, 200, InstanceConfigurationResponse{Instructions: cfg.Instructions, AudienceInstructions: cfg.AudienceInstructions, Revision: cfg.Revision})
 }
 
 func (h *Handler) UpdateInstanceConfiguration(w http.ResponseWriter, r *http.Request) {
@@ -58,22 +59,31 @@ func (h *Handler) UpdateInstanceConfiguration(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	var req InstanceConfigurationResponse
+	var req struct {
+		Instructions         string  `json:"instructions"`
+		AudienceInstructions *string `json:"audience_instructions"`
+		Revision             int64   `json:"revision"`
+	}
 	if !decodeInstanceBody(w, r, &req) {
 		return
 	}
-	if req.Revision < 1 || utf8.RuneCountInString(req.Instructions) > maxInstanceInstructions {
-		writeError(w, 400, "a valid revision and instructions up to 100000 characters are required")
+	if req.Revision < 1 || utf8.RuneCountInString(req.Instructions) > maxInstanceInstructions || (req.AudienceInstructions != nil && utf8.RuneCountInString(*req.AudienceInstructions) > 10000) {
+		writeError(w, 400, "a valid revision, instructions up to 100000 characters and audience wording up to 10000 characters are required")
 		return
 	}
 	cfg, err := h.Queries.UpdateInstanceConfiguration(r.Context(), db.UpdateInstanceConfigurationParams{
-		Instructions: req.Instructions, UpdatedBy: actor, ExpectedRevision: req.Revision,
+		AudienceInstructions: func() pgtype.Text {
+			if req.AudienceInstructions == nil {
+				return pgtype.Text{}
+			}
+			return pgtype.Text{String: *req.AudienceInstructions, Valid: true}
+		}(), Instructions: req.Instructions, UpdatedBy: actor, ExpectedRevision: req.Revision,
 	})
 	if err != nil {
 		instanceWriteError(w, err)
 		return
 	}
-	writeJSON(w, 200, InstanceConfigurationResponse{cfg.Instructions, cfg.Revision})
+	writeJSON(w, 200, InstanceConfigurationResponse{Instructions: cfg.Instructions, AudienceInstructions: cfg.AudienceInstructions, Revision: cfg.Revision})
 }
 
 func decodeInstanceBody(w http.ResponseWriter, r *http.Request, dest any) bool {

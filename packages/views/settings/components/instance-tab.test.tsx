@@ -48,7 +48,7 @@ describe("instance settings", () => {
     renderPage();
     fireEvent.change(await screen.findByRole("textbox", { name: "Instance instructions" }), { target: { value: "New policy" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ instructions: "New policy", revision: 2 }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ instructions: "New policy", audience_instructions:"", revision: 2 }));
     expect(await screen.findByRole("alert")).toHaveTextContent("reload before saving");
     expect(screen.getByRole("textbox", { name: "Instance instructions" })).toHaveValue("New policy");
   });
@@ -67,6 +67,7 @@ describe("instance settings", () => {
     useAuthStore.setState({ user: { ...EMPTY_USER, id: "member", permissions: { register_runtimes: false, manage_permission_access: false } } });
     renderPage();
     expect(await screen.findByRole("textbox", { name: "Instance instructions" })).toHaveAttribute("readonly");
+    expect(screen.getByRole("textbox", {name:"Audience wording"})).toHaveAttribute("readonly");
     expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create instance agent" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Disable" })).not.toBeInTheDocument(); expect(mocks.members).not.toHaveBeenCalled();
@@ -77,4 +78,14 @@ describe("instance settings", () => {
     expect(screen.getByText("Use the normal agent creation flow and select Instance agent in the configuration panel.")).toBeInTheDocument();
     expect(mocks.create).not.toHaveBeenCalled();
   });
+});
+it("saves audience wording centrally with the instance revision",async()=>{
+ mocks.save.mockRejectedValue(new Error("Configuration changed; reload before saving"));
+ renderPage();
+ const field=await screen.findByRole("textbox",{name:"Audience wording"});
+ fireEvent.change(field,{target:{value:"Sales: explain verified impact without promises."}});
+ fireEvent.click(screen.getByRole("button",{name:"Save changes"}));
+ await waitFor(()=>expect(mocks.save).toHaveBeenCalledWith({instructions:"Old policy",audience_instructions:"Sales: explain verified impact without promises.",revision:2}));
+ expect(await screen.findByRole("alert")).toHaveTextContent("reload before saving");
+ expect(field).toHaveValue("Sales: explain verified impact without promises.");
 });

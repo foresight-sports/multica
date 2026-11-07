@@ -9,6 +9,7 @@ export type InstanceMembers = z.infer<typeof InstanceMembersSchema>;
 
 export const InstanceConfigurationSchema = z.object({
   instructions: z.string(),
+  audience_instructions: z.string().optional(),
   revision: z.number().int().positive(),
 });
 export type InstanceConfiguration = z.infer<typeof InstanceConfigurationSchema>;

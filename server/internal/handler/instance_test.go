@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgtype"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -174,9 +175,12 @@ func TestInstanceConfigurationPermissionsAndRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), "UPDATE instance_configuration SET instructions=$1, revision=$2 WHERE singleton", old.Instructions, old.Revision)
+		testPool.Exec(context.Background(), "UPDATE instance_configuration SET instructions=$1, revision=$2, audience_instructions=$3 WHERE singleton", old.Instructions, old.Revision, old.AudienceInstructions)
 	})
-	req := InstanceConfigurationResponse{Instructions: "Always report test results.", Revision: old.Revision}
+	req := struct {
+		Instructions string `json:"instructions"`
+		Revision     int64  `json:"revision"`
+	}{Instructions: "Always report test results.", Revision: old.Revision}
 	testutil.Call(t, h.UpdateInstanceConfiguration, newRequest("PUT", "/api/instance/configuration", req)).Want(403)
 	h.cfg.PermissionManagerEmails = []string{handlerTestEmail}
 	var saved InstanceConfigurationResponse
@@ -279,11 +283,11 @@ func TestInstanceInstructionsReachClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), "UPDATE instance_configuration SET instructions=$1, revision=$2 WHERE singleton", old.Instructions, old.Revision)
+		testPool.Exec(context.Background(), "UPDATE instance_configuration SET instructions=$1, revision=$2, audience_instructions=$3 WHERE singleton", old.Instructions, old.Revision, old.AudienceInstructions)
 	})
 	for index, text := range []string{"Instance policy first revision.", "Instance policy second revision."} {
 		_, err := testHandler.Queries.UpdateInstanceConfiguration(t.Context(), db.UpdateInstanceConfigurationParams{
-			Instructions: text, UpdatedBy: parseUUID(testUserID), ExpectedRevision: old.Revision,
+			AudienceInstructions: pgtype.Text{String: "Audience guidance: " + text, Valid: true}, Instructions: text, UpdatedBy: parseUUID(testUserID), ExpectedRevision: old.Revision,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -300,7 +304,7 @@ func TestInstanceInstructionsReachClaim(t *testing.T) {
 			Task *AgentTaskResponse `json:"task"`
 		}
 		testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(200).JSON(&response)
-		if response.Task == nil || response.Task.Agent == nil || !strings.Contains(response.Task.Agent.Instructions, text) {
+		if response.Task == nil || response.Task.Agent == nil || (!strings.Contains(response.Task.Agent.Instructions, text) || !strings.Contains(response.Task.Agent.Instructions, "Audience guidance: "+text)) {
 			t.Fatalf("missing instance instructions: %+v", response.Task)
 		}
 	}
@@ -329,5 +333,31 @@ func TestInstanceInstructionsMissingPreventLaunch(t *testing.T) {
 	dbfx.QueryRow(t, "SELECT status FROM agent_task_queue WHERE id=$1", taskID).Scan(&status)
 	if status != "queued" {
 		t.Fatalf("missing policy must requeue, got %q", status)
+	}
+}
+
+func TestInstanceAudienceWordingPermissionsRevisionAndLegacyClient(t *testing.T) {
+	h := *testHandler
+	old, err := h.Queries.GetInstanceConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `UPDATE instance_configuration SET instructions=$1,audience_instructions=$2,revision=$3 WHERE singleton`, old.Instructions, old.AudienceInstructions, old.Revision)
+	})
+	payload := map[string]any{"instructions": old.Instructions, "audience_instructions": "Sales: preserve verified limitations.", "revision": old.Revision}
+	testutil.Call(t, h.UpdateInstanceConfiguration, newRequest("PUT", "/configuration", payload)).Want(403)
+	h.cfg.PermissionManagerEmails = []string{handlerTestEmail}
+	var saved InstanceConfigurationResponse
+	testutil.Call(t, h.UpdateInstanceConfiguration, newRequest("PUT", "/configuration", payload)).Want(200).JSON(&saved)
+	if saved.AudienceInstructions != "Sales: preserve verified limitations." {
+		t.Fatal("wording not saved")
+	}
+	testutil.Call(t, h.UpdateInstanceConfiguration, newRequest("PUT", "/configuration", payload)).Want(409)
+	delete(payload, "audience_instructions")
+	payload["revision"] = saved.Revision
+	testutil.Call(t, h.UpdateInstanceConfiguration, newRequest("PUT", "/configuration", payload)).Want(200).JSON(&saved)
+	if saved.AudienceInstructions != "Sales: preserve verified limitations." {
+		t.Fatal("older client erased shared wording")
 	}
 }

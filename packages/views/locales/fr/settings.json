@@ -1483,7 +1483,9 @@
     "configure": "Configure instance agent",
     "runtime_required": "The central runtime needs configuration by an instance administrator.",
     "managed": "This agent is configured centrally. Runtime, model, skills and access are shared from its original workspace. Name, description and instructions are managed in Settings → Instance.",
-    "agents_nav": "Agents"
+    "agents_nav": "Agents",
+    "audience_wording": "Formulation par public",
+    "audience_wording_hint": "Le coordinateur choisit le public et les agents. Définissez ici les consignes communes pour le support, les ventes et les autres publics, dans tous les espaces et canaux."
   },
   "permission_access": {
     "scope": "All workspaces",
@@ -1628,6 +1630,7 @@
     "save": "Enregistrer le flux",
     "activity": "Activité récente",
     "activity_error": "Impossible de charger l’activité.",
-    "empty": "Aucun message reçu pour ces flux."
+    "empty": "Aucun message reçu pour ces flux.",
+    "coordinator_hint": "Le coordinateur de réception choisit les agents, les prochaines étapes et le public. Gérez les consignes communes dans Instance → Général."
   }
 }

@@ -1483,7 +1483,9 @@
     "configure": "Configure instance agent",
     "runtime_required": "The central runtime needs configuration by an instance administrator.",
     "managed": "This agent is configured centrally. Runtime, model, skills and access are shared from its original workspace. Name, description and instructions are managed in Settings → Instance.",
-    "agents_nav": "Agents"
+    "agents_nav": "Agents",
+    "audience_wording": "Audience wording",
+    "audience_wording_hint": "The coordinator chooses the audience and agents. Define shared wording guidance for CS, sales and other audiences here; it applies across workspaces and channels."
   },
   "permission_access": {
     "scope": "All workspaces",
@@ -1658,6 +1660,7 @@
     "save": "Save workflow",
     "activity": "Recent intake activity",
     "activity_error": "Could not load intake activity.",
-    "empty": "No messages have been received for these workflows."
+    "empty": "No messages have been received for these workflows.",
+    "coordinator_hint": "The workspace Intake Coordinator chooses the agents, next steps and audience. Manage shared audience wording in Instance → General."
   }
 }

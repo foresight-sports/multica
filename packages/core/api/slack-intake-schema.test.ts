@@ -28,7 +28,7 @@ describe("Slack support API contract", () => {
       SlackIntakeRulesSchema.safeParse([{ ...rule, revision: 1.5 }]).success,
     ).toBe(false);
     expect(
-      SlackIntakeRulesSchema.safeParse([{ ...rule, audience: "unknown" }])
+      SlackIntakeRulesSchema.safeParse([{ ...rule, analyst_id: 123 }])
         .success,
     ).toBe(false);
   });

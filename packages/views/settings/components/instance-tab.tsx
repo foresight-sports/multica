@@ -108,14 +108,20 @@ function MembershipRow({ userId, memberId, workspace, currentRole }: {
 function InstructionsEditor({ config, userId, canManage }: { config: InstanceConfiguration; userId: string; canManage: boolean }) {
   const { t } = useT("settings");
   const [instructions, setInstructions] = useState(config.instructions);
+  const [audienceInstructions,setAudienceInstructions]=useState(config.audience_instructions??"");
   const save = useUpdateInstanceConfiguration(userId);
   return <SettingsSection title={t(($) => $.instance.instructions)} description={t(($) => $.instance.instructions_hint)}>
     <SettingsCard>
-      <form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); save.mutate({ instructions, revision: config.revision }, { onSuccess: () => toast.success(t(($) => $.instance.saved)) }); }}>
+      <form className="space-y-4 p-5" onSubmit={(e) => { e.preventDefault(); save.mutate({ instructions, audience_instructions:audienceInstructions, revision: config.revision }, { onSuccess: () => toast.success(t(($) => $.instance.saved)) }); }}>
         <label htmlFor="instance-instructions" className="text-body font-medium">{t(($) => $.instance.instructions)}</label>
         <Textarea id="instance-instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={9} maxLength={100000} readOnly={!canManage} disabled={save.isPending} />
+        <div className="space-y-2">
+          <label htmlFor="instance-audience-wording" className="text-body font-medium">{t(($)=>$.instance.audience_wording)}</label>
+          <p className="text-caption text-muted-foreground">{t(($)=>$.instance.audience_wording_hint)}</p>
+          <Textarea id="instance-audience-wording" value={audienceInstructions} onChange={(e)=>setAudienceInstructions(e.target.value)} rows={10} maxLength={10000} readOnly={!canManage} disabled={save.isPending}/>
+        </div>
         {save.error && <p role="alert" className="text-destructive">{save.error.message}</p>}
-        {canManage && <Button type="submit" disabled={save.isPending || instructions === config.instructions}>{t(($) => save.isPending ? $.instance.saving : $.instance.save)}</Button>}
+        {canManage && <Button type="submit" disabled={save.isPending || (instructions === config.instructions && audienceInstructions===(config.audience_instructions??""))}>{t(($) => save.isPending ? $.instance.saving : $.instance.save)}</Button>}
       </form>
     </SettingsCard>
   </SettingsSection>;

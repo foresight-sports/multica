@@ -65,7 +65,7 @@ func (q *Queries) GetInstanceAgent(ctx context.Context, id pgtype.UUID) (Instanc
 }
 
 const getInstanceConfiguration = `-- name: GetInstanceConfiguration :one
-SELECT singleton, instructions, revision, updated_by, updated_at FROM instance_configuration WHERE singleton = true
+SELECT singleton, instructions, revision, updated_by, updated_at, audience_instructions FROM instance_configuration WHERE singleton = true
 `
 
 func (q *Queries) GetInstanceConfiguration(ctx context.Context) (InstanceConfiguration, error) {
@@ -77,6 +77,7 @@ func (q *Queries) GetInstanceConfiguration(ctx context.Context) (InstanceConfigu
 		&i.Revision,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.AudienceInstructions,
 	)
 	return i, err
 }
@@ -517,20 +518,26 @@ func (q *Queries) UpdateInstanceAgentBindings(ctx context.Context, arg UpdateIns
 }
 
 const updateInstanceConfiguration = `-- name: UpdateInstanceConfiguration :one
-UPDATE instance_configuration SET instructions = $1, updated_by = $2,
+UPDATE instance_configuration SET instructions = $1, audience_instructions = COALESCE($2::text, audience_instructions), updated_by = $3,
     revision = revision + 1, updated_at = now()
-WHERE singleton = true AND revision = $3
-RETURNING singleton, instructions, revision, updated_by, updated_at
+WHERE singleton = true AND revision = $4
+RETURNING singleton, instructions, revision, updated_by, updated_at, audience_instructions
 `
 
 type UpdateInstanceConfigurationParams struct {
-	Instructions     string      `json:"instructions"`
-	UpdatedBy        pgtype.UUID `json:"updated_by"`
-	ExpectedRevision int64       `json:"expected_revision"`
+	Instructions         string      `json:"instructions"`
+	AudienceInstructions pgtype.Text `json:"audience_instructions"`
+	UpdatedBy            pgtype.UUID `json:"updated_by"`
+	ExpectedRevision     int64       `json:"expected_revision"`
 }
 
 func (q *Queries) UpdateInstanceConfiguration(ctx context.Context, arg UpdateInstanceConfigurationParams) (InstanceConfiguration, error) {
-	row := q.db.QueryRow(ctx, updateInstanceConfiguration, arg.Instructions, arg.UpdatedBy, arg.ExpectedRevision)
+	row := q.db.QueryRow(ctx, updateInstanceConfiguration,
+		arg.Instructions,
+		arg.AudienceInstructions,
+		arg.UpdatedBy,
+		arg.ExpectedRevision,
+	)
 	var i InstanceConfiguration
 	err := row.Scan(
 		&i.Singleton,
@@ -538,6 +545,7 @@ func (q *Queries) UpdateInstanceConfiguration(ctx context.Context, arg UpdateIns
 		&i.Revision,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.AudienceInstructions,
 	)
 	return i, err
 }
