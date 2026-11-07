@@ -37,6 +37,7 @@ import (
 // (mirroring Feishu's app_secret_encrypted). Both are pasted by the admin at
 // BYO install time.
 type installConfig struct {
+	InboundMode       string `json:"inbound_mode,omitempty"`
 	AppID             string `json:"app_id"`
 	TeamID            string `json:"team_id,omitempty"`
 	BotUserID         string `json:"bot_user_id,omitempty"`
@@ -87,9 +88,10 @@ func decodeCredentials(raw json.RawMessage, decrypt Decrypter) (credentials, err
 // PublicConfig is the non-secret subset of an installation config, safe to
 // surface on the management API (the encrypted bot token is never included).
 type PublicConfig struct {
-	AppID     string
-	TeamID    string
-	BotUserID string
+	InboundMode string
+	AppID       string
+	TeamID      string
+	BotUserID   string
 }
 
 // DecodePublicConfig extracts the display-safe fields from a stored config blob.
@@ -102,7 +104,11 @@ func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 	if teamID == "" {
 		teamID = cfg.AppID
 	}
-	return PublicConfig{AppID: cfg.AppID, TeamID: teamID, BotUserID: cfg.BotUserID}
+	mode := cfg.InboundMode
+	if mode == "" {
+		mode = "socket_mode"
+	}
+	return PublicConfig{AppID: cfg.AppID, TeamID: teamID, BotUserID: cfg.BotUserID, InboundMode: mode}
 }
 
 // decryptToken base64-decodes the stored ciphertext (tolerating the MIME

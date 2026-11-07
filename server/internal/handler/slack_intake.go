@@ -215,15 +215,29 @@ func (h *Handler) CaptureSlackIntake(ctx context.Context, msg channel.InboundMes
 	if len(msg.Text) > 200000 || len(msg.Raw) > 2000000 {
 		return true, fmt.Errorf("Slack intake message exceeds size limit")
 	}
-	root := msg.Source.ThreadID
-	if root == "" {
-		root = msg.MessageID
-	}
 	tx, e := h.TxStarter.Begin(ctx)
 	if e != nil {
 		return true, e
 	}
 	defer tx.Rollback(ctx)
+	e = captureSlackIntakeTx(ctx, tx, msg, ruleID, ws)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return true, nil
+	}
+	if e != nil {
+		return true, e
+	}
+	return true, tx.Commit(ctx)
+}
+
+// Relay intake shares the exact issue/reaction/outbound pipeline. The caller
+// commits the relay receipt and intake message in the same transaction.
+func captureSlackIntakeTx(ctx context.Context, tx pgx.Tx, msg channel.InboundMessage, ruleID, ws pgtype.UUID) error {
+	root := msg.Source.ThreadID
+	if root == "" {
+		root = msg.MessageID
+	}
+	var e error
 	var thread pgtype.UUID
 	if root == msg.MessageID {
 		e = tx.QueryRow(ctx, `INSERT INTO slack_intake_thread(id,rule_id,workspace_id,root_ts) VALUES($1,$2,$3,$4) ON CONFLICT(rule_id,root_ts) DO UPDATE SET rule_id=EXCLUDED.rule_id RETURNING id`, dbid.NewV7(), ruleID, ws, root).Scan(&thread)
@@ -231,29 +245,43 @@ func (h *Handler) CaptureSlackIntake(ctx context.Context, msg channel.InboundMes
 		e = tx.QueryRow(ctx, `SELECT id FROM slack_intake_thread WHERE rule_id=$1 AND root_ts=$2 FOR UPDATE`, ruleID, root).Scan(&thread)
 	}
 	if errors.Is(e, pgx.ErrNoRows) {
-		return true, nil
+		return pgx.ErrNoRows
 	}
 	if e != nil {
-		return true, e
+		return e
 	}
 	var state string
 	if e = tx.QueryRow(ctx, `SELECT state FROM slack_intake_thread WHERE id=$1`, thread).Scan(&state); e != nil {
-		return true, e
+		return e
 	}
 	if state == "deleted" {
-		return true, nil
+		return nil
+	}
+	var previousRaw []byte
+	e = tx.QueryRow(ctx, `SELECT raw FROM slack_intake_message WHERE rule_id=$1 AND message_ts=$2`, ruleID, msg.MessageID).Scan(&previousRaw)
+	if e == nil {
+		previous := msg
+		previous.Raw = previousRaw
+		enriched, changed := slack.EnrichRelayMessage(previous, msg)
+		if changed {
+			_, e = tx.Exec(ctx, `UPDATE slack_intake_message SET raw=$3 WHERE rule_id=$1 AND message_ts=$2`, ruleID, msg.MessageID, enriched.Raw)
+		}
+		return e
+	}
+	if !errors.Is(e, pgx.ErrNoRows) {
+		return e
 	}
 	tag, e := tx.Exec(ctx, `INSERT INTO slack_intake_message(id,thread_id,rule_id,message_ts,sender_id,body,raw) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(rule_id,message_ts) DO NOTHING`, dbid.NewV7(), thread, ruleID, msg.MessageID, msg.Source.SenderID, strings.TrimSpace(msg.Text), msg.Raw)
 	if e != nil {
-		return true, e
+		return e
 	}
 	if tag.RowsAffected() > 0 {
 		_, e = tx.Exec(ctx, `UPDATE slack_intake_thread SET revision=revision+1,state='pending',updated_at=now(),last_error='' WHERE id=$1`, thread)
 		if e != nil {
-			return true, e
+			return e
 		}
 	}
-	return true, tx.Commit(ctx)
+	return nil
 }
 func (h *Handler) SlackSupportDirectory(w http.ResponseWriter, r *http.Request) {
 	ws := workspaceIDFromURL(r, "id")

@@ -862,6 +862,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// with that installation's OWN app-level token (xapp-, pasted at BYO
 			// install) — no deployment-level app token, no single connection.
 			h.SlackSupport = &slack.SupportClient{Decrypt: box.Open}
+			relayCredentials, relayErr := slack.LoadRelayCredentials()
+			if relayErr != nil {
+				slog.Error("Slack relay disabled: invalid server secret file; existing relay installations remain socket-disabled")
+			} else {
+				h.SlackRelayCredentials = relayCredentials
+			}
 			slack.RegisterSlack(channelRegistry, slack.ChannelDeps{Decrypt: box.Open, Logger: slog.Default(), Slash: slackSlash, Capture: h.CaptureSlackIntake})
 
 			// BYO self-serve install (paste bot token + app-level token). The
@@ -1535,6 +1541,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// GitHub App webhook (no Multica auth — requests are authenticated via
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
 	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
+	r.Post("/api/slack/relay/{installationId}/events", h.ReceiveSlackRelay)
+	r.Get("/api/slack/relay/{installationId}/routes", h.SlackRelayRoutes)
 	r.Get("/api/github/setup", h.GitHubSetupCallback)
 	// Slack OAuth callback (no Multica auth in the path — it is hit by Slack's
 	// browser redirect; the workspace/agent/initiator are recovered from the
@@ -1894,6 +1902,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/slack/intake", h.SlackIntakeRules)
 					r.Get("/slack/intake-directory", h.SlackSupportDirectory)
 					r.Get("/slack/intake-activity", h.SlackSupportActivity)
+					r.With(handler.RequireHumanActor).Get("/slack/relay", h.SlackRelayStatus)
+					r.With(handler.RequireHumanActor).Put("/slack/installations/{installationId}/inbound-mode", h.SetSlackInboundMode)
+					r.With(handler.RequireHumanActor).Get("/slack/installations/{installationId}/relay-preflight", h.SlackRelayPreflight)
+					r.With(handler.RequireHumanActor).Post("/slack/relay/{receiptId}/replay", h.ReplaySlackRelay)
 					r.With(handler.RequireHumanActor).Put("/slack/intake", h.SlackIntakeRules)
 					r.Get("/slack/installations", h.ListSlackInstallations)
 					r.Get("/wecom/installations", h.ListWecomInstallations)

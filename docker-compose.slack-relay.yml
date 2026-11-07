@@ -1,0 +1,13 @@
+# Optional overlay for docker-compose.selfhost.yml. Enabling the credential
+# mount does not change any installation's explicit inbound mode.
+services:
+  backend:
+    environment:
+      MULTICA_SLACK_RELAY_CONFIG_FILE: /run/secrets/multica-slack-relay.json
+    volumes:
+      - type: bind
+        source: ${MULTICA_SLACK_RELAY_SECRET_FILE:?Set the operator-managed absolute relay credential file path}
+        target: /run/secrets/multica-slack-relay.json
+        read_only: true
+        bind:
+          create_host_path: false

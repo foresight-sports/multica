@@ -16,6 +16,7 @@ const save = vi.hoisted(() => vi.fn(async () => []));
 vi.mock("@multica/core/api", () => ({
   api: {
     getSlackIntake: async () => [],
+    getSlackRelayStatus: async () => ({ installations: [], counts: {}, recent: [] }),
     getSlackSupportActivity: async () => [],
     getSlackSupportDirectory: directory,
     saveSlackIntake: save,

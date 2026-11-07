@@ -1652,5 +1652,28 @@
     "activity_error": "无法加载接收记录。",
     "empty": "尚未收到这些工作流的消息。",
     "coordinator_hint": "工作区接收协调员选择智能体、后续步骤和受众。请在“实例 → 常规”中管理共用措辞指引。"
+  },
+  "slack_relay": {
+    "connected": "中继连接正常",
+    "stale": "最近 90 秒没有经过认证的中继连接。请检查 Onyx 中继工作进程和网络连接。",
+    "title": "共享 Slack 应用中继",
+    "pending": "已排队",
+    "waiting_root": "等待根消息",
+    "delivered": "已交给接收流程",
+    "held_disabled": "已暂存：工作流已停用",
+    "failed": "需要处理",
+    "onyx": "由 Onyx 处理",
+    "ignored": "已忽略系统或机器人事件",
+    "relay_mode": "从 Onyx 中继",
+    "socket_mode": "Socket Mode",
+    "unknown": "状态未知",
+    "load_error": "无法获取中继状态。请检查服务器连接和版本，然后重试。",
+    "config_error": "中继已阻止。请让运维人员检查安装配置和服务器凭据绑定。",
+    "counts": "排队：{{queued}} · 暂存：{{held}} · 待处理：{{failed}}",
+    "empty": "暂无中继回执。请先完成协调切换，再测试 Slack 投递。",
+    "attempts": "接收尝试：{{count}}",
+    "held_hint": "启用原工作流后重放此回执。Onyx 不会回答这条消息。",
+    "replay": "重放回执",
+    "replay_queued": "重放已排队。接收工作进程处理后会显示投递结果。"
   }
 }

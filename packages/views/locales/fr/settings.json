@@ -1632,5 +1632,28 @@
     "activity_error": "Impossible de charger l’activité.",
     "empty": "Aucun message reçu pour ces flux.",
     "coordinator_hint": "Le coordinateur de réception choisit les agents, les prochaines étapes et le public. Gérez les consignes communes dans Instance → Général."
+  },
+  "slack_relay": {
+    "connected": "Contact du relais à jour",
+    "stale": "Aucun contact authentifié depuis 90 secondes. Vérifiez le processus de relais Onyx et la connexion.",
+    "title": "Relais de l’application Slack partagée",
+    "pending": "En attente",
+    "waiting_root": "En attente du message initial",
+    "delivered": "Transmis à la réception",
+    "held_disabled": "Suspendu : workflow désactivé",
+    "failed": "Action requise",
+    "onyx": "Traité par Onyx",
+    "ignored": "Événement système ou bot ignoré",
+    "relay_mode": "Relais depuis Onyx",
+    "socket_mode": "Socket Mode",
+    "unknown": "État inconnu",
+    "load_error": "État du relais indisponible. Vérifiez la connexion et la version du serveur, puis réessayez.",
+    "config_error": "Relais bloqué. Demandez à l’opérateur de vérifier l’installation et les identifiants du serveur.",
+    "counts": "En attente : {{queued}} · Suspendus : {{held}} · Action requise : {{failed}}",
+    "empty": "Aucun accusé de réception. Terminez la bascule coordonnée avant de tester Slack.",
+    "attempts": "Tentatives de réception : {{count}}",
+    "held_hint": "Activez le workflow d’origine, puis relancez cet accusé. Onyx ne répondra pas à ce message.",
+    "replay": "Relancer la réception",
+    "replay_queued": "Relance en attente. Le résultat apparaîtra après le traitement."
   }
 }

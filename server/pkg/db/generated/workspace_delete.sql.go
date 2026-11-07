@@ -219,6 +219,15 @@ deleted_dingtalk_group_presence AS (
 deleted_dingtalk_bot_identity AS (
     DELETE FROM dingtalk_bot_identity WHERE workspace_id = $1
 ),
+deleted_slack_relay_nonces AS (
+    DELETE FROM slack_relay_nonce WHERE installation_id IN (SELECT id FROM channel_installation WHERE workspace_id=$1)
+),
+deleted_slack_relay_receipts AS (
+    DELETE FROM slack_relay_receipt WHERE workspace_id=$1
+),
+deleted_slack_relay_health AS (
+    DELETE FROM slack_relay_health WHERE workspace_id=$1
+),
 deleted_channel_installations AS (
     DELETE FROM channel_installation
     WHERE channel_installation.workspace_id = $1

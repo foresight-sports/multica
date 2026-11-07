@@ -1662,5 +1662,28 @@
     "activity_error": "Could not load intake activity.",
     "empty": "No messages have been received for these workflows.",
     "coordinator_hint": "The workspace Intake Coordinator chooses the agents, next steps and audience. Manage shared audience wording in Instance → General."
+  },
+  "slack_relay": {
+    "connected": "Relay contact is current",
+    "stale": "No authenticated relay contact in the last 90 seconds. Check the Onyx relay worker and connectivity.",
+    "title": "Shared Slack app relay",
+    "pending": "Queued",
+    "waiting_root": "Waiting for the root message",
+    "delivered": "Delivered to intake",
+    "held_disabled": "Held: workflow disabled",
+    "failed": "Needs attention",
+    "onyx": "Owned by Onyx",
+    "ignored": "Ignored system or bot event",
+    "relay_mode": "Relay from Onyx",
+    "socket_mode": "Socket Mode",
+    "unknown": "Unknown status",
+    "load_error": "Relay status is unavailable. Check the server connection and version, then retry.",
+    "config_error": "Relay is blocked. Ask the operator to check the installation and server credential binding.",
+    "counts": "Queued: {{queued}} · Held: {{held}} · Needs attention: {{failed}}",
+    "empty": "No relay receipts yet. Complete the coordinated cutover before testing Slack delivery.",
+    "attempts": "Intake attempts: {{count}}",
+    "held_hint": "Enable the original workflow, then replay this receipt. Onyx will not answer it.",
+    "replay": "Replay receipt",
+    "replay_queued": "Replay queued. Delivery will appear after the intake worker processes it."
   }
 }

@@ -328,8 +328,9 @@ type Handler struct {
 	// SlackInstall owns the bring-your-own-app Slack install lifecycle (register
 	// pasted tokens / list / revoke) and the at-rest encryption of each app's bot
 	// + app tokens (MUL-3666). Nil unless MULTICA_SLACK_SECRET_KEY is set.
-	SlackInstall *slack.InstallService
-	SlackSupport *slack.SupportClient
+	SlackInstall          *slack.InstallService
+	SlackSupport          *slack.SupportClient
+	SlackRelayCredentials map[string]slack.RelayCredential
 	// SlackBindingTokens mints/redeems the user-binding tokens behind the
 	// "link your Slack account" prompt (MUL-3666). Nil unless Slack is
 	// configured (MULTICA_SLACK_SECRET_KEY set).

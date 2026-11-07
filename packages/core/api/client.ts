@@ -1,4 +1,14 @@
-import { SlackIntakeRulesSchema, SlackSupportDirectorySchema, SlackSupportActivitySchema, type SlackIntakeRule, type SlackSupportDirectory, type SlackSupportActivity } from "./slack-intake-schema";
+import {
+  SlackIntakeRulesSchema,
+  SlackSupportDirectorySchema,
+  SlackSupportActivitySchema,
+  SlackRelayStatusSchema,
+  SlackRelayReplaySchema,
+  type SlackRelayStatus,
+  type SlackIntakeRule,
+  type SlackSupportDirectory,
+  type SlackSupportActivity,
+} from "./slack-intake-schema";
 import { WorkspaceLinksSchema, WorkspaceRequestsSchema, type WorkspaceLinks, type WorkspaceRequests } from "./workspace-links-schema";
 import { CodeDeliverySchema, type CodeDelivery } from "./code-delivery-schema";
 import { WorkspaceDirectorySchema, WorkspaceAccessRequestsSchema, type WorkspaceDirectoryData, type WorkspaceAccessRequests } from "./workspace-directory-schema";
@@ -5239,6 +5249,26 @@ export class ApiClient {
     const endpoint=`/api/workspaces/${workspaceId}/slack/intake`;
     const result=parseWithFallback<SlackIntakeRule[] | null>(await this.fetch<unknown>(endpoint),SlackIntakeRulesSchema,null,{endpoint});
     if(result===null) throw new Error("Could not load Slack workflows"); return result;
+  }
+  async getSlackRelayStatus(workspaceId: string): Promise<SlackRelayStatus> {
+    const endpoint = `/api/workspaces/${workspaceId}/slack/relay`;
+    const result = parseWithFallback<SlackRelayStatus | null>(
+      await this.fetch<unknown>(endpoint), SlackRelayStatusSchema, null, { endpoint },
+    );
+    if (!result) {
+      throw new Error("Relay status is unavailable. Check the server version and retry.");
+    }
+    return result;
+  }
+  async replaySlackRelay(workspaceId: string, receiptId: string): Promise<void> {
+    const endpoint = `/api/workspaces/${workspaceId}/slack/relay/${receiptId}/replay`;
+    const result = parseWithFallback(
+      await this.fetch<unknown>(endpoint, { method: "POST" }),
+      SlackRelayReplaySchema, null, { endpoint },
+    );
+    if (!result) {
+      throw new Error("Replay was not confirmed. Refresh the receipt before retrying.");
+    }
   }
   async saveSlackIntake(workspaceId: string, value: Partial<SlackIntakeRule> & { disable_only?: boolean }): Promise<SlackIntakeRule[]> {
     const endpoint=`/api/workspaces/${workspaceId}/slack/intake`;

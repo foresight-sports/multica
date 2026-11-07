@@ -1568,6 +1568,36 @@ type SlackIntakeThread struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type SlackRelayHealth struct {
+	InstallationID pgtype.UUID        `json:"installation_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	LastSeenAt     pgtype.Timestamptz `json:"last_seen_at"`
+}
+
+type SlackRelayNonce struct {
+	InstallationID pgtype.UUID        `json:"installation_id"`
+	Nonce          string             `json:"nonce"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type SlackRelayReceipt struct {
+	ID             pgtype.UUID        `json:"id"`
+	InstallationID pgtype.UUID        `json:"installation_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ChannelID      string             `json:"channel_id"`
+	MessageTs      string             `json:"message_ts"`
+	RuleID         pgtype.UUID        `json:"rule_id"`
+	Owner          string             `json:"owner"`
+	State          string             `json:"state"`
+	Payload        []byte             `json:"payload"`
+	Attempts       int32              `json:"attempts"`
+	LastError      string             `json:"last_error"`
+	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	LastReceivedAt pgtype.Timestamptz `json:"last_received_at"`
+}
+
 type Squad struct {
 	ID           pgtype.UUID        `json:"id"`
 	WorkspaceID  pgtype.UUID        `json:"workspace_id"`

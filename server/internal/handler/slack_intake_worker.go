@@ -76,6 +76,7 @@ func (h *Handler) StartSlackIntake(ctx context.Context) {
 					continue
 				}
 				run, cancel := context.WithTimeout(ctx, 20*time.Second)
+				h.drainSlackRelay(run)
 				rows, e := h.DB.Query(run, `SELECT id FROM slack_intake_thread WHERE state NOT IN ('answered','escalated','waiting_customer','deleted') ORDER BY checked_at,id LIMIT 30`)
 				if e != nil {
 					cancel()

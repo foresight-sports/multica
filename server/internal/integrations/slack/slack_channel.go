@@ -31,14 +31,15 @@ import (
 // EventChatDone subscriber (NewOutbound); Send satisfies the Channel contract
 // and posts with this installation's bot token.
 type slackChannel struct {
-	appID     string
-	botUserID string
-	appToken  string        // decrypted xapp- — authorizes the Socket Mode connection
-	botAPI    *slack.Client // bot-token client for outbound Send
-	capture   func(context.Context, channel.InboundMessage) (bool, error)
-	handler   channel.InboundHandler
-	slash     *SlashCommandProcessor // nil disables /issue and /new slash-command handling
-	logger    *slog.Logger
+	inboundMode string
+	appID       string
+	botUserID   string
+	appToken    string        // decrypted xapp- — authorizes the Socket Mode connection
+	botAPI      *slack.Client // bot-token client for outbound Send
+	capture     func(context.Context, channel.InboundMessage) (bool, error)
+	handler     channel.InboundHandler
+	slash       *SlashCommandProcessor // nil disables /issue and /new slash-command handling
+	logger      *slog.Logger
 }
 
 // slashCommandTimeout bounds detached `/issue`, `/new`, and `/clear` processing
@@ -70,6 +71,12 @@ func (c *slackChannel) Send(ctx context.Context, out channel.OutboundMessage) (c
 // per-installation: the bot identity is fixed (this install's bot user id)
 // rather than resolved per event by team_id.
 func (c *slackChannel) Connect(ctx context.Context) error {
+	if c.inboundMode == "relay" {
+		// Keep the installation and outbound bot client, with no Socket Mode
+		// connection. Configuration rotation cancels the previous socket first.
+		<-ctx.Done()
+		return nil
+	}
 	if c.handler == nil {
 		return errors.New("slack: inbound handler not configured")
 	}
@@ -264,11 +271,18 @@ func newSlackFactory(deps ChannelDeps) channel.Factory {
 		if err := json.Unmarshal(cfg.Raw, &ic); err != nil {
 			return nil, fmt.Errorf("slack: decode installation config: %w", err)
 		}
-		appToken, err := decryptToken(ic.AppTokenEncrypted, deps.Decrypt)
+		if ic.InboundMode != "" && ic.InboundMode != "socket_mode" && ic.InboundMode != "relay" {
+			return nil, errors.New("slack: invalid inbound mode")
+		}
+		appToken := ""
+		var err error
+		if ic.InboundMode != "relay" {
+			appToken, err = decryptToken(ic.AppTokenEncrypted, deps.Decrypt)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("slack: decrypt app token: %w", err)
 		}
-		if appToken == "" {
+		if appToken == "" && ic.InboundMode != "relay" {
 			return nil, errors.New("slack: installation has no app-level token")
 		}
 		botToken, err := decryptToken(ic.BotTokenEncrypted, deps.Decrypt)
@@ -276,14 +290,15 @@ func newSlackFactory(deps ChannelDeps) channel.Factory {
 			return nil, fmt.Errorf("slack: decrypt bot token: %w", err)
 		}
 		return &slackChannel{
-			appID:     ic.AppID,
-			botUserID: ic.BotUserID,
-			appToken:  appToken,
-			botAPI:    slack.New(botToken),
-			handler:   cfg.Handler,
-			capture:   deps.Capture,
-			slash:     deps.Slash,
-			logger:    logger,
+			inboundMode: ic.InboundMode,
+			appID:       ic.AppID,
+			botUserID:   ic.BotUserID,
+			appToken:    appToken,
+			botAPI:      slack.New(botToken),
+			handler:     cfg.Handler,
+			capture:     deps.Capture,
+			slash:       deps.Slash,
+			logger:      logger,
 		}, nil
 	}
 }

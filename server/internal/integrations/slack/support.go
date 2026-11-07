@@ -16,6 +16,36 @@ type SupportClient struct {
 	APIURL  string
 }
 
+// VerifyIdentity is read-only: it never opens a Socket Mode connection.
+func (s *SupportClient) VerifyIdentity(ctx context.Context, config json.RawMessage) error {
+	c, err := s.client(config)
+	if err != nil {
+		return fmt.Errorf("Slack bot credentials unavailable")
+	}
+	auth, err := c.AuthTestContext(ctx)
+	info := DecodePublicConfig(config)
+	if err != nil || auth.TeamID != info.TeamID || auth.UserID != info.BotUserID || auth.BotID == "" {
+		return fmt.Errorf("Slack auth.test does not match the stored team and bot identity")
+	}
+	bot, err := c.GetBotInfoContext(ctx, slack.GetBotInfoParameters{Bot: auth.BotID})
+	if err != nil || bot == nil || bot.AppID != info.AppID || bot.Deleted {
+		return fmt.Errorf("Slack bots.info does not match the stored app identity")
+	}
+	return nil
+}
+
+func (s *SupportClient) VerifyChannel(ctx context.Context, config json.RawMessage, id string) (string, bool, error) {
+	c, err := s.client(config)
+	if err != nil {
+		return "", false, fmt.Errorf("Slack bot credentials unavailable")
+	}
+	ch, err := c.GetConversationInfoContext(ctx, &slack.GetConversationInfoInput{ChannelID: id})
+	if err != nil || ch == nil || ch.ID != id || !ch.IsMember || ch.IsArchived || ch.IsIM || ch.IsMpIM {
+		return "", false, fmt.Errorf("Slack channel unavailable; verify bot membership and read scopes")
+	}
+	return ch.Name, ch.IsPrivate, nil
+}
+
 func (s *SupportClient) client(raw json.RawMessage) (*slack.Client, error) {
 	c, e := decodeCredentials(raw, s.Decrypt)
 	if e != nil {

@@ -10,6 +10,7 @@ import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import { Switch } from "@multica/ui/components/ui/switch";
 import { SettingsSection } from "./settings-layout";
+import { SlackRelayStatus } from "./slack-relay-status";
 import { useT } from "../../i18n";
 
 export function SlackIntakeSection({ wsId }: { wsId: string }) {
@@ -78,6 +79,7 @@ export function SlackIntakeSection({ wsId }: { wsId: string }) {
       title={t(($) => $.slack_intake.title)}
       description={t(($) => $.slack_intake.description)}
     >
+      <SlackRelayStatus wsId={wsId} />
       <p className="text-caption text-muted-foreground">
         {t(($) => $.slack_intake.identity)}{" "}
         {t(($) => $.slack_intake.coordinator_hint)}

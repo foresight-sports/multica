@@ -36,3 +36,59 @@ export const SlackSupportActivitySchema = z.array(
   }),
 );
 export type SlackSupportActivity = z.infer<typeof SlackSupportActivitySchema>;
+
+export const SlackRelayStatusSchema = z.object({
+  installations: z.array(
+    z
+      .object({
+        id: z.string(),
+        app_id: z.string().nullable(),
+        team_id: z.string().nullable(),
+        mode: z.string(),
+        active: z.boolean(),
+        credential_configured: z.boolean(),
+        last_seen_at: z.string().datetime({ offset: true }).nullable(),
+        contact_recent: z.boolean(),
+      })
+      .transform((v) => ({
+        id: v.id,
+        appId: v.app_id,
+        teamId: v.team_id,
+        mode: v.mode,
+        active: v.active,
+        credentialConfigured: v.credential_configured,
+        lastSeenAt: v.last_seen_at,
+        contactRecent: v.contact_recent,
+      })),
+  ),
+  counts: z.record(z.string(), z.number().int().nonnegative()),
+  recent: z.array(
+    z
+      .object({
+        id: z.string(),
+        installation_id: z.string(),
+        channel_id: z.string(),
+        message_ts: z.string(),
+        owner: z.string(),
+        state: z.string(),
+        attempts: z.number().int().nonnegative(),
+        last_error: z.string(),
+        received_at: z.string().datetime({ offset: true }),
+        updated_at: z.string().datetime({ offset: true }),
+      })
+      .transform((v) => ({
+        id: v.id,
+        installationId: v.installation_id,
+        channelId: v.channel_id,
+        messageTs: v.message_ts,
+        owner: v.owner,
+        state: v.state,
+        attempts: v.attempts,
+        lastError: v.last_error,
+        receivedAt: v.received_at,
+        updatedAt: v.updated_at,
+      })),
+  ),
+});
+export type SlackRelayStatus = z.infer<typeof SlackRelayStatusSchema>;
+export const SlackRelayReplaySchema = z.object({ state: z.literal("pending") });

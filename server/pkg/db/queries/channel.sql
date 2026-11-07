@@ -31,7 +31,11 @@ INSERT INTO channel_installation (
 )
 ON CONFLICT (workspace_id, agent_id, channel_type) DO UPDATE SET
     channel_type      = EXCLUDED.channel_type,
-    config            = EXCLUDED.config,
+    -- Reinstalling/rotating credentials must never restart a shared-app socket.
+    config            = CASE WHEN channel_installation.channel_type='slack'
+                             AND channel_installation.config->>'inbound_mode'='relay'
+                             THEN EXCLUDED.config || '{"inbound_mode":"relay"}'::jsonb
+                             ELSE EXCLUDED.config END,
     installer_user_id = EXCLUDED.installer_user_id,
     status            = 'active',
     installed_at      = now(),
