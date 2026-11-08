@@ -249,8 +249,8 @@ func TestSlackSupportUncertainDeliveryReconcilesWithoutReposting(t *testing.T) {
 		case "/chat.postMessage":
 			posts++
 			r.ParseForm()
-			if strings.Contains(r.Form.Get("text"), "<@UKODY01>") {
-				t.Error("thread author was redundantly mentioned")
+			if !strings.Contains(r.Form.Get("text"), "<@UKODY01>") {
+				t.Error("configured investigator must be mentioned even when they opened the thread")
 			}
 			w.Write([]byte(`{"ok":false,"error":"internal_error"}`))
 		case "/conversations.replies":
