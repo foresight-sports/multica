@@ -185,7 +185,16 @@ func (h *Handler) processSupportThread(ctx context.Context, id pgtype.UUID) erro
 		}
 		mention := ""
 		if outcome == "escalate" {
-			mention = t.Rule.EscalationUserID
+			var requester string
+			err := h.DB.QueryRow(ctx, `SELECT sender_id FROM slack_intake_message WHERE thread_id=$1 AND message_ts=$2`, t.ID, t.Root).Scan(&requester)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			// A thread reply already reaches the requester. Mention only a
+			// different configured reviewer, never redundantly ping the author.
+			if requester != t.Rule.EscalationUserID {
+				mention = t.Rule.EscalationUserID
+			}
 		}
 		stamp, e := h.SlackSupport.Reply(ctx, t.Config, t.Rule.ChannelID, t.Root, uuidToString(replyID), body, "Multica "+service.IssueIdentifier(ws.IssuePrefix, issue.Number), mention)
 		if e != nil {

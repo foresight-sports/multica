@@ -240,13 +240,18 @@ func TestSlackSupportWorkerCreatesOneAttributedInvestigation(t *testing.T) {
 func TestSlackSupportUncertainDeliveryReconcilesWithoutReposting(t *testing.T) {
 	f := newSupportFixture(t)
 	task := dbfx.Task(t, f.coord, testutil.Cols{"issue_id": f.issue, "status": "completed", "runtime_id": testRuntimeID, "originator_user_id": testUserID, "accountable_user_id": testUserID})
-	reply := dbfx.Insert(t, "slack_intake_reply", testutil.Cols{"task_id": task, "id": uuidToString(dbid.NewV7()), "thread_id": f.thread, "revision": 1, "outcome": "answer", "confidence": .95, "body": "Finding", "evidence": "Evidence"})
+	reply := dbfx.Insert(t, "slack_intake_reply", testutil.Cols{"task_id": task, "id": uuidToString(dbid.NewV7()), "thread_id": f.thread, "revision": 1, "outcome": "escalate", "confidence": .95, "body": "Finding", "evidence": "Evidence"})
+	dbfx.Insert(t, "slack_intake_message", testutil.Cols{"id": uuidToString(dbid.NewV7()), "thread_id": f.thread, "rule_id": f.rule, "message_ts": "100.1", "sender_id": "UKODY01", "body": "Support request"})
 	posts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/chat.postMessage":
 			posts++
+			r.ParseForm()
+			if strings.Contains(r.Form.Get("text"), "<@UKODY01>") {
+				t.Error("thread author was redundantly mentioned")
+			}
 			w.Write([]byte(`{"ok":false,"error":"internal_error"}`))
 		case "/conversations.replies":
 			json.NewEncoder(w).Encode(map[string]any{"ok": true, "messages": []any{map[string]any{"ts": "100.3", "metadata": map[string]any{"event_type": "multica_support_reply", "event_payload": map[string]any{"reply_id": reply}}}}})
@@ -266,7 +271,7 @@ func TestSlackSupportUncertainDeliveryReconcilesWithoutReposting(t *testing.T) {
 	}
 	var state string
 	dbfx.QueryRow(t, `SELECT state FROM slack_intake_thread WHERE id=$1`, f.thread).Scan(&state)
-	if posts != 1 || state != "answered" {
+	if posts != 1 || state != "escalated" {
 		t.Fatalf("posts=%d state=%s", posts, state)
 	}
 	dbfx.Exec(t, `UPDATE slack_intake_rule SET enabled=false WHERE id=$1`, f.rule)

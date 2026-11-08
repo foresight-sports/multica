@@ -24,7 +24,7 @@ func TestSupportReplyEscapesMentionsAndKeepsReceipt(t *testing.T) {
 	}))
 	defer server.Close()
 	c := SupportClient{APIURL: server.URL + "/"}
-	ts, e := c.Reply(context.Background(), []byte(replierConfigJSON), "C1", "1.1", "receipt-id", "Finding <!channel> <@UOTHER>", "Multica APP-42", "UKODY")
+	ts, e := c.Reply(context.Background(), []byte(replierConfigJSON), "C1", "1.1", "receipt-id", "## Finding\n**Retry the connection**\n- Keep the device on. <!channel> <@UOTHER>", "Multica APP-42", "UKODY")
 	if e != nil || ts != "1.2" {
 		t.Fatalf("%s %v", ts, e)
 	}
@@ -32,6 +32,9 @@ func TestSupportReplyEscapesMentionsAndKeepsReceipt(t *testing.T) {
 	text := received["text"].(string)
 	if strings.Contains(text, "<!channel>") || strings.Contains(text, "<@UOTHER>") || !strings.Contains(text, "<@UKODY>") {
 		t.Fatal(text)
+	}
+	if !strings.Contains(text, "*Finding*") || !strings.Contains(text, "*Retry the connection*") || strings.Contains(text, "**") || strings.Contains(text, "##") {
+		t.Fatal("support Markdown was not converted: " + text)
 	}
 	if received["thread_ts"] != "1.1" || !strings.Contains(string(raw), "receipt-id") || !strings.Contains(string(raw), "APP-42") {
 		t.Fatal(string(raw))

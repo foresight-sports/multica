@@ -98,7 +98,10 @@ func (s *SupportClient) Reply(ctx context.Context, raw json.RawMessage, ch, thre
 		return "", e
 	}
 	// User/agent content cannot introduce mentions or Slack link entities.
-	text := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(body)
+	// Convert standard Markdown, then neutralize all Slack entities introduced
+	// by untrusted body text or Markdown links. Only the trusted escalation
+	// target below may generate a notification.
+	text := strings.NewReplacer("<", "&lt;", ">", "&gt;").Replace(formatMrkdwn(body))
 	if mention != "" {
 		text = "<@" + mention + "> " + text
 	}
