@@ -36,9 +36,32 @@ func TestSupportReplyEscapesMentionsAndKeepsReceipt(t *testing.T) {
 	if !strings.Contains(text, "*Finding*") || !strings.Contains(text, "*Retry the connection*") || strings.Contains(text, "**") || strings.Contains(text, "##") {
 		t.Fatal("support Markdown was not converted: " + text)
 	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text *struct {
+			Text string `json:"text"`
+		} `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(received["blocks"].(string)), &blocks); err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 4 || blocks[1].Type != "divider" || strings.Contains(blocks[0].Text.Text, "<@UKODY>") || !strings.Contains(blocks[2].Text.Text, "Investigation follow-up") || !strings.Contains(blocks[2].Text.Text, "<@UKODY>") {
+		t.Fatal("investigator mention must be isolated from CS response")
+	}
+	if strings.HasPrefix(text, "<@") {
+		t.Fatal("fallback text addresses investigator before CS response")
+	}
 	if received["thread_ts"] != "1.1" || !strings.Contains(string(raw), "receipt-id") || !strings.Contains(string(raw), "APP-42") {
 		t.Fatal(string(raw))
 	}
+	_, err := c.Reply(context.Background(), []byte(replierConfigJSON), "C1", "1.1", "ordinary-receipt", "Retry the connection.", "Multica APP-42", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(received["text"].(string), "<@") || strings.Contains(received["blocks"].(string), "Investigation follow-up") {
+		t.Fatal("ordinary reply gained an escalation section")
+	}
+
 }
 
 func TestSupportDirectoryListsBotMembershipsInsteadOfWholeWorkspace(t *testing.T) {

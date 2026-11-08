@@ -102,10 +102,13 @@ func (s *SupportClient) Reply(ctx context.Context, raw json.RawMessage, ch, thre
 	// by untrusted body text or Markdown links. Only the trusted escalation
 	// target below may generate a notification.
 	text := strings.NewReplacer("<", "&lt;", ">", "&gt;").Replace(formatMrkdwn(body))
+	blocks := []slack.Block{slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", text, false, false), nil, nil)}
 	if mention != "" {
-		text = "<@" + mention + "> " + text
+		followup := "*Investigation follow-up*\n<@" + mention + "> Please review the unresolved findings in the Multica issue and determine the next investigation step."
+		blocks = append(blocks, slack.NewDividerBlock(), slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", followup, false, false), nil, nil))
+		text += "\n\n" + followup
 	}
-	blocks := []slack.Block{slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", text, false, false), nil, nil), slack.NewContextBlock("", slack.NewTextBlockObject("plain_text", footer, false, false))}
+	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject("plain_text", footer, false, false)))
 	_, ts, e := c.PostMessageContext(ctx, ch, slack.MsgOptionText(text+"\n"+footer, false), slack.MsgOptionBlocks(blocks...), slack.MsgOptionTS(thread), slack.MsgOptionDisableLinkUnfurl(), slack.MsgOptionDisableMediaUnfurl(), slack.MsgOptionMetadata(slack.SlackMetadata{EventType: "multica_support_reply", EventPayload: map[string]interface{}{"reply_id": id}}))
 	return ts, e
 }
